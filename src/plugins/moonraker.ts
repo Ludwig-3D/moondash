@@ -31,11 +31,11 @@ type JsonRpcNotification = {
     params?: unknown[]
 }
 
-type MoonrakerConfig = {
+export type MoonrakerConfig = {
     ip: string
 }
 
-type MoonrakerStatus = {
+export type MoonrakerStatus = {
     connected: boolean
     ready: boolean
     url: string | null
@@ -107,32 +107,17 @@ class MoonrakerConnection {
 
     registerDefaultNotifications() {
         return [
-            this.onNotification('notify_status_update', (params) => {
-                console.debug('[moonraker] notify_status_update', params)
-            }),
-            this.onNotification('notify_klippy_ready', (params) => {
-                console.info('[moonraker] notify_klippy_ready', params)
+            this.onNotification('notify_klippy_ready', () => {
                 this.ready = true
                 this.emitConnection()
             }),
-            this.onNotification('notify_klippy_disconnected', (params) => {
-                console.warn('[moonraker] notify_klippy_disconnected', params)
+            this.onNotification('notify_klippy_disconnected', () => {
                 this.ready = false
                 this.emitConnection()
             }),
-            this.onNotification('notify_klippy_shutdown', (params) => {
-                console.warn('[moonraker] notify_klippy_shutdown', params)
+            this.onNotification('notify_klippy_shutdown', () => {
                 this.ready = false
                 this.emitConnection()
-            }),
-            this.onNotification('notify_history_changed', (params) => {
-                console.debug('[moonraker] notify_history_changed', params)
-            }),
-            this.onNotification('notify_webcams_changed', (params) => {
-                console.debug('[moonraker] notify_webcams_changed', params)
-            }),
-            this.onNotification('notify_proc_stat_update', (params) => {
-                console.debug('[moonraker] notify_proc_stat_update', params)
             }),
         ]
     }
@@ -158,9 +143,7 @@ class MoonrakerConnection {
                 try {
                     this.ready = false
                     this.emitConnection()
-
                     await this.initializeConnection()
-
                     this.emitConnection()
                     resolve()
                 } catch (error) {
@@ -250,11 +233,8 @@ class MoonrakerConnection {
         params?: Record<string, unknown>,
         timeoutMs = 10000,
     ): Promise<T> {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            throw new Error('Moonraker websocket is not connected')
-        }
-
         const id = this.requestId++
+
         const request: JsonRpcRequest = {
             jsonrpc: '2.0',
             method,
@@ -262,33 +242,27 @@ class MoonrakerConnection {
             ...(params ? { params } : {}),
         }
 
-        return new Promise<T>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.pending.delete(id)
-                reject(new Error(`Moonraker request timeout: ${method}`))
-            }, timeoutMs)
-
-            this.pending.set(id, {
-                resolve,
-                reject,
-                timeout,
-            })
-
-            this.ws!.send(JSON.stringify(request))
-        })
+        return this.requestWithId<T>(request, timeoutMs)
     }
 
-    async fetchAvailablePrinterObjects(): Promise<string[]> {
-        const result = await this.call<{ objects: string[] }>('printer.objects.list')
-        return result.objects ?? []
-    }
+    async callWithId<T = unknown>(
+        id: JsonRpcId,
+        method: string,
+        params?: Record<string, unknown>,
+        timeoutMs = 10000,
+    ): Promise<T> {
+        if (this.pending.has(id)) {
+            throw new Error(`Moonraker request id already pending: ${id}`)
+        }
 
-    async subscribeToPrinterObjects(
-        objects?: Record<string, string[] | null>,
-    ): Promise<unknown> {
-        return this.call('printer.objects.subscribe', {
-            objects: objects ?? this.subscriptionObjects,
-        })
+        const request: JsonRpcRequest = {
+            jsonrpc: '2.0',
+            method,
+            id,
+            ...(params ? { params } : {}),
+        }
+
+        return this.requestWithId<T>(request, timeoutMs)
     }
 
     async serverInfo() {
@@ -299,12 +273,41 @@ class MoonrakerConnection {
         return this.call('printer.info')
     }
 
+    async fetchAvailablePrinterObjects(): Promise<string[]> {
+        const result = await this.call<{ objects: string[] }>('printer.objects.list')
+        return result.objects ?? []
+    }
+
+    async getOptionalAfcObjects(): Promise<string[]> {
+        const objects = await this.fetchAvailablePrinterObjects()
+
+        return objects.filter((name) => {
+            const lower = name.toLowerCase()
+            return (
+                lower === 'afc' ||
+                lower.startsWith('afc ') ||
+                lower.startsWith('afc_') ||
+                lower.includes(' afc ') ||
+                lower.includes('filament_switch_sensor afc')
+            )
+        })
+    }
+
+    async subscribeToPrinterObjects(
+        objects?: Record<string, string[] | null>,
+    ): Promise<unknown> {
+        return this.call('printer.objects.subscribe', {
+            objects: objects ?? this.subscriptionObjects,
+        })
+    }
+
     async registerAllKnownObjects() {
         const result = await this.call<{ objects: string[] }>('printer.objects.list')
 
         const objects: Record<string, string[] | null> = {
             webhooks: ['state', 'state_message'],
             configfile: ['config', 'settings', 'warnings'],
+            gcode_move: ['speed', 'speed_factor'],
         }
 
         for (const name of result.objects ?? []) {
@@ -313,19 +316,62 @@ class MoonrakerConnection {
             }
         }
 
-        delete objects.webhooks
         return this.subscribeToPrinterObjects(objects)
     }
 
+    async listFiles() {
+        return this.call('server.files.list')
+    }
+
+    private async requestWithId<T = unknown>(
+        request: JsonRpcRequest,
+        timeoutMs = 10000,
+    ): Promise<T> {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            throw new Error('Moonraker websocket is not connected')
+        }
+
+        if (typeof request.id !== 'number') {
+            throw new Error('JSON-RPC request id is required')
+        }
+
+        if (this.pending.has(request.id)) {
+            throw new Error(`Moonraker request id already pending: ${request.id}`)
+        }
+
+        return new Promise<T>((resolve, reject) => {
+            const requestId = request.id as JsonRpcId
+
+            const timeout = setTimeout(() => {
+                this.pending.delete(requestId)
+                reject(new Error(`Moonraker request timeout: ${request.method}`))
+            }, timeoutMs)
+
+            this.pending.set(requestId, {
+                resolve,
+                reject,
+                timeout,
+            })
+
+            try {
+                this.ws!.send(JSON.stringify(request))
+            } catch (error) {
+                clearTimeout(timeout)
+                this.pending.delete(requestId)
+                reject(error)
+            }
+        })
+    }
+
     private async initializeConnection() {
-        const info = await this.serverInfo() as {
+        const info = (await this.serverInfo()) as {
             klippy_state?: string
         }
 
         if (info.klippy_state === 'startup') {
             await this.waitForKlippyReady()
         } else if (info.klippy_state !== 'ready') {
-            console.warn('[moonraker] klippy_state is not ready:', info.klippy_state)
+            return
         }
 
         await this.registerAllKnownObjects()
@@ -334,7 +380,7 @@ class MoonrakerConnection {
 
     private async waitForKlippyReady(maxAttempts = 30, delayMs = 2000) {
         for (let i = 0; i < maxAttempts; i++) {
-            const info = await this.serverInfo() as {
+            const info = (await this.serverInfo()) as {
                 klippy_state?: string
             }
 
@@ -442,7 +488,6 @@ class MoonrakerConnection {
     }
 
     private handleError(error: unknown) {
-        console.error('[moonraker]', error)
         for (const handler of this.errorHandlers) {
             handler(error)
         }
@@ -459,4 +504,3 @@ class MoonrakerConnection {
 }
 
 export const moonraker = new MoonrakerConnection()
-export type { MoonrakerConfig, MoonrakerStatus }

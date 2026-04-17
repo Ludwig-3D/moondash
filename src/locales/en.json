@@ -1,0 +1,26 @@
+{
+  "tune": {
+    "tab": {
+      "controls": "Controls",
+      "filament": "Filament",
+      "printoptions": "Printoptions"
+    }
+  },
+  "afc": {
+    "no_units": "No units present!",
+    "no_unit_selected": "No unit selected!",
+    "line": {
+      "empty": "Empty"
+    },
+    "edit": {
+      "save": "save",
+      "cancel": "cancel",
+      "filament": "Filament",
+      "color": "Color",
+      "weight": "Weight",
+      "choose_color": "Choose a Color",
+      "other_lane_colors": "Colors of other Lanes",
+      "other_colors": "other Colors"
+    }
+  }
+}

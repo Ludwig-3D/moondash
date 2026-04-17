@@ -11,10 +11,14 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    LaneDialogAFC: typeof import('./components/afc/LaneDialogAFC.vue')['default']
     Navigation: typeof import('./components/Navigation.vue')['default']
+    PanelAFC: typeof import('./components/afc/PanelAFC.vue')['default']
+    PanelExtruder: typeof import('./components/panels/PanelExtruder.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ShortcutBar: typeof import('./components/ShortcutBar.vue')['default']
+    ShortcutBarAFC: typeof import('./components/afc/ShortcutBarAFC.vue')['default']
     ShortcutBarButton: typeof import('./components/ShortcutBarButton.vue')['default']
   }
 }

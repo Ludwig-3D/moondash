@@ -47,9 +47,7 @@ fn load_config_file(
         *guard = merged.clone();
     }
 
-    println!("Reloaded config: {}", merged);
     let _ = app.emit("config-loaded", merged.clone());
-
     ensure_config_watcher(&app, &config_path, &watched_path_state);
 
     Ok(merged)
@@ -65,7 +63,10 @@ fn default_config() -> Value {
             "darkmode": true
         },
         "dev": {
-            "debug": false,
+            "debug": false
+        },
+        "system": {
+            "language": null
         }
     })
 }
@@ -145,6 +146,8 @@ fn parse_scalar(s: &str) -> Value {
         Value::Bool(true)
     } else if s.eq_ignore_ascii_case("false") {
         Value::Bool(false)
+    } else if s.eq_ignore_ascii_case("null") {
+        Value::Null
     } else if let Ok(i) = s.parse::<i64>() {
         json!(i)
     } else if let Ok(f) = s.parse::<f64>() {
@@ -255,7 +258,6 @@ fn start_config_watcher(app: AppHandle, config_path: String) {
                                 continue;
                             }
 
-                            println!("Watched config update: {}", config_json);
                             last_emitted = Some(config_json.clone());
                             let _ = app.emit("config-loaded", config_json);
                         }
@@ -339,7 +341,6 @@ pub fn run() {
                 }
             }
 
-            println!("Final config: {}", final_config);
             let _ = app.emit("config-loaded", final_config.clone());
 
             if fullscreen {

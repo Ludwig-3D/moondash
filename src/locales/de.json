@@ -1,0 +1,26 @@
+{
+  "tune": {
+    "tab": {
+      "controls": "Steuerung",
+      "filament": "Filament",
+      "printoptions": "Druckeinstellungen"
+    }
+  },
+  "afc": {
+    "no_units": "Keine Einheiten vorhanden!",
+    "no_unit_selected": "Keine Einheit ausgewählt!",
+    "line": {
+      "empty": "Leer"
+    },
+    "edit": {
+      "save": "Speichern",
+      "cancel": "Abbruch",
+      "filament": "Filament",
+      "color": "Farbe",
+      "weight": "Gewicht",
+      "choose_color": "Farbe auswählen",
+      "other_lane_colors": "Farben von den anderen Spuren",
+      "other_colors": "andere Farben"
+    }
+  }
+}

@@ -1,19 +1,32 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import Navigation from './components/Navigation.vue'
 import { useAppStore } from './stores/app'
 import { moonraker } from './plugins/moonraker'
+import { resolveLocale } from './plugins/i18n'
 
 const appStore = useAppStore()
+const { locale } = useI18n({ useScope: 'global' })
 
 let cleanupConnectionLog: (() => void) | null = null
 let cleanupErrors: (() => void) | null = null
 let cleanupNotificationHandlers: Array<() => void> = []
 
+watch(
+    () => appStore.getLanguage,
+    (value) => {
+      locale.value = resolveLocale(value)
+    },
+    { immediate: true },
+)
+
 onMounted(async () => {
   try {
     await appStore.startConfigListener()
     await appStore.loadConfig()
+
+    locale.value = resolveLocale(appStore.getLanguage)
 
     cleanupConnectionLog = moonraker.onConnectionChange((status) => {
       appStore.setWebsocketConnected(status.connected)
@@ -21,6 +34,7 @@ onMounted(async () => {
 
       if (!status.connected) {
         appStore.resetMoonrakerData()
+        appStore.resetFiles()
       }
     })
 
@@ -32,7 +46,7 @@ onMounted(async () => {
       ...moonraker.registerDefaultNotifications(),
 
       moonraker.onNotification('notify_status_update', (params) => {
-        appStore.applyMoonrakerStatusUpdate(params?.[0])
+        appStore.applyMoonrakerStatusUpdate(params?.[0] as Record<string, any>)
       }),
 
       moonraker.onNotification('notify_proc_stat_update', (params) => {
@@ -54,14 +68,6 @@ onMounted(async () => {
       moonraker.onNotification('notify_klippy_shutdown', () => {
         appStore.setMoonrakerReady(false)
       }),
-
-      moonraker.onNotification('notify_power_changed', (params) => {
-        appStore.applyMoonrakerPowerDevices(params?.[0])
-      }),
-
-      moonraker.onNotification('notify_timelapse_changed', (params) => {
-        appStore.applyMoonrakerTimelapse(params?.[0])
-      }),
     ]
 
     await moonraker.startAutoConnectFromConfig()
@@ -71,6 +77,13 @@ onMounted(async () => {
       appStore.applyMoonrakerSubscriptionPayload(initialObjects)
     } catch (error) {
       console.warn('initial moonraker subscription payload failed', error)
+    }
+
+    try {
+      const files = await moonraker.listFiles()
+      appStore.setFiles(files)
+    } catch (error) {
+      console.warn('initial moonraker file list failed', error)
     }
   } catch (err) {
     console.error('config/moonraker init failed:', err)
@@ -100,6 +113,3 @@ onBeforeUnmount(() => {
     </v-layout>
   </v-app>
 </template>
-
-<style>
-</style>

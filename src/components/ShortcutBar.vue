@@ -119,7 +119,7 @@ const heaterBedIsHeating = computed(() => {
       <v-divider />
 
       <v-list-item class="shortcut-bar-bottom-item">
-        A
+        <ShortcutBarAFC/>
       </v-list-item>
     </v-list>
   </div>

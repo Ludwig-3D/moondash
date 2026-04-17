@@ -11,12 +11,17 @@ type DevConfig = {
   debug?: boolean
 }
 
+type SystemConfig = {
+  language?: string | null
+}
+
 type AppConfig = {
   websocket?: {
     ip?: string
   }
   styling?: StylingConfig
   dev?: DevConfig
+  system?: SystemConfig
 }
 
 type MoonrakerHeater = {
@@ -74,23 +79,19 @@ type MoonrakerHistoryState = {
   payload: unknown
 }
 
-type MoonrakerTimelapseState = {
-  enabled: boolean | null
-  active: boolean | null
-  payload: unknown
-}
-
-type MoonrakerPowerDevice = {
-  name: string
-  status: string | null
-  lockedWhilePrinting?: boolean
-  type?: string
-  payload?: unknown
-}
-
 type MoonrakerGcodeMove = {
   speed: number | null
   speedFactor: number | null
+}
+
+type MoonrakerAfcState = {
+  available: boolean
+  objects: Record<string, unknown>
+}
+
+type FilesState = {
+  items: unknown[]
+  lastUpdated: number | null
 }
 
 function isTauriRuntime(): boolean {
@@ -114,6 +115,7 @@ export const useAppStore = defineStore('app', {
     darkmode: true as boolean,
     zoom: 1.0 as number,
     debug: false as boolean,
+    language: null as string | null,
 
     websocket: {
       ip: '127.0.0.1:7125',
@@ -189,14 +191,16 @@ export const useAppStore = defineStore('app', {
         payload: null,
       } as MoonrakerHistoryState,
 
-      timelapse: {
-        enabled: null,
-        active: null,
-        payload: null,
-      } as MoonrakerTimelapseState,
-
-      powerDevices: {} as Record<string, MoonrakerPowerDevice>,
+      afc: {
+        available: false,
+        objects: {},
+      } as MoonrakerAfcState,
     },
+
+    files: {
+      items: [],
+      lastUpdated: null,
+    } as FilesState,
 
     configListener: null as UnlistenFn | null,
   }),
@@ -205,7 +209,9 @@ export const useAppStore = defineStore('app', {
     isDarkmode: (state) => state.darkmode,
     getZoom: (state) => state.zoom,
     isDebugEnabled: (state) => state.debug,
+    getLanguage: (state) => state.language,
 
+    getWebsocket: (state) => state.websocket,
     getWebsocketIp: (state) => state.websocket.ip,
     isWebsocketConnected: (state) => state.websocket.connected,
     isMoonrakerReady: (state) => state.moonrakerReady,
@@ -227,9 +233,13 @@ export const useAppStore = defineStore('app', {
 
     getProcStats: (state) => state.moonraker.procStats,
     getCpuTemp: (state) => state.moonraker.procStats.cpuTemp,
-    getSystemCpuUsage: (state) => state.moonraker.procStats.systemCpuUsage,
 
-    getPowerDevices: (state) => state.moonraker.powerDevices,
+    getAfc: (state) => state.moonraker.afc,
+    isAfcAvailable: (state) => state.moonraker.afc.available,
+
+    getFiles: (state) => state.files.items,
+    getFilesState: (state) => state.files,
+    getHistory: (state) => state.moonraker.history,
   },
 
   actions: {
@@ -243,6 +253,10 @@ export const useAppStore = defineStore('app', {
 
     setDebug(value: boolean) {
       this.debug = value
+    },
+
+    setLanguage(value: string | null) {
+      this.language = value
     },
 
     setWebsocketIp(ip: string) {
@@ -275,29 +289,26 @@ export const useAppStore = defineStore('app', {
       if (typeof config.dev?.debug === 'boolean') {
         this.setDebug(config.dev.debug)
       }
+
+      if (typeof config.system?.language === 'string') {
+        this.setLanguage(config.system.language)
+      } else if (config.system?.language === null) {
+        this.setLanguage(null)
+      }
     },
 
     async loadConfig() {
-      if (!isTauriRuntime()) {
-        console.warn('Tauri runtime not detected, skipping loadConfig')
-        return null
-      }
-
+      if (!isTauriRuntime()) return null
       const config = await invoke<AppConfig>('get_config')
       this.applyConfig(config)
       return config
     },
 
     async reloadConfigFromFile(path: string) {
-      if (!isTauriRuntime()) {
-        console.warn('Tauri runtime not detected, skipping reloadConfigFromFile')
-        return null
-      }
-
+      if (!isTauriRuntime()) return null
       const config = await invoke<AppConfig>('load_config_file', {
         configPath: path,
       })
-
       this.applyConfig(config)
       return config
     },
@@ -314,6 +325,46 @@ export const useAppStore = defineStore('app', {
       if (this.configListener) {
         this.configListener()
         this.configListener = null
+      }
+    },
+
+    applyMoonrakerAfcUpdate(status: Record<string, any>) {
+      let foundAfc = false
+
+      for (const [key, value] of Object.entries(status)) {
+        const lower = key.toLowerCase()
+
+        if (
+            lower === 'afc' ||
+            lower.startsWith('afc ') ||
+            lower.startsWith('afc_') ||
+            lower.includes(' afc ') ||
+            lower.includes('filament_switch_sensor afc')
+        ) {
+          const existing = this.moonraker.afc.objects[key]
+
+          if (
+              existing &&
+              typeof existing === 'object' &&
+              !Array.isArray(existing) &&
+              value &&
+              typeof value === 'object' &&
+              !Array.isArray(value)
+          ) {
+            this.moonraker.afc.objects[key] = {
+              ...(existing as Record<string, unknown>),
+              ...(value as Record<string, unknown>),
+            }
+          } else {
+            this.moonraker.afc.objects[key] = value
+          }
+
+          foundAfc = true
+        }
+      }
+
+      if (foundAfc) {
+        this.moonraker.afc.available = true
       }
     },
 
@@ -413,6 +464,8 @@ export const useAppStore = defineStore('app', {
           this.moonraker.displayStatus.progress = asNumber(status.display_status.progress)
         }
       }
+
+      this.applyMoonrakerAfcUpdate(status)
     },
 
     applyMoonrakerSubscriptionPayload(payload: any) {
@@ -478,60 +531,16 @@ export const useAppStore = defineStore('app', {
       }
     },
 
-    applyMoonrakerTimelapse(payload: any) {
-      this.moonraker.timelapse.payload = payload
-
-      if (payload && typeof payload === 'object') {
-        if ('enabled' in payload) {
-          this.moonraker.timelapse.enabled = asBoolean(payload.enabled)
-        }
-        if ('is_running' in payload) {
-          this.moonraker.timelapse.active = asBoolean(payload.is_running)
-        }
-      }
-    },
-
-    setPowerDevice(device: MoonrakerPowerDevice) {
-      this.moonraker.powerDevices[device.name] = device
-    },
-
-    applyMoonrakerPowerDevices(payload: any) {
-      if (!payload) return
-
+    setFiles(payload: unknown) {
       if (Array.isArray(payload)) {
-        for (const entry of payload) {
-          if (!entry || typeof entry !== 'object' || typeof entry.device !== 'string') continue
-
-          this.setPowerDevice({
-            name: entry.device,
-            status: asString(entry.status),
-            lockedWhilePrinting:
-                typeof entry.locked_while_printing === 'boolean'
-                    ? entry.locked_while_printing
-                    : undefined,
-            type: asString(entry.type) ?? undefined,
-            payload: entry,
-          })
-        }
-        return
+        this.files.items = payload
+      } else if (payload && typeof payload === 'object' && Array.isArray((payload as any).files)) {
+        this.files.items = (payload as any).files
+      } else {
+        this.files.items = []
       }
 
-      if (typeof payload === 'object') {
-        for (const [name, entry] of Object.entries(payload)) {
-          if (!entry || typeof entry !== 'object') continue
-
-          this.setPowerDevice({
-            name,
-            status: asString((entry as any).status),
-            lockedWhilePrinting:
-                typeof (entry as any).locked_while_printing === 'boolean'
-                    ? (entry as any).locked_while_printing
-                    : undefined,
-            type: asString((entry as any).type) ?? undefined,
-            payload: entry,
-          })
-        }
-      }
+      this.files.lastUpdated = Date.now()
     },
 
     resetConnectionState() {
@@ -602,22 +611,28 @@ export const useAppStore = defineStore('app', {
         payload: null,
       }
 
-      this.moonraker.timelapse = {
-        enabled: null,
-        active: null,
-        payload: null,
+      this.moonraker.afc = {
+        available: false,
+        objects: {},
       }
+    },
 
-      this.moonraker.powerDevices = {}
+    resetFiles() {
+      this.files = {
+        items: [],
+        lastUpdated: null,
+      }
     },
 
     resetToDefaults() {
       this.setDarkmode(true)
       this.setZoom(1.0)
       this.setDebug(false)
+      this.setLanguage(null)
       this.setWebsocketIp('127.0.0.1:7125')
       this.resetConnectionState()
       this.resetMoonrakerData()
+      this.resetFiles()
     },
   },
 })

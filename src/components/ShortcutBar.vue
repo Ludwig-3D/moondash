@@ -118,7 +118,7 @@ const heaterBedMaxTemp = computed(() => 120)
       </v-list-item>
 
       <v-divider />
-      saveTemp
+
       <v-list-item class="pa-0">
         <ShortcutBarButton
             :icon="printSpeedIcon"

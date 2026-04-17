@@ -356,21 +356,4 @@ async function saveDialog() {
 .fan-dialog-input-slot :deep(input) {
   text-align: center;
 }
-
-@media (max-width: 760px) {
-  .fan-dialog-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .fan-dialog-inline-row {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .fan-dialog-input-slot {
-    grid-column: 1 / -1;
-    border-right: 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.14);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  }
-}
 </style>

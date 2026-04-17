@@ -123,19 +123,29 @@ watch(selectedAfcUnit, (value) => {
     <v-tabs-window v-model="tab" class="panel-container">
       <v-tabs-window-item value="controls">
         <v-sheet class="" color="transparent">
-          <ShortcutBarControls/>
+          <v-row class="ma-0 pa-0">
+            <v-col cols="auto" class="pa-0" style="width: 7rem">
+              <ShortcutBarControls/>
+            </v-col>
+            <v-col class="pa-0">
+              <ControlPanel/>
+            </v-col>
+            <v-col cols="auto" class="pa-0 pr-3">
+              <ExtruderPanel/>
+            </v-col>
+          </v-row>
         </v-sheet>
       </v-tabs-window-item>
 
       <v-tabs-window-item value="filament">
-        <v-sheet class="pa-5 filament-sheet" color="transparent">
+        <v-sheet class="pa-0 pr-3 pb-3 pt-2 filament-sheet" color="transparent">
           <v-row class="fill-height" no-gutters>
-            <v-col cols="9" md="10" class="pr-3 mb-0">
+            <v-col cols="9" md="10" class="pr-3 mb-0 pa-0">
               <PanelAFC :selected-unit="selectedAfcUnit" />
             </v-col>
 
-            <v-col cols="3" md="2">
-              <v-card rounded="lg" class="unit-card pa-0">
+            <v-col cols="3" md="2" class="pa-0">
+              <v-card class="unit-card pa-0">
                 <v-list
                     v-if="afcUnits.length"
                     class="unit-list"
@@ -169,7 +179,9 @@ watch(selectedAfcUnit, (value) => {
       </v-tabs-window-item>
 
       <v-tabs-window-item value="printoptions">
-        <v-sheet class="pa-5" color="brown">Three</v-sheet>
+        <v-sheet class="pa-0" color="transparent">
+          <TunePanel/>
+        </v-sheet>
       </v-tabs-window-item>
     </v-tabs-window>
   </v-main>
@@ -179,6 +191,7 @@ watch(selectedAfcUnit, (value) => {
 .panel-container {
   height: 100%;
   min-height: 0;
+  max-height: 100%;
 }
 
 .filament-sheet {
@@ -200,7 +213,7 @@ watch(selectedAfcUnit, (value) => {
   min-height: 0;
   overflow-y: auto;
   padding: 0;
-  max-height: calc(100vh - 89px);
+  max-height: calc(100vh - 60px);
   background-color: rgba(var(--v-theme-on-surface), 0.12);
 }
 </style>

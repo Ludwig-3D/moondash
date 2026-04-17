@@ -1,5 +1,8 @@
 {
   "tune": {
+    "flow": "Flow",
+    "pa": "Pressure Advance",
+    "pa_smooth": "PA Smooth Time",
     "tab": {
       "controls": "Controls",
       "filament": "Filament",
@@ -44,5 +47,9 @@
       "cancel": "Cancel",
       "save": "Save"
     }
+  },
+  "extruder": {
+    "load": "Load",
+    "unload": "Unload"
   }
 }

@@ -72,11 +72,12 @@ body,
 .shortcut-bar-list {
   width: 100%;
   flex: 1;
-  min-height: 0;
+  min-height: calc(100vh - 70px);
   padding: 0;
   display: flex;
   flex-direction: column;
   background-color: rgba(var(--v-theme-on-surface), 0.12);
+  max-height: calc(100vh - 70px);
 }
 
 .shortcut-bar-bottom-item {

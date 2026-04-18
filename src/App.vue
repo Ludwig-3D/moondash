@@ -55,11 +55,6 @@ onMounted(async () => {
         appStore.applyMoonrakerProcStats(payload)
       }),
 
-      moonraker.onNotification('notify_history_changed', (params) => {
-        const payload = Array.isArray(params) ? params[0] : params
-        appStore.applyMoonrakerHistoryUpdate(payload)
-      }),
-
       moonraker.onNotification('notify_klippy_ready', () => {
         appStore.setMoonrakerReady(true)
       }),
@@ -81,13 +76,6 @@ onMounted(async () => {
         appStore.applyMoonrakerSubscriptionPayload(initialObjects)
       } catch (error) {
         console.warn('initial moonraker subscription payload failed', error)
-      }
-
-      try {
-        const files = await moonraker.listFiles()
-        appStore.setFiles(files)
-      } catch (error) {
-        console.warn('initial moonraker file list failed', error)
       }
     }
   } catch (err) {

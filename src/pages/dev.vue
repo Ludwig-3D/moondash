@@ -12,7 +12,6 @@ const {
   websocket,
   moonrakerReady,
   moonraker,
-  files,
 } = storeToRefs(appStore)
 
 const paused = ref(false)
@@ -21,8 +20,6 @@ const activeTab = ref('other')
 const frozenOther = ref('')
 const frozenMoonraker = ref('')
 const frozenAfc = ref('')
-const frozenFiles = ref('')
-const frozenHistory = ref('')
 const frozenFull = ref('')
 
 const afcAvailable = computed(() => moonraker.value.afc.available)
@@ -73,27 +70,6 @@ const liveAfc = computed(() =>
     ),
 )
 
-const liveFiles = computed(() =>
-    JSON.stringify(
-        {
-          lastUpdated: files.value.lastUpdated,
-          items: files.value.items,
-        },
-        null,
-        2,
-    ),
-)
-
-const liveHistory = computed(() =>
-    JSON.stringify(
-        {
-          history: moonraker.value.history,
-        },
-        null,
-        2,
-    ),
-)
-
 const liveFull = computed(() =>
     JSON.stringify(
         {
@@ -103,7 +79,6 @@ const liveFull = computed(() =>
           websocket: websocket.value,
           moonrakerReady: moonrakerReady.value,
           moonraker: moonraker.value,
-          files: files.value,
         },
         null,
         2,
@@ -111,14 +86,12 @@ const liveFull = computed(() =>
 )
 
 watch(
-    [liveOther, liveMoonraker, liveAfc, liveFiles, liveHistory, liveFull],
-    ([otherValue, moonrakerValue, afcValue, filesValue, historyValue, fullValue]) => {
+    [liveOther, liveMoonraker, liveAfc, liveFull],
+    ([otherValue, moonrakerValue, afcValue, fullValue]) => {
       if (!paused.value) {
         frozenOther.value = otherValue
         frozenMoonraker.value = moonrakerValue
         frozenAfc.value = afcValue
-        frozenFiles.value = filesValue
-        frozenHistory.value = historyValue
         frozenFull.value = fullValue
       }
     },
@@ -132,8 +105,6 @@ function togglePause() {
     frozenOther.value = liveOther.value
     frozenMoonraker.value = liveMoonraker.value
     frozenAfc.value = liveAfc.value
-    frozenFiles.value = liveFiles.value
-    frozenHistory.value = liveHistory.value
     frozenFull.value = liveFull.value
   }
 }
@@ -169,8 +140,6 @@ function togglePause() {
         <v-tabs v-model="activeTab" class="store-tabs" density="compact">
           <v-tab value="other">Other</v-tab>
           <v-tab value="moonraker">Moonraker</v-tab>
-          <v-tab value="files">Files</v-tab>
-          <v-tab value="history">History</v-tab>
           <v-tab value="afc">AFC</v-tab>
           <v-tab value="full">Full</v-tab>
         </v-tabs>
@@ -183,14 +152,6 @@ function togglePause() {
 
         <div v-show="activeTab === 'moonraker'" class="tab-panel">
           <pre class="store-pre">{{ frozenMoonraker }}</pre>
-        </div>
-
-        <div v-show="activeTab === 'files'" class="tab-panel">
-          <pre class="store-pre">{{ frozenFiles }}</pre>
-        </div>
-
-        <div v-show="activeTab === 'history'" class="tab-panel">
-          <pre class="store-pre">{{ frozenHistory }}</pre>
         </div>
 
         <div v-show="activeTab === 'afc'" class="tab-panel">

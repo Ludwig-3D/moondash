@@ -18,6 +18,8 @@ declare module 'vue' {
     Navigation: typeof import('./components/Navigation.vue')['default']
     PanelAFC: typeof import('./components/afc/PanelAFC.vue')['default']
     PanelExtruder: typeof import('./components/panels/PanelExtruder.vue')['default']
+    PrintDialog: typeof import('./components/dialogs/PrintDialog.vue')['default']
+    PrintFilePanel: typeof import('./components/panels/PrintFilePanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ShortcutBar: typeof import('./components/ShortcutBar.vue')['default']

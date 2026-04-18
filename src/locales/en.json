@@ -59,5 +59,16 @@
       "save": "Save",
       "target": "Target"
     }
+  },
+  "print_files": {
+    "none_found": "No print files found",
+    "unknown_file": "Unknown file"
+  },
+  "print": {
+    "dialog": {
+      "timelapse": "Timelapse",
+      "print": "Print",
+      "cancel": "Cancel"
+    }
   }
 }

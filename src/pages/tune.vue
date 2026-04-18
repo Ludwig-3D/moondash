@@ -179,7 +179,7 @@ watch(selectedAfcUnit, (value) => {
       </v-tabs-window-item>
 
       <v-tabs-window-item value="printoptions">
-        <v-sheet class="pa-0" color="transparent">
+        <v-sheet class="pa-0 pt-2" color="transparent">
           <TunePanel/>
         </v-sheet>
       </v-tabs-window-item>

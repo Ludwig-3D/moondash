@@ -3,7 +3,9 @@
 </script>
 
 <template>
-AA
+  <v-main>
+    <PrintFilePanel/>
+  </v-main>
 </template>
 
 <style scoped>

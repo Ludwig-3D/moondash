@@ -1,5 +1,5 @@
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
+import {listen, type UnlistenFn} from '@tauri-apps/api/event'
+import {invoke} from '@tauri-apps/api/core'
 
 type JsonRpcId = number
 
@@ -99,7 +99,9 @@ class MoonrakerConnection {
         if (!this.notificationHandlers.has(method)) {
             this.notificationHandlers.set(method, new Set())
         }
+
         this.notificationHandlers.get(method)!.add(handler)
+
         return () => {
             this.notificationHandlers.get(method)?.delete(handler)
         }
@@ -178,6 +180,7 @@ class MoonrakerConnection {
             if (!config?.websocket?.ip) {
                 throw new Error('No Moonraker websocket config available')
             }
+
             await this.connect({ ip: config.websocket.ip })
             return
         }
@@ -304,8 +307,6 @@ class MoonrakerConnection {
     async registerAllKnownObjects() {
         const result = await this.call<{ objects: string[] }>('printer.objects.list')
 
-        console.log('printer.objects.list', result.objects)
-
         const objects: Record<string, string[] | null> = {
             webhooks: ['state', 'state_message'],
             configfile: ['config', 'settings', 'warnings'],
@@ -318,16 +319,7 @@ class MoonrakerConnection {
             }
         }
 
-        console.log('printer.objects.subscribe payload', objects)
-
-        const subscribeResult = await this.subscribeToPrinterObjects(objects)
-        console.log('printer.objects.subscribe result', subscribeResult)
-
-        return subscribeResult
-    }
-
-    async listFiles() {
-        return this.call('server.files.list')
+        return await this.subscribeToPrinterObjects(objects)
     }
 
     private async requestWithId<T = unknown>(
@@ -403,6 +395,7 @@ class MoonrakerConnection {
 
     private handleMessage(raw: string) {
         let message: JsonRpcResponse | JsonRpcNotification
+
         try {
             message = JSON.parse(raw)
         } catch (error) {
@@ -422,6 +415,7 @@ class MoonrakerConnection {
             } else {
                 pending.resolve(message.result)
             }
+
             return
         }
 

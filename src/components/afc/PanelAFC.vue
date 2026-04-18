@@ -164,6 +164,10 @@ const afcObjects = computed(() => {
   return moonraker.value.afc.objects as Record<string, any>
 })
 
+const printerIsPrinting = computed(() => {
+  return moonraker.value.printStats.state === 'printing'
+})
+
 const parsedUnits = computed<AfcUnit[]>(() => {
   if (!afcEnabled.value) return []
 
@@ -231,12 +235,14 @@ const currentUnitLaneColors = computed(() => {
 })
 
 function handleEdit(lane: AfcLane) {
+  if (printerIsPrinting.value) return
   if (lane.isLoaded || isLoading(lane.id) || isEjecting(lane.id)) return
   selectedLaneForDialog.value = { ...lane }
   laneDialogOpen.value = true
 }
 
 async function handleEject(lane: AfcLane) {
+  if (printerIsPrinting.value) return
   if (lane.isLoaded || isEjecting(lane.id) || isLoading(lane.id)) return
 
   try {
@@ -253,6 +259,7 @@ async function handleEject(lane: AfcLane) {
 }
 
 async function handleLoad(lane: AfcLane) {
+  if (printerIsPrinting.value) return
   if (lane.isLoaded || isLoading(lane.id) || isEjecting(lane.id)) return
 
   try {
@@ -301,7 +308,7 @@ async function handleLoad(lane: AfcLane) {
                     icon="mdi-pen"
                     variant="plain"
                     :style="{ color: getContrastTextColor(lane.color) }"
-                    :disabled="lane.isLoaded || isEjecting(lane.id) || isLoading(lane.id)"
+                    :disabled="printerIsPrinting || lane.isLoaded || isEjecting(lane.id) || isLoading(lane.id)"
                     @click="handleEdit(lane)"
                 />
               </div>
@@ -332,7 +339,7 @@ async function handleLoad(lane: AfcLane) {
                     variant="plain"
                     :style="{ color: getContrastTextColor(lane.color) }"
                     :loading="isEjecting(lane.id)"
-                    :disabled="lane.isLoaded || isEjecting(lane.id) || isLoading(lane.id)"
+                    :disabled="printerIsPrinting || lane.isLoaded || isEjecting(lane.id) || isLoading(lane.id)"
                     @click="handleEject(lane)"
                 />
                 <v-btn
@@ -340,7 +347,7 @@ async function handleLoad(lane: AfcLane) {
                     variant="plain"
                     :style="{ color: getContrastTextColor(lane.color) }"
                     :loading="isLoading(lane.id)"
-                    :disabled="lane.isLoaded || isEjecting(lane.id) || isLoading(lane.id)"
+                    :disabled="printerIsPrinting || lane.isLoaded || isEjecting(lane.id) || isLoading(lane.id)"
                     @click="handleLoad(lane)"
                 />
               </div>

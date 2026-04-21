@@ -143,6 +143,10 @@ function getRawObjects(): Record<string, unknown> {
   return moonraker.value.rawObjects as Record<string, unknown>
 }
 
+function getAfcObjects(): Record<string, unknown> {
+  return moonraker.value.afc.objects as Record<string, unknown>
+}
+
 function getTimelapseSettingsState(source?: Record<string, unknown>): Record<string, unknown> | null {
   const objects = source ?? getRawObjects()
   const settings = objects.timelapse_settings
@@ -228,6 +232,41 @@ function mergeRawObjectUpdate(update: Record<string, unknown>) {
   }
 }
 
+function mergeAfcObjectUpdate(update: Record<string, unknown>) {
+  const afcObjects = getAfcObjects()
+
+  for (const [key, value] of Object.entries(update)) {
+    const lower = key.toLowerCase()
+
+    const isAfcKey =
+        lower === 'afc' ||
+        lower.startsWith('afc ') ||
+        lower.startsWith('afc_') ||
+        lower.includes(' afc ') ||
+        key.startsWith('AFC')
+
+    if (!isAfcKey) continue
+
+    const existing = afcObjects[key]
+
+    if (
+        existing &&
+        typeof existing === 'object' &&
+        !Array.isArray(existing) &&
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+    ) {
+      afcObjects[key] = {
+        ...(existing as Record<string, unknown>),
+        ...(value as Record<string, unknown>),
+      }
+    } else {
+      afcObjects[key] = value
+    }
+  }
+}
+
 async function refreshTimelapseStateFromMoonraker() {
   syncingTimelapse.value = true
 
@@ -254,6 +293,55 @@ async function refreshTimelapseStateFromMoonraker() {
   } finally {
     syncingTimelapse.value = false
   }
+}
+
+function getAfcStepperObjectKeys(): string[] {
+  const afcObjects = getAfcObjects()
+  const afcRoot = afcObjects.AFC as Record<string, unknown> | undefined
+
+  if (afcRoot && Array.isArray(afcRoot.lanes)) {
+    return afcRoot.lanes
+        .map((laneName) => String(laneName))
+        .filter(Boolean)
+        .map((laneName) =>
+            laneName.toLowerCase().startsWith('afc_stepper ')
+                ? laneName
+                : `AFC_stepper ${laneName}`,
+        )
+  }
+
+  return Object.keys(afcObjects).filter((key) => key.toLowerCase().startsWith('afc_stepper '))
+}
+
+async function refreshAfcMappingsFromMoonraker() {
+  try {
+    const objectsToQuery: Record<string, null> = {
+      AFC: null,
+    }
+
+    for (const key of getAfcStepperObjectKeys()) {
+      objectsToQuery[key] = null
+    }
+
+    const result = await moonrakerClient.call<MoonrakerObjectsQueryResult>('printer.objects.query', {
+      objects: objectsToQuery,
+    })
+
+    const status = result?.status ?? {}
+    mergeAfcObjectUpdate(status)
+  } catch {
+    showErrorToast(t('print.dialog.lane_update_failed'))
+  }
+}
+
+function syncSelectedLanesFromAfc() {
+  const next: Record<string, string> = {}
+
+  for (const tool of requiredTools.value) {
+    next[tool] = getCurrentLaneForTool(tool)
+  }
+
+  selectedLaneByTool.value = next
 }
 
 watch(
@@ -386,7 +474,9 @@ function laneOptionsFromAfc(): LaneOption[] {
     const label =
         typeof laneObject.label === 'string' && laneObject.label.trim()
             ? laneObject.label.trim()
-            : laneName.replace(/^AFC_stepper\s+/i, '')
+            : typeof laneObject.name === 'string' && laneObject.name.trim()
+                ? laneObject.name.trim()
+                : laneName.replace(/^AFC_stepper\s+/i, '')
 
     const color = normalizeColor(laneObject.color)
 
@@ -417,11 +507,16 @@ function laneDisplayColor(laneKey: string): string {
 }
 
 function getLaneMacroName(laneKey: string): string {
+  const lane = moonraker.value.afc.objects[laneKey] as Record<string, unknown> | undefined
+
+  if (lane && typeof lane.name === 'string' && lane.name.trim()) {
+    return lane.name.trim()
+  }
+
   return laneKey.replace(/^AFC_stepper\s+/i, '').trim()
 }
 
 function getCurrentLaneForTool(tool: string): string {
-  const toolIndex = Number(tool.slice(1))
   const objects = moonraker.value.afc.objects as Record<string, any>
   const afcRoot = objects.AFC
 
@@ -439,23 +534,18 @@ function getCurrentLaneForTool(tool: string): string {
     const laneObject = objects[laneKey] ?? {}
 
     const laneTool =
-        typeof laneObject.tool === 'string'
-            ? laneObject.tool
-            : typeof laneObject.map === 'string'
-                ? laneObject.map
+        typeof laneObject.map === 'string'
+            ? laneObject.map
+            : typeof laneObject.tool === 'string'
+                ? laneObject.tool
                 : typeof laneObject.current_tool === 'string'
                     ? laneObject.current_tool
-                    : typeof laneObject.lane === 'string'
-                        ? laneObject.lane
-                        : null
+                    : null
 
     if (!laneTool) continue
 
     const normalized = laneTool.trim().toUpperCase()
-
     if (normalized === tool.toUpperCase()) return laneKey
-    if (normalized === `T${toolIndex}`) return laneKey
-    if (/^\d+$/.test(normalized) && Number(normalized) === toolIndex) return laneKey
   }
 
   return ''
@@ -554,13 +644,9 @@ watch(
       if (!open || !file) return
 
       await refreshTimelapseStateFromMoonraker()
+      await refreshAfcMappingsFromMoonraker()
       await loadDialogThumbnails(file)
-
-      selectedLaneByTool.value = {}
-      for (const tool of requiredTools.value) {
-        const presetLane = getCurrentLaneForTool(tool)
-        selectedLaneByTool.value[tool] = presetLane || ''
-      }
+      syncSelectedLanesFromAfc()
     },
     { immediate: true },
 )
@@ -574,20 +660,25 @@ watch(
     },
 )
 
+watch(requiredTools, () => {
+  if (!props.modelValue) return
+  syncSelectedLanesFromAfc()
+})
+
 function closeDialog() {
   if (saving.value) return
   dialogOpen.value = false
 }
 
 async function setLaneForTool(tool: string, lane: string) {
-  if (saving.value) return
+  if (saving.value || !lane) return
+
+  const previousState = { ...selectedLaneByTool.value }
 
   selectedLaneByTool.value = {
     ...selectedLaneByTool.value,
     [tool]: lane,
   }
-
-  if (!lane) return
 
   try {
     saving.value = true
@@ -596,7 +687,11 @@ async function setLaneForTool(tool: string, lane: string) {
     await moonrakerClient.call('printer.gcode.script', {
       script: `SET_MAP LANE=${laneName} MAP=${tool}`,
     })
+
+    await refreshAfcMappingsFromMoonraker()
+    syncSelectedLanesFromAfc()
   } catch {
+    selectedLaneByTool.value = previousState
     showErrorToast(t('print.dialog.lane_update_failed'))
   } finally {
     saving.value = false
@@ -701,40 +796,32 @@ async function startPrint() {
                 >
                   <div class="tool-strip__select-wrap">
                     <v-select
-                        iconColor="transparent"
-                        hide-selected
+                        icon-color="transparent"
                         :model-value="selectedLaneByTool[tool] || ''"
                         :items="laneSelectItems"
                         item-title="title"
                         item-value="value"
                         hide-details
-                        clearable
                         variant="solo"
                         density="compact"
                         class="tool-strip__select"
+                        :menu-props="{
+                          contentClass: 'tool-strip__menu',
+                          maxHeight: 320,
+                          zIndex: 9999
+                        }"
                         :disabled="saving || !laneSelectItems.length"
-                        :style="{
-                        color: getReadableTextColor(getToolColor(tool)),
-                      }"
                         @update:model-value="(value) => setLaneForTool(tool, typeof value === 'string' ? value : '')"
                     >
-                      <template #selection>
-                        <div class="tool-strip__selection">
-                          <div class="tool-strip__selection-material">
-                            &nbsp;
-                          </div>
-                        </div>
-                      </template>
-
                       <template #item="{ props: itemProps, item }">
                         <v-list-item
                             v-bind="itemProps"
                             :title="item.title"
                             class="tool-strip__dropdown-item"
                             :style="{
-                            backgroundColor: laneDisplayColor(String(item.value)),
-                            color: getReadableTextColor(laneDisplayColor(String(item.value))),
-                          }"
+                              backgroundColor: laneDisplayColor(String(item.value)),
+                              color: getReadableTextColor(laneDisplayColor(String(item.value))),
+                            }"
                         />
                       </template>
                     </v-select>
@@ -888,7 +975,7 @@ async function startPrint() {
   gap: 12px;
   width: 100%;
   max-width: 100%;
-  justify-content: space-between;
+  justify-content: start;
   align-items: stretch;
   min-height: 0;
 }

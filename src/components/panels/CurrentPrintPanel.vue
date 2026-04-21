@@ -75,12 +75,6 @@ function parseFiniteNumber(value: unknown): number | null {
 const currentLayer = computed(() => {
   const info = moonraker.value.printStats.info as Record<string, unknown> | undefined
 
-  const current =
-      parseFiniteNumber(info?.current_layer) ??
-      parseFiniteNumber(info?.currentLayer) ??
-      parseFiniteNumber(info?.layer) ??
-      parseFiniteNumber(info?.current_layer_number)
-
   let total =
       parseFiniteNumber(currentFileMetadata.value?.layer_count)
 
@@ -102,12 +96,49 @@ const currentLayer = computed(() => {
     }
   }
 
+  const reportedCurrent =
+      parseFiniteNumber(info?.current_layer) ??
+      parseFiniteNumber(info?.currentLayer) ??
+      parseFiniteNumber(info?.layer) ??
+      parseFiniteNumber(info?.current_layer_number)
+
+  const z = parseFiniteNumber(moonraker.value.toolhead.position?.[2])
+  const layerHeight = parseFiniteNumber(currentFileMetadata.value?.layer_height)
+  const firstLayerHeight = parseFiniteNumber(currentFileMetadata.value?.first_layer_height)
+
+  let zCurrent: number | null = null
+
+  if (
+      z !== null &&
+      layerHeight !== null &&
+      layerHeight > 0 &&
+      firstLayerHeight !== null
+  ) {
+    zCurrent = Math.ceil((z - firstLayerHeight) / layerHeight + 1)
+  } else if (
+      z !== null &&
+      layerHeight !== null &&
+      layerHeight > 0
+  ) {
+    zCurrent = Math.ceil(z / layerHeight)
+  }
+
+  let current = zCurrent ?? reportedCurrent
+
   if (current !== null && total !== null && total > 0) {
-    return `${Math.max(0, Math.floor(current))}/${Math.max(1, Math.floor(total))}`
+    current = Math.min(current, total)
   }
 
   if (current !== null) {
-    return `${Math.max(0, Math.floor(current))}/--`
+    current = Math.max(0, current)
+  }
+
+  if (current !== null && total !== null && total > 0) {
+    return `${Math.floor(current)}/${Math.max(1, Math.floor(total))}`
+  }
+
+  if (current !== null) {
+    return `${Math.floor(current)}/--`
   }
 
   return '--/--'

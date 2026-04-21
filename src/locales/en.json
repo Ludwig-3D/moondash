@@ -66,6 +66,8 @@
   },
   "print": {
     "current": {
+      "no_preview": "No object preview available.",
+      "select_object": "Selectable object",
       "progress": "Progress",
       "layer": "Layer",
       "remaining": "Remaining",

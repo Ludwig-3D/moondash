@@ -57,7 +57,7 @@ function onPowerClick() {
           @click="onPowerClick"
       >
         <template #prepend>
-          <v-icon :color="isPrinterRunning ? 'error' : 'primary'">
+          <v-icon :color="isPrinterRunning ? 'error' : undefined">
             {{ isPrinterRunning ? 'mdi-alert-octagon' : 'mdi-power' }}
           </v-icon>
         </template>

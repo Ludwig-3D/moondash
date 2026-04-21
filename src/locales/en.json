@@ -65,10 +65,52 @@
     "unknown_file": "Unknown file"
   },
   "print": {
+    "current": {
+      "progress": "Progress",
+      "layer": "Layer",
+      "remaining": "Remaining",
+      "skip_object": "Skip object",
+      "pause": "Pause",
+      "resume": "Resume",
+      "stop": "Stop",
+      "reprint": "Reprint",
+      "clear_file": "Clear file",
+      "no_objects": "No skippable objects found.",
+      "current_object": "Currently printing",
+      "already_skipped": "Already skipped",
+      "skip": "Skip",
+      "close": "Close"
+    },
     "dialog": {
       "timelapse": "Timelapse",
+      "cancel": "Cancel",
       "print": "Print",
-      "cancel": "Cancel"
+      "lane_update_failed": "Failed to update lane mapping.",
+      "print_start_failed": "Failed to start print.",
+      "timelapse_update_failed": "Failed to update timelapse."
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "afc": {
+      "title": "AFC",
+      "clear": "Clear"
+    },
+    "klipper": {
+      "title": "Klipper",
+      "title_shutdown": "Klipper shutdown",
+      "title_startup": "Klipper starting",
+      "title_error": "Klipper error",
+      "message_fallback": "Klipper reported a problem.",
+      "restart": "Restart",
+      "firmware_restart": "Firmware Restart",
+      "message_startup": "Klipper is starting up."
+    },
+    "moonraker": {
+      "title": "Moonraker",
+      "message_disconnected": "Moonraker is disconnected or Klippy is not ready.",
+      "message_fallback": "Moonraker reported a connection issue.",
+      "reconnect": "Reconnect"
     }
   }
 }

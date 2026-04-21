@@ -11,11 +11,17 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AfcAlert: typeof import('./components/notifications/AfcAlert.vue')['default']
+    AlertPanel: typeof import('./components/panels/AlertPanel.vue')['default']
     ControlPanel: typeof import('./components/panels/ControlPanel.vue')['default']
+    CurrentPrintPanel: typeof import('./components/panels/CurrentPrintPanel.vue')['default']
     ExtruderPanel: typeof import('./components/panels/ExtruderPanel.vue')['default']
     FanDialog: typeof import('./components/dialogs/FanDialog.vue')['default']
+    KlipperAlert: typeof import('./components/notifications/KlipperAlert.vue')['default']
     LaneDialogAFC: typeof import('./components/afc/LaneDialogAFC.vue')['default']
+    MoonrakerAlert: typeof import('./components/notifications/MoonrakerAlert.vue')['default']
     Navigation: typeof import('./components/Navigation.vue')['default']
+    NotificationPanel: typeof import('./components/panels/NotificationPanel.vue')['default']
     PanelAFC: typeof import('./components/afc/PanelAFC.vue')['default']
     PanelExtruder: typeof import('./components/panels/PanelExtruder.vue')['default']
     PrintDialog: typeof import('./components/dialogs/PrintDialog.vue')['default']
@@ -27,6 +33,7 @@ declare module 'vue' {
     ShortcutBarButton: typeof import('./components/ShortcutBarButton.vue')['default']
     ShortcutBarControls: typeof import('./components/ShortcutBarControls.vue')['default']
     ShortcutBarExtruder: typeof import('./components/ShortcutBarExtruder.vue')['default']
+    SkipObjectDialog: typeof import('./components/dialogs/SkipObjectDialog.vue')['default']
     SpeedDialog: typeof import('./components/dialogs/SpeedDialog.vue')['default']
     TempDialog: typeof import('./components/dialogs/TempDialog.vue')['default']
     TunePanel: typeof import('./components/panels/TunePanel.vue')['default']

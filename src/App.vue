@@ -13,6 +13,24 @@ let cleanupConnectionLog: (() => void) | null = null
 let cleanupErrors: (() => void) | null = null
 let cleanupNotificationHandlers: Array<() => void> = []
 
+let syncingAfterReconnect = false
+
+async function refreshMoonrakerState() {
+  if (syncingAfterReconnect) return
+  if (!moonraker.getStatus().connected) return
+
+  try {
+    syncingAfterReconnect = true
+
+    const initialObjects = await moonraker.registerAllKnownObjects()
+    appStore.applyMoonrakerSubscriptionPayload(initialObjects)
+  } catch (error) {
+    console.warn('moonraker refresh after reconnect failed', error)
+  } finally {
+    syncingAfterReconnect = false
+  }
+}
+
 watch(
     () => appStore.getLanguage,
     (value) => {
@@ -28,14 +46,17 @@ onMounted(async () => {
 
     locale.value = resolveLocale(appStore.getLanguage)
 
-    cleanupConnectionLog = moonraker.onConnectionChange((status) => {
+    cleanupConnectionLog = moonraker.onConnectionChange(async (status) => {
       appStore.setWebsocketConnected(status.connected)
       appStore.setMoonrakerReady(status.ready)
 
       if (!status.connected) {
         appStore.resetMoonrakerData()
         appStore.resetFiles()
+        return
       }
+
+      await refreshMoonrakerState()
     })
 
     cleanupErrors = moonraker.onError((error) => {
@@ -55,8 +76,9 @@ onMounted(async () => {
         appStore.applyMoonrakerProcStats(payload)
       }),
 
-      moonraker.onNotification('notify_klippy_ready', () => {
+      moonraker.onNotification('notify_klippy_ready', async () => {
         appStore.setMoonrakerReady(true)
+        await refreshMoonrakerState()
       }),
 
       moonraker.onNotification('notify_klippy_disconnected', () => {
@@ -71,12 +93,7 @@ onMounted(async () => {
     await moonraker.startAutoConnectFromConfig()
 
     if (moonraker.getStatus().connected) {
-      try {
-        const initialObjects = await moonraker.registerAllKnownObjects()
-        appStore.applyMoonrakerSubscriptionPayload(initialObjects)
-      } catch (error) {
-        console.warn('initial moonraker subscription payload failed', error)
-      }
+      await refreshMoonrakerState()
     }
   } catch (err) {
     console.error('config/moonraker init failed:', err)

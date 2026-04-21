@@ -161,4 +161,7 @@ const heaterBedMaxTemp = computed(() => 120)
 </template>
 
 <style scoped>
+.shortcut-bar-container {
+  padding-top: 8px;
+}
 </style>

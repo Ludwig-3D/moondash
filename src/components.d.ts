@@ -19,6 +19,7 @@ declare module 'vue' {
     CurrentPrintPanel: typeof import('./components/panels/CurrentPrintPanel.vue')['default']
     ExtruderPanel: typeof import('./components/panels/ExtruderPanel.vue')['default']
     FanDialog: typeof import('./components/dialogs/FanDialog.vue')['default']
+    KeyboardOverlay: typeof import('./components/KeyboardOverlay.vue')['default']
     KlipperAlert: typeof import('./components/notifications/KlipperAlert.vue')['default']
     LaneDialogAFC: typeof import('./components/afc/LaneDialogAFC.vue')['default']
     MoonrakerAlert: typeof import('./components/notifications/MoonrakerAlert.vue')['default']

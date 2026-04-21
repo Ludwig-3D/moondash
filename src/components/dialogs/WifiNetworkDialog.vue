@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import KeyboardOverlay from '@/components/KeyboardOverlay.vue'
 
 type WifiNetwork = {
   ssid: string
@@ -26,12 +27,38 @@ const localSsid = ref('')
 const localPassword = ref('')
 const revealPassword = ref(false)
 
+const activeField = ref<'ssid' | 'password' | null>(null)
+
 const dialogOpen = computed({
   get: () => props.modelValue,
   set: (value: boolean) => emit('update:modelValue', value),
 })
 
 const isSecured = computed(() => Boolean(props.hidden || props.network?.secured))
+const canEditSsid = computed(() => Boolean(props.hidden))
+
+const keyboardVisible = computed(() => activeField.value !== null)
+
+const keyboardTitle = computed(() => {
+  if (activeField.value === 'ssid') return t('settings.network.wifi.ssid')
+  if (activeField.value === 'password') return t('settings.network.wifi.password')
+  return ''
+})
+
+const keyboardModel = computed({
+  get: () => {
+    if (activeField.value === 'ssid') return localSsid.value
+    if (activeField.value === 'password') return localPassword.value
+    return ''
+  },
+  set: (value: string) => {
+    if (activeField.value === 'ssid') {
+      localSsid.value = value
+    } else if (activeField.value === 'password') {
+      localPassword.value = value
+    }
+  },
+})
 
 watch(
     () => [props.modelValue, props.network, props.hidden],
@@ -41,12 +68,38 @@ watch(
       localSsid.value = props.hidden ? '' : (props.network?.ssid ?? '')
       localPassword.value = ''
       revealPassword.value = false
+      activeField.value = props.hidden ? 'ssid' : null
     },
     { immediate: true },
 )
 
 function closeDialog() {
   dialogOpen.value = false
+  activeField.value = null
+}
+
+function openSsidKeyboard() {
+  if (!canEditSsid.value) return
+  activeField.value = 'ssid'
+}
+
+function openPasswordKeyboard() {
+  if (!isSecured.value) return
+  activeField.value = 'password'
+}
+
+function handleKeyboardEnter() {
+  if (activeField.value === 'ssid' && isSecured.value) {
+    activeField.value = 'password'
+    return
+  }
+
+  activeField.value = null
+  submit()
+}
+
+function closeKeyboard() {
+  activeField.value = null
 }
 
 function submit() {
@@ -61,7 +114,7 @@ function submit() {
 </script>
 
 <template>
-  <v-dialog v-model="dialogOpen" max-width="640" persistent>
+  <v-dialog v-model="dialogOpen" max-width="900" persistent>
     <v-card rounded="lg">
       <v-card-title>
         {{
@@ -72,24 +125,29 @@ function submit() {
       </v-card-title>
 
       <v-card-text class="wifi-dialog__content">
-        <v-text-field
-            v-model="localSsid"
-            :label="t('settings.network.wifi.ssid')"
-            variant="outlined"
-            density="comfortable"
-            :readonly="!hidden"
-        />
+        <div class="wifi-dialog__fields">
+          <v-text-field
+              v-model="localSsid"
+              :label="t('settings.network.wifi.ssid')"
+              variant="outlined"
+              density="comfortable"
+              :readonly="true"
+              @click="openSsidKeyboard"
+          />
 
-        <v-text-field
-            v-if="isSecured"
-            v-model="localPassword"
-            :label="t('settings.network.wifi.password')"
-            :type="revealPassword ? 'text' : 'password'"
-            variant="outlined"
-            density="comfortable"
-            :append-inner-icon="revealPassword ? 'mdi-eye-off' : 'mdi-eye'"
-            @click:append-inner="revealPassword = !revealPassword"
-        />
+          <v-text-field
+              v-if="isSecured"
+              v-model="localPassword"
+              :label="t('settings.network.wifi.password')"
+              :type="revealPassword ? 'text' : 'password'"
+              variant="outlined"
+              density="comfortable"
+              :readonly="true"
+              :append-inner-icon="revealPassword ? 'mdi-eye-off' : 'mdi-eye'"
+              @click="openPasswordKeyboard"
+              @click:append-inner.stop="revealPassword = !revealPassword"
+          />
+        </div>
       </v-card-text>
 
       <v-card-actions>
@@ -108,10 +166,25 @@ function submit() {
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <KeyboardOverlay
+      v-model="keyboardModel"
+      :visible="keyboardVisible"
+      :title="keyboardTitle"
+      layout="default"
+      @enter="handleKeyboardEnter"
+      @close="closeKeyboard"
+  />
 </template>
 
 <style scoped>
 .wifi-dialog__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wifi-dialog__fields {
   display: flex;
   flex-direction: column;
   gap: 12px;

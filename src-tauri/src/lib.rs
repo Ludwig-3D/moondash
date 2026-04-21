@@ -60,7 +60,9 @@ fn default_config() -> Value {
         },
         "styling": {
             "zoom": 1.0,
-            "darkmode": true
+            "darkmode": true,
+            "primary": "",
+            "secondary": ""
         },
         "dev": {
             "debug": false

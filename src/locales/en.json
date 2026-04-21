@@ -122,5 +122,10 @@
     "restart_klipper": "Restart Klipper",
     "restart_firmware": "Restart Firmware",
     "close": "Close"
+  },
+  "color_dialog": {
+    "choose_color": "Choose a Color",
+    "additional_colors": "Additional Colors",
+    "other_colors": "Other Colors"
   }
 }

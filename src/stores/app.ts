@@ -5,6 +5,8 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 type StylingConfig = {
   zoom?: number
   darkmode?: boolean
+  primary?: string | null
+  secondary?: string | null
 }
 
 type DevConfig = {
@@ -152,6 +154,8 @@ export const useAppStore = defineStore('app', {
     zoom: 1.0 as number,
     debug: false as boolean,
     language: null as string | null,
+    primaryColor: null as string | null,
+    secondaryColor: null as string | null,
 
     websocket: {
       ip: '127.0.0.1:7125',
@@ -246,6 +250,8 @@ export const useAppStore = defineStore('app', {
   }),
 
   getters: {
+    getPrimaryColor: (state) => state.primaryColor,
+    getSecondaryColor: (state) => state.secondaryColor,
     isDarkmode: (state) => state.darkmode,
     getZoom: (state) => state.zoom,
     isDebugEnabled: (state) => state.debug,
@@ -317,6 +323,18 @@ export const useAppStore = defineStore('app', {
 
     applyConfig(config: AppConfig) {
       if (config.styling) {
+        if (typeof config.styling.primary === 'string' && config.styling.primary.trim()) {
+          this.primaryColor = config.styling.primary.trim()
+        } else {
+          this.primaryColor = null
+        }
+
+        if (typeof config.styling.secondary === 'string' && config.styling.secondary.trim()) {
+          this.secondaryColor = config.styling.secondary.trim()
+        } else {
+          this.secondaryColor = null
+        }
+
         if (typeof config.styling.darkmode === 'boolean') {
           this.setDarkmode(config.styling.darkmode)
         }

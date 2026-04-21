@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import { useI18n } from 'vue-i18n'
+import ColorPickerDialog from '@/components/dialogs/ColorPickerDialog.vue'
 
 const { t } = useI18n()
 
@@ -47,47 +48,6 @@ const materialOptions = [
   'PC',
 ]
 
-const colorOptions = [
-  '#000000',
-  '#FFFFFF',
-  '#1A1818',
-  '#434343',
-  '#6D4C41',
-  '#8D6E63',
-
-  '#E53935',
-  '#F44336',
-  '#F4511E',
-  '#FF7043',
-  '#E66100',
-  '#FB8C00',
-
-  '#FFB74D',
-  '#FDD835',
-  '#FFF176',
-  '#C0CA33',
-  '#9CCC65',
-  '#7CB342',
-
-  '#43A047',
-  '#66BB6A',
-  '#00897B',
-  '#26A69A',
-  '#00ACC1',
-  '#4DD0E1',
-
-  '#039BE5',
-  '#64B5F6',
-  '#1E88E5',
-  '#3949AB',
-  '#5E35B1',
-  '#9575CD',
-
-  '#8E24AA',
-  '#D81B60',
-  '#F06292',
-]
-
 function normalizeHexColor(color: unknown): string {
   if (typeof color !== 'string' || !color.trim()) {
     return '#434343'
@@ -105,25 +65,6 @@ function normalizeHexColor(color: unknown): string {
 
   return '#434343'
 }
-
-const otherLaneColors = computed(() => {
-  const current = normalizeHexColor(props.lane?.color)
-  const seen = new Set<string>()
-  const result: string[] = []
-
-  for (const color of props.laneColors ?? []) {
-    const normalized = normalizeHexColor(color)
-
-    if (normalized === '#434343') continue
-    if (normalized === current) continue
-    if (seen.has(normalized)) continue
-
-    seen.add(normalized)
-    result.push(normalized)
-  }
-
-  return result
-})
 
 watch(
     () => props.lane,
@@ -150,17 +91,6 @@ function openColorPicker() {
   colorPickerOpen.value = true
 }
 
-function closeColorPicker() {
-  if (saving.value) return
-  colorPickerOpen.value = false
-}
-
-function selectColor(color: string) {
-  if (saving.value) return
-  localColor.value = color
-  colorPickerOpen.value = false
-}
-
 function parseWeight(value: string): number | null {
   const trimmed = value.trim()
   if (!trimmed) return null
@@ -181,6 +111,10 @@ function adjustWeight(delta: number) {
   const current = parseWeight(localWeight.value) ?? 0
   const next = Math.max(0, current + delta)
   localWeight.value = String(next)
+}
+
+function onColorSelected(color: string) {
+  localColor.value = normalizeHexColor(color)
 }
 
 async function saveDialog() {
@@ -362,67 +296,14 @@ async function saveDialog() {
     </v-card>
   </v-dialog>
 
-  <v-dialog
+  <ColorPickerDialog
       v-model="colorPickerOpen"
-      fullscreen
-      persistent
-      transition="dialog-bottom-transition"
-  >
-    <v-card>
-      <v-toolbar>
-        <v-btn
-            icon="mdi-close"
-            :disabled="saving"
-            @click="closeColorPicker"
-        />
-        <v-toolbar-title>{{ t('afc.edit.choose_color') }}</v-toolbar-title>
-        <v-spacer />
-      </v-toolbar>
-
-      <v-card-text class="color-picker-fullscreen">
-        <div
-            v-if="otherLaneColors.length"
-            class="color-picker-section"
-        >
-          <div class="color-picker-section-title">
-            {{ t('afc.edit.other_lane_colors') }}
-          </div>
-
-          <div class="color-picker-swatches color-picker-swatches--compact">
-            <button
-                v-for="color in otherLaneColors"
-                :key="`other-${color}`"
-                type="button"
-                class="color-picker-swatch color-picker-swatch--small"
-                :class="{ 'color-picker-swatch--active': localColor === color }"
-                :style="{ backgroundColor: color }"
-                :disabled="saving"
-                @click="selectColor(color)"
-            />
-          </div>
-        </div>
-
-        <div class="color-picker-section">
-          <div class="color-picker-section-title">
-            {{ t('afc.edit.other_colors') }}
-          </div>
-
-          <div class="color-picker-swatches">
-            <button
-                v-for="color in colorOptions"
-                :key="color"
-                type="button"
-                class="color-picker-swatch"
-                :class="{ 'color-picker-swatch--active': localColor === color }"
-                :style="{ backgroundColor: color }"
-                :disabled="saving"
-                @click="selectColor(color)"
-            />
-          </div>
-        </div>
-      </v-card-text>
-    </v-card>
-  </v-dialog>
+      :selected-color="localColor"
+      :additional-colors="props.laneColors ?? []"
+      :additional-colors-title="t('afc.edit.other_lane_colors')"
+      :vibrant-only="false"
+      @select="onColorSelected"
+  />
 </template>
 
 <style scoped>
@@ -517,52 +398,5 @@ async function saveDialog() {
 .lane-dialog-weight-adjust-value :deep(.v-field) {
   border-radius: 0;
   box-shadow: none;
-}
-
-.color-picker-fullscreen {
-  padding: 24px;
-}
-
-.color-picker-section + .color-picker-section {
-  margin-top: 20px;
-}
-
-.color-picker-section-title {
-  font-size: 1.1rem;
-  margin-bottom: 12px;
-  opacity: 0.9;
-}
-
-.color-picker-swatches {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
-  gap: 18px;
-}
-
-.color-picker-swatches--compact {
-  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
-  gap: 14px;
-}
-
-.color-picker-swatch {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 18px;
-  border: 2px solid rgb(0 0 0 / 0.35);
-  cursor: pointer;
-}
-
-.color-picker-swatch--small {
-  border-radius: 14px;
-}
-
-.color-picker-swatch--active {
-  outline: 4px solid rgb(var(--v-theme-primary));
-  outline-offset: 3px;
-}
-
-.color-picker-swatch:disabled {
-  cursor: default;
-  opacity: 0.7;
 }
 </style>

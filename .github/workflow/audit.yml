@@ -1,0 +1,68 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Frontend audit
+        run: npm audit --audit-level=high
+
+      - name: Frontend build
+        run: npm run build --if-present
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Rust audit
+        working-directory: src-tauri
+        run: cargo audit
+
+      - name: Rust build check
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: Notify Discord on failure
+        if: ${{ failure() }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          [ -n "${DISCORD_WEBHOOK_URL:-}" ] || exit 0
+
+          REPO="${GITHUB_REPOSITORY:-unknown}"
+          REF="${GITHUB_REF:-unknown}"
+          SHA_FULL="${GITHUB_SHA:-unknown}"
+          SHA="${SHA_FULL:0:7}"
+          RUN_URL="${GITHUB_SERVER_URL:-}/$REPO/actions/runs/${GITHUB_RUN_ID:-}"
+
+          CONTENT="**Security audit failed**\nRepo: \`$REPO\`\nRef: \`$REF\`\nCommit: \`$SHA\`\nRun: $RUN_URL"
+          CONTENT_ESCAPED="${CONTENT//\"/\\\"}"
+
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"content\":\"$CONTENT_ESCAPED\"}" \
+            "$DISCORD_WEBHOOK_URL" >/dev/null

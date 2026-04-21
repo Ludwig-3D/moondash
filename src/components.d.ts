@@ -24,6 +24,7 @@ declare module 'vue' {
     NotificationPanel: typeof import('./components/panels/NotificationPanel.vue')['default']
     PanelAFC: typeof import('./components/afc/PanelAFC.vue')['default']
     PanelExtruder: typeof import('./components/panels/PanelExtruder.vue')['default']
+    PowerDialog: typeof import('./components/dialogs/PowerDialog.vue')['default']
     PrintDialog: typeof import('./components/dialogs/PrintDialog.vue')['default']
     PrintFilePanel: typeof import('./components/panels/PrintFilePanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']

@@ -9,7 +9,7 @@ const { isDebugEnabled } = storeToRefs(appStore)
 <template>
   <v-navigation-drawer rail permanent class="sidenav" rail-width="58">
     <v-list class="nav-list" density="compact" nav>
-      <v-list-item color="primary" prepend-icon="mdi-home" to="/" />
+      <v-list-item color="primary" prepend-icon="mdi-home-variant" to="/" />
       <v-list-item color="primary" prepend-icon="mdi-tune-vertical-variant" to="/tune" />
       <v-list-item color="primary" prepend-icon="mdi-printer-3d" to="/files" />
       <v-list-item color="primary" prepend-icon="mdi-cog" to="/settings" />

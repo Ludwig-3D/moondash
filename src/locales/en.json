@@ -112,5 +112,13 @@
       "message_fallback": "Moonraker reported a connection issue.",
       "reconnect": "Reconnect"
     }
+  },
+  "power_dialog": {
+    "title": "Power",
+    "shutdown": "Power off",
+    "reboot": "Reboot",
+    "restart_klipper": "Restart Klipper",
+    "restart_firmware": "Restart Firmware",
+    "close": "Close"
   }
 }

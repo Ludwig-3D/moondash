@@ -2,10 +2,12 @@
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '@/stores/app'
+import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import ShortcutBarButton from './ShortcutBarButton.vue'
 import ShortcutBarAFC from './afc/ShortcutBarAFC.vue'
 import TempDialog from './dialogs/TempDialog.vue'
 import SpeedDialog from './dialogs/SpeedDialog.vue'
+import PowerDialog from './dialogs/PowerDialog.vue'
 
 const appStore = useAppStore()
 const { moonraker } = storeToRefs(appStore)
@@ -13,6 +15,8 @@ const { moonraker } = storeToRefs(appStore)
 const extruderDialogOpen = ref(false)
 const heaterBedDialogOpen = ref(false)
 const speedDialogOpen = ref(false)
+const powerDialogOpen = ref(false)
+const emergencyStopping = ref(false)
 
 const extruderLabel = computed(() => {
   const temp = moonraker.value.extruder.temperature
@@ -51,15 +55,12 @@ const printSpeedIcon = computed(() => {
   if (typeof printSpeedPercent.value !== 'number') {
     return 'mdi-speedometer-medium'
   }
-
   if (printSpeedPercent.value > 100) {
     return 'mdi-speedometer'
   }
-
   if (printSpeedPercent.value < 100) {
     return 'mdi-speedometer-slow'
   }
-
   return 'mdi-speedometer-medium'
 })
 
@@ -89,11 +90,45 @@ const heaterBedIsHeating = computed(() => {
 
 const extruderMaxTemp = computed(() => 300)
 const heaterBedMaxTemp = computed(() => 120)
+
+const printerState = computed(() => moonraker.value.printStats.state?.toLowerCase() ?? '')
+const isPrinterRunning = computed(() => {
+  return [
+    'printing',
+    'paused',
+    'pausing',
+    'resuming',
+  ].includes(printerState.value)
+})
+
+async function emergencyStop() {
+  if (emergencyStopping.value) return
+
+  try {
+    emergencyStopping.value = true
+    await moonrakerClient.call('printer.emergency_stop')
+  } finally {
+    emergencyStopping.value = false
+  }
+}
+
+function onTopPowerAction() {
+  if (isPrinterRunning.value) {
+    void emergencyStop()
+    return
+  }
+
+  powerDialogOpen.value = true
+}
 </script>
 
 <template>
   <div class="shortcut-bar-container">
-    <v-btn icon="mdi-lightbulb" class="shortcut-bar-led-btn" variant="tonal" />
+    <v-btn
+        icon="mdi-lightbulb"
+        class="shortcut-bar-led-btn"
+        variant="tonal"
+    />
 
     <v-list class="shortcut-bar-list" rounded="rounded">
       <v-list-item class="pa-0">
@@ -129,6 +164,17 @@ const heaterBedMaxTemp = computed(() => 120)
       <v-divider />
 
       <v-list-item class="shortcut-bar-bottom-item pa-0">
+        <v-divider />
+
+        <v-list-item class="pa-0">
+          <ShortcutBarButton
+              :icon="isPrinterRunning ? 'mdi-alert-octagon' : 'mdi-power'"
+              :color="isPrinterRunning ? 'error' : undefined"
+              :loading="emergencyStopping"
+              @click="onTopPowerAction"
+          />
+        </v-list-item>
+
         <ShortcutBarAFC />
       </v-list-item>
     </v-list>
@@ -157,6 +203,8 @@ const heaterBedMaxTemp = computed(() => 120)
         v-model="speedDialogOpen"
         :current-percent="printSpeedPercent"
     />
+
+    <PowerDialog v-model="powerDialogOpen" />
   </div>
 </template>
 

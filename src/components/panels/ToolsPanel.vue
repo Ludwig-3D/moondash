@@ -5,7 +5,7 @@ import BedMeshToolPanel from '@/components/panels/BedMeshToolPanel.vue'
 import PidToolPanel from '@/components/panels/PidToolPanel.vue'
 import WebcamToolPanel from '@/components/panels/WebcamToolPanel.vue'
 
-type ToolView = 'home' | 'bed-mesh' | 'pid' | 'resonance' | 'webcam'
+type ToolView = 'home' | 'bed-mesh' | 'pid' | 'webcam'
 
 const { t } = useI18n()
 const currentView = ref<ToolView>('home')

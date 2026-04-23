@@ -71,41 +71,41 @@
   min-height: 50px;
 }
 
-.control-input :deep(.v-input) {
+.control-input {
   width: 100%;
 }
 
-.control-input :deep(.v-input__control) {
+.control-input {
   height: 100%;
 }
 
-.control-input :deep(.v-field) {
+.control-input {
   border-radius: 0;
   box-shadow: none;
 }
 
-.control-input--tall :deep(.v-field) {
+.control-input--tall {
   height: 100%;
   background: transparent;
 }
 
-.control-input :deep(.v-field__field) {
+.control-input {
   height: 100%;
 }
 
-.control-input :deep(.v-field__input) {
+.control-input {
   justify-content: center;
   text-align: center;
 }
 
-.control-input--tall :deep(.v-field__input) {
+.control-input--tall {
   min-height: 50px;
   height: 100%;
   padding-top: 0;
   padding-bottom: 0;
 }
 
-.control-input :deep(input) {
+.control-input {
   text-align: center;
 }
 

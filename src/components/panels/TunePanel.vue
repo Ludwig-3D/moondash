@@ -188,12 +188,12 @@ async function savePressureAdvanceSmoothTime() {
       <v-card-title>{{ t('tune.flow') }}</v-card-title>
 
       <v-card-text>
-        <div class="tune-grid">
-          <div class="tune-inline-wrap">
-            <div class="tune-inline-row">
+        <div class="panel-grid">
+          <div class="form-field">
+            <div class="control-row control-row--wide">
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustFlow(-10)"
               >
@@ -202,7 +202,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustFlow(-5)"
               >
@@ -211,14 +211,14 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustFlow(-1)"
               >
                 -1
               </button>
 
-              <div class="tune-input-slot">
+              <div class="control-input control-input--tall">
                 <v-text-field
                     v-model="flowInput"
                     variant="outlined"
@@ -236,7 +236,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustFlow(1)"
               >
@@ -245,7 +245,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustFlow(5)"
               >
@@ -254,7 +254,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustFlow(10)"
               >
@@ -262,7 +262,7 @@ async function savePressureAdvanceSmoothTime() {
               </button>
 
               <v-btn
-                  class="tune-save-btn"
+                  class="action-btn"
                   color="primary"
                   variant="flat"
                   :loading="isSaving('flow')"
@@ -282,12 +282,12 @@ async function savePressureAdvanceSmoothTime() {
       <v-card-title>{{ t('tune.pa') }}</v-card-title>
 
       <v-card-text>
-        <div class="tune-grid">
-          <div class="tune-inline-wrap">
-            <div class="tune-inline-row">
+        <div class="panel-grid">
+          <div class="form-field">
+            <div class="control-row control-row--wide">
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPa(-0.1)"
               >
@@ -296,7 +296,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPa(-0.01)"
               >
@@ -305,14 +305,14 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPa(-0.001)"
               >
                 -0.001
               </button>
 
-              <div class="tune-input-slot">
+              <div class="control-input control-input--tall">
                 <v-text-field
                     v-model="paInput"
                     variant="outlined"
@@ -329,7 +329,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPa(0.001)"
               >
@@ -338,7 +338,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPa(0.01)"
               >
@@ -347,7 +347,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPa(0.1)"
               >
@@ -355,7 +355,7 @@ async function savePressureAdvanceSmoothTime() {
               </button>
 
               <v-btn
-                  class="tune-save-btn"
+                  class="action-btn"
                   color="primary"
                   variant="flat"
                   :loading="isSaving('pa')"
@@ -375,12 +375,12 @@ async function savePressureAdvanceSmoothTime() {
       <v-card-title>{{ t('tune.pa_smooth') }}</v-card-title>
 
       <v-card-text>
-        <div class="tune-grid">
-          <div class="tune-inline-wrap">
-            <div class="tune-inline-row">
+        <div class="panel-grid">
+          <div class="form-field">
+            <div class="control-row control-row--wide">
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPaSmooth(-0.1)"
               >
@@ -389,7 +389,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPaSmooth(-0.01)"
               >
@@ -398,14 +398,14 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPaSmooth(-0.001)"
               >
                 -0.001
               </button>
 
-              <div class="tune-input-slot">
+              <div class="control-input control-input--tall">
                 <v-text-field
                     v-model="paSmoothTimeInput"
                     variant="outlined"
@@ -423,7 +423,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPaSmooth(0.001)"
               >
@@ -432,7 +432,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPaSmooth(0.01)"
               >
@@ -441,7 +441,7 @@ async function savePressureAdvanceSmoothTime() {
 
               <button
                   type="button"
-                  class="tune-adjust"
+                  class="control-btn"
                   :disabled="!!savingAction"
                   @click="adjustPaSmooth(0.1)"
               >
@@ -449,7 +449,7 @@ async function savePressureAdvanceSmoothTime() {
               </button>
 
               <v-btn
-                  class="tune-save-btn"
+                  class="action-btn"
                   color="primary"
                   variant="flat"
                   :loading="isSaving('pa_smooth')"
@@ -477,57 +477,6 @@ async function savePressureAdvanceSmoothTime() {
 
 .tune-card {
   width: 100%;
-}
-
-.tune-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
-  align-items: center;
-}
-
-.tune-inline-wrap {
-  min-width: 0;
-}
-
-.tune-inline-row {
-  display: grid;
-  grid-template-columns: repeat(3, 70px) minmax(120px, 1fr) repeat(3, 70px) 56px;
-  align-items: stretch;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.tune-adjust {
-  appearance: none;
-  border: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.02);
-  color: inherit;
-  font: inherit;
-  padding: 0 8px;
-  min-height: 50px;
-  cursor: pointer;
-}
-
-.tune-adjust:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.tune-adjust:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.tune-input-slot {
-  min-width: 0;
-  min-height: 50px;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-  background: rgba(255, 255, 255, 0.02);
 }
 
 .tune-input-slot :deep(.v-input) {
@@ -562,13 +511,5 @@ async function savePressureAdvanceSmoothTime() {
 
 .tune-input-slot :deep(input) {
   text-align: center;
-}
-
-.tune-save-btn {
-  min-width: 56px !important;
-  width: 56px;
-  min-height: 50px;
-  border-radius: 0 !important;
-  box-shadow: none !important;
 }
 </style>

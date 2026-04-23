@@ -163,16 +163,16 @@ async function saveDialog() {
       </v-card-title>
 
       <v-card-text class="px-6 pb-2">
-        <div class="fan-dialog-grid">
-          <div class="fan-dialog-label">
+        <div class="form-grid">
+          <div class="form-label">
             {{ t('fan.dialog.target') }}
           </div>
 
-          <div class="fan-dialog-inline-wrap">
-            <div class="fan-dialog-inline-row">
+          <div class="form-field">
+            <div class="control-row control-row--compact">
               <button
                   type="button"
-                  class="fan-dialog-adjust"
+                  class="control-btn"
                   :disabled="saving"
                   @click="setMin"
               >
@@ -181,7 +181,7 @@ async function saveDialog() {
 
               <button
                   type="button"
-                  class="fan-dialog-adjust"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustValue(-10)"
               >
@@ -190,14 +190,14 @@ async function saveDialog() {
 
               <button
                   type="button"
-                  class="fan-dialog-adjust"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustValue(-1)"
               >
                 -1
               </button>
 
-              <div class="fan-dialog-input-slot">
+              <div class="control-input">
                 <v-text-field
                     v-model="localValue"
                     variant="outlined"
@@ -215,7 +215,7 @@ async function saveDialog() {
 
               <button
                   type="button"
-                  class="fan-dialog-adjust"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustValue(1)"
               >
@@ -224,7 +224,7 @@ async function saveDialog() {
 
               <button
                   type="button"
-                  class="fan-dialog-adjust"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustValue(10)"
               >
@@ -233,7 +233,7 @@ async function saveDialog() {
 
               <button
                   type="button"
-                  class="fan-dialog-adjust"
+                  class="control-btn"
                   :disabled="saving"
                   @click="setMax"
               >
@@ -264,82 +264,4 @@ async function saveDialog() {
 </template>
 
 <style scoped>
-.fan-dialog-grid {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 24px 24px;
-  align-items: center;
-}
-
-.fan-dialog-label {
-  font-size: 1.25rem;
-}
-
-.fan-dialog-value {
-  font-size: 1rem;
-  font-weight: 500;
-  min-height: 24px;
-  display: flex;
-  align-items: center;
-}
-
-.fan-dialog-inline-wrap {
-  min-width: 0;
-}
-
-.fan-dialog-inline-row {
-  display: grid;
-  grid-template-columns: repeat(3, 60px) minmax(140px, 1fr) repeat(3, 60px);
-  align-items: stretch;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.fan-dialog-adjust {
-  appearance: none;
-  border: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.02);
-  color: inherit;
-  font: inherit;
-  padding: 0 8px;
-  min-height: 50px;
-  cursor: pointer;
-  text-transform: lowercase;
-}
-
-.fan-dialog-adjust:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.fan-dialog-adjust:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.fan-dialog-input-slot {
-  min-width: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  display: flex;
-  align-items: stretch;
-}
-
-.fan-dialog-input-slot :deep(.v-input) {
-  width: 100%;
-}
-
-.fan-dialog-input-slot :deep(.v-field) {
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.fan-dialog-input-slot :deep(.v-field__input) {
-  justify-content: center;
-  text-align: center;
-}
-
-.fan-dialog-input-slot :deep(input) {
-  text-align: center;
-}
 </style>

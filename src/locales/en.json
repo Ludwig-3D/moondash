@@ -16,8 +16,8 @@
       "empty": "Empty"
     },
     "edit": {
-      "save": "save",
-      "cancel": "cancel",
+      "save": "Save",
+      "cancel": "Cancel",
       "filament": "Filament",
       "color": "Color",
       "weight": "Weight",
@@ -175,17 +175,11 @@
       "dialog": {
         "title": "Edit Shortcut Button",
         "fields": {
-          "sectionName": "Section name",
+          "sectionName": "Name",
           "icon": "Icon",
           "macroInactive": "Macro inactive",
           "macroActive": "Macro active",
-          "activeConfig": "Active config"
-        },
-        "placeholders": {
-          "sectionName": "chamber",
-          "macroInactive": "TOGGLE_CHAMBERLIGHT",
-          "macroActive": "optional",
-          "activeConfig": "output_pin chamberlight"
+          "activeConfig": "Sensor"
         },
         "threshold": {
           "outputPin": "Threshold is automatic: 0.5",

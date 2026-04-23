@@ -168,12 +168,12 @@ async function saveDialog() {
       </v-card-title>
 
       <v-card-text class="px-6 pb-2">
-        <div class="lane-dialog-grid">
-          <div class="lane-dialog-label">
+        <div class="form-grid">
+          <div class="form-label">
             {{ t('afc.edit.filament') }}
           </div>
 
-          <div class="lane-dialog-field">
+          <div class="form-field">
             <v-select
                 v-model="localMaterial"
                 :items="materialOptions"
@@ -185,33 +185,33 @@ async function saveDialog() {
             />
           </div>
 
-          <div class="lane-dialog-label">
+          <div class="form-label">
             {{ t('afc.edit.color') }}
           </div>
 
-          <div class="lane-dialog-color-row">
+          <div class="color-row">
             <button
-                class="lane-dialog-color-preview lane-dialog-color-preview--button"
+                class="color-swatch color-swatch--button"
                 :style="{ backgroundColor: localColor }"
                 type="button"
                 :disabled="saving"
                 @click="openColorPicker"
             />
 
-            <div class="lane-dialog-color-value">
+            <div class="color-value">
               {{ localColor }}
             </div>
           </div>
 
-          <div class="lane-dialog-label">
+          <div class="form-label">
             {{ t('afc.edit.weight') }}
           </div>
 
-          <div class="lane-dialog-weight-wrap">
-            <div class="lane-dialog-weight-adjust-row">
+          <div class="form-field">
+            <div class="control-row control-row--compact">
               <button
                   type="button"
-                  class="lane-dialog-weight-adjust"
+                  class="control-btn control-btn--small"
                   :disabled="saving"
                   @click="adjustWeight(-100)"
               >
@@ -219,7 +219,7 @@ async function saveDialog() {
               </button>
               <button
                   type="button"
-                  class="lane-dialog-weight-adjust"
+                  class="control-btn control-btn--small"
                   :disabled="saving"
                   @click="adjustWeight(-10)"
               >
@@ -227,14 +227,14 @@ async function saveDialog() {
               </button>
               <button
                   type="button"
-                  class="lane-dialog-weight-adjust"
+                  class="control-btn control-btn--small"
                   :disabled="saving"
                   @click="adjustWeight(-1)"
               >
                 -1
               </button>
 
-              <div class="lane-dialog-weight-adjust-value">
+              <div class="control-input">
                 <v-text-field
                     v-model="localWeight"
                     variant="outlined"
@@ -251,7 +251,7 @@ async function saveDialog() {
 
               <button
                   type="button"
-                  class="lane-dialog-weight-adjust"
+                  class="control-btn control-btn--small"
                   :disabled="saving"
                   @click="adjustWeight(1)"
               >
@@ -259,7 +259,7 @@ async function saveDialog() {
               </button>
               <button
                   type="button"
-                  class="lane-dialog-weight-adjust"
+                  class="control-btn control-btn--small"
                   :disabled="saving"
                   @click="adjustWeight(10)"
               >
@@ -267,7 +267,7 @@ async function saveDialog() {
               </button>
               <button
                   type="button"
-                  class="lane-dialog-weight-adjust"
+                  class="control-btn control-btn--small"
                   :disabled="saving"
                   @click="adjustWeight(100)"
               >
@@ -307,96 +307,4 @@ async function saveDialog() {
 </template>
 
 <style scoped>
-.lane-dialog-grid {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 24px 24px;
-  align-items: center;
-}
-
-.lane-dialog-label {
-  font-size: 1.25rem;
-}
-
-.lane-dialog-field {
-  min-width: 0;
-}
-
-.lane-dialog-color-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.lane-dialog-color-preview {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  border: 2px solid rgb(0 0 0 / 0.35);
-  flex: 0 0 auto;
-}
-
-.lane-dialog-color-preview--button {
-  cursor: pointer;
-}
-
-.lane-dialog-color-preview--button:disabled {
-  cursor: default;
-  opacity: 0.7;
-}
-
-.lane-dialog-color-value {
-  font-weight: 300;
-  letter-spacing: 0.04em;
-}
-
-.lane-dialog-weight-wrap {
-  min-width: 0;
-}
-
-.lane-dialog-weight-adjust-row {
-  display: grid;
-  grid-template-columns: repeat(3, 60px) minmax(140px, 1fr) repeat(3, 60px);
-  align-items: stretch;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.lane-dialog-weight-adjust {
-  appearance: none;
-  border: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.02);
-  color: inherit;
-  font: inherit;
-  padding: 0 8px;
-  min-height: 44px;
-  cursor: pointer;
-}
-
-.lane-dialog-weight-adjust:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.lane-dialog-weight-adjust:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.lane-dialog-weight-adjust-value {
-  min-width: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.14);
-  display: flex;
-  align-items: stretch;
-}
-
-.lane-dialog-weight-adjust-value :deep(.v-input) {
-  width: 100%;
-}
-
-.lane-dialog-weight-adjust-value :deep(.v-field) {
-  border-radius: 0;
-  box-shadow: none;
-}
 </style>

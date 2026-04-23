@@ -166,10 +166,7 @@ async function toggleSensor(sensor: SensorItem) {
 
       <v-divider />
 
-      <template
-          v-for="sensor in filamentSensors"
-          :key="sensor.key"
-      >
+      <template v-for="sensor in filamentSensors" :key="sensor.key">
         <v-list-item class="pa-0">
           <v-btn
               block
@@ -210,6 +207,7 @@ async function toggleSensor(sensor: SensorItem) {
 .sensor-btn {
   min-height: 56px;
   text-transform: none;
+  width: 100%;
 }
 
 .sensor-btn--off {

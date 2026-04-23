@@ -228,10 +228,7 @@ async function runQgl() {
           </v-btn>
         </div>
 
-        <div
-            v-if="hasZTilt || hasQgl"
-            class="level-actions"
-        >
+        <div v-if="hasZTilt || hasQgl" class="level-actions">
           <v-btn
               v-if="hasZTilt"
               variant="tonal"

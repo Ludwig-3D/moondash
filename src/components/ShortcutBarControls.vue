@@ -286,6 +286,16 @@ function handleFanClick(item: (typeof fanItems.value)[number]) {
   height: calc(100vh - 45px);
 }
 
+.shortcut-bar-list {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: rgba(var(--v-theme-on-surface), 0.12);
+}
+
 .control-card {
   width: 100%;
   border: 0;

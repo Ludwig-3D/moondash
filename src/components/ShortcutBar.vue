@@ -15,6 +15,10 @@ const extruderDialogOpen = ref(false)
 const heaterBedDialogOpen = ref(false)
 const speedDialogOpen = ref(false)
 
+const orderedShortcutButtons = computed(() => {
+  return [...shortcutButtons.value].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+})
+
 const extruderLabel = computed(() => {
   const temp = moonraker.value.extruder.temperature
   if (typeof temp !== 'number') return '--°C'
@@ -92,7 +96,7 @@ const heaterBedMaxTemp = computed(() => 120)
 <template>
   <div class="shortcut-bar-container">
     <div class="shortcut-bar-shortcuts">
-      <template v-for="item in shortcutButtons" :key="item.name">
+      <template v-for="item in orderedShortcutButtons" :key="item.name">
         <ShortcutBarShortcutButton :item="item" />
       </template>
     </div>

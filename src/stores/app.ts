@@ -19,6 +19,7 @@ type SystemConfig = {
 
 export type ShortcutButtonConfig = {
   name: string
+  position?: number
   macro_inactive: string
   macro_active?: string
   icon: string
@@ -159,6 +160,33 @@ function prettifyMoonrakerObjectName(key: string): string {
       .replace(/_/g, ' ')
 }
 
+function sortShortcutButtons(items: ShortcutButtonConfig[]): ShortcutButtonConfig[] {
+  return [...items].sort((a, b) => {
+    const aPos = typeof a.position === 'number' ? a.position : Number.MAX_SAFE_INTEGER
+    const bPos = typeof b.position === 'number' ? b.position : Number.MAX_SAFE_INTEGER
+
+    if (aPos !== bPos) return aPos - bPos
+    return a.name.localeCompare(b.name)
+  })
+}
+
+function normalizeShortcutButtons(items: ShortcutButtonConfig[]): ShortcutButtonConfig[] {
+  return sortShortcutButtons(items).map((item, index) => ({
+    ...item,
+    name: item.name.trim(),
+    macro_inactive: item.macro_inactive.trim(),
+    macro_active: item.macro_active?.trim() || undefined,
+    icon: item.icon.trim(),
+    active_config: item.active_config?.trim() || undefined,
+    active_type: item.active_type?.trim() || undefined,
+    active_threshould:
+        typeof item.active_threshould === 'number' && Number.isFinite(item.active_threshould)
+            ? item.active_threshould
+            : undefined,
+    position: index,
+  }))
+}
+
 function parseShortcutButtonsFromConfig(config: Record<string, unknown>): ShortcutButtonConfig[] {
   const result: ShortcutButtonConfig[] = []
 
@@ -181,6 +209,9 @@ function parseShortcutButtonsFromConfig(config: Record<string, unknown>): Shortc
       icon,
     }
 
+    const position = asNumber(record.position)
+    if (typeof position === 'number') button.position = position
+
     const macroActive = asString(record.macro_active)
     if (macroActive) button.macro_active = macroActive
 
@@ -196,7 +227,7 @@ function parseShortcutButtonsFromConfig(config: Record<string, unknown>): Shortc
     result.push(button)
   }
 
-  return result.sort((a, b) => a.name.localeCompare(b.name))
+  return normalizeShortcutButtons(result)
 }
 
 export const useAppStore = defineStore('app', {
@@ -375,7 +406,7 @@ export const useAppStore = defineStore('app', {
     },
 
     setShortcutButtons(value: ShortcutButtonConfig[]) {
-      this.shortcutButtons = Array.isArray(value) ? value : []
+      this.shortcutButtons = Array.isArray(value) ? normalizeShortcutButtons(value) : []
     },
 
     applyConfig(config: AppConfig) {
@@ -419,7 +450,13 @@ export const useAppStore = defineStore('app', {
         this.setShortcutButtons(
             config.shortcutbuttons.filter(
                 (item): item is ShortcutButtonConfig =>
-                    Boolean(item && typeof item.name === 'string' && item.name.trim() && typeof item.macro_inactive === 'string' && typeof item.icon === 'string'),
+                    Boolean(
+                        item &&
+                        typeof item.name === 'string' &&
+                        item.name.trim() &&
+                        typeof item.macro_inactive === 'string' &&
+                        typeof item.icon === 'string',
+                    ),
             ),
         )
       } else if (typeof config === 'object' && config !== null) {
@@ -454,11 +491,36 @@ export const useAppStore = defineStore('app', {
       system?: {
         language?: string | null
       }
+      shortcutbuttons?: ShortcutButtonConfig[]
     }) {
       if (!isTauriRuntime()) return null
 
+      const normalizedPayload = {
+        ...payload,
+        shortcutbuttons: payload.shortcutbuttons
+            ? normalizeShortcutButtons(payload.shortcutbuttons)
+            : undefined,
+      }
+
       const config = await invoke<AppConfig>('save_editable_config', {
-        editableConfig: payload,
+        editableConfig: normalizedPayload,
+      })
+
+      this.applyConfig(config)
+      return config
+    },
+
+    async saveShortcutButtons(shortcutbuttons: ShortcutButtonConfig[]) {
+      if (!isTauriRuntime()) return null
+
+      const normalizedButtons = normalizeShortcutButtons(shortcutbuttons)
+
+      this.setShortcutButtons(normalizedButtons)
+
+      const config = await invoke<AppConfig>('save_editable_config', {
+        editableConfig: {
+          shortcutbuttons: normalizedButtons,
+        },
       })
 
       this.applyConfig(config)

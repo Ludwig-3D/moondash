@@ -139,6 +139,87 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
             system_obj.insert("language".to_string(), normalize_nullable_string(value));
         }
     }
+
+    if let Some(shortcutbuttons_patch) = patch_obj.get("shortcutbuttons").and_then(Value::as_array) {
+        // keep ordered array in memory
+        target_obj.insert(
+            "shortcutbuttons".to_string(),
+            Value::Array(shortcutbuttons_patch.clone()),
+        );
+
+        // remove old section entries
+        let keys_to_remove: Vec<String> = target_obj
+            .keys()
+            .filter(|key| key.to_lowercase().starts_with("shortcutbutton "))
+            .cloned()
+            .collect();
+
+        for key in keys_to_remove {
+            target_obj.remove(&key);
+        }
+
+        // recreate sections from ordered array
+        for button in shortcutbuttons_patch {
+            let Some(button_obj) = button.as_object() else {
+                continue;
+            };
+
+            let Some(name) = button_obj.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+
+            let Some(macro_inactive) = button_obj.get("macro_inactive").and_then(Value::as_str) else {
+                continue;
+            };
+
+            let Some(icon) = button_obj.get("icon").and_then(Value::as_str) else {
+                continue;
+            };
+
+            let mut section = Map::new();
+
+            if let Some(value) = button_obj.get("position") {
+                if value.is_number() {
+                    section.insert("position".to_string(), value.clone());
+                }
+            }
+
+            section.insert(
+                "macro_inactive".to_string(),
+                Value::String(macro_inactive.trim().to_string()),
+            );
+            section.insert("icon".to_string(), Value::String(icon.trim().to_string()));
+
+            if let Some(value) = button_obj.get("macro_active").and_then(Value::as_str) {
+                if !value.trim().is_empty() {
+                    section.insert("macro_active".to_string(), Value::String(value.trim().to_string()));
+                }
+            }
+
+            if let Some(value) = button_obj.get("active_config").and_then(Value::as_str) {
+                if !value.trim().is_empty() {
+                    section.insert("active_config".to_string(), Value::String(value.trim().to_string()));
+                }
+            }
+
+            if let Some(value) = button_obj.get("active_type").and_then(Value::as_str) {
+                if !value.trim().is_empty() {
+                    section.insert("active_type".to_string(), Value::String(value.trim().to_string()));
+                }
+            }
+
+            if let Some(value) = button_obj.get("active_threshould") {
+                if value.is_number() {
+                    section.insert("active_threshould".to_string(), value.clone());
+                }
+            }
+
+            target_obj.insert(
+                format!("shortcutbutton {}", name.trim()),
+                Value::Object(section),
+            );
+        }
+    }
 }
 
 fn normalize_nullable_string(value: &Value) -> Value {
@@ -169,26 +250,35 @@ fn serialize_cfg(config: &Value) -> String {
         .collect();
 
     for key in root.keys() {
+        if key == "shortcutbuttons" {
+            continue;
+        }
+
+        if key.to_lowercase().starts_with("shortcutbutton ") {
+            continue;
+        }
+
         if !sections.iter().any(|existing| existing == key) {
             sections.push(key.clone());
         }
     }
 
     let mut out = String::new();
+    let mut wrote_any = false;
 
-    for (index, section_name) in sections.iter().enumerate() {
-        let Some(section_value) = root.get(section_name) else {
+    for section_name in sections {
+        let Some(section_value) = root.get(&section_name) else {
             continue;
         };
 
-        if index > 0 {
+        if wrote_any {
             out.push('\n');
         }
 
         match section_value {
             Value::Object(section_obj) => {
                 out.push('[');
-                out.push_str(section_name);
+                out.push_str(&section_name);
                 out.push_str("]\n");
 
                 let mut keys: Vec<_> = section_obj.keys().cloned().collect();
@@ -203,11 +293,64 @@ fn serialize_cfg(config: &Value) -> String {
                 }
             }
             other => {
-                out.push_str(section_name);
+                out.push_str(&section_name);
                 out.push_str(": ");
                 out.push_str(&serialize_scalar(other));
                 out.push('\n');
             }
+        }
+
+        wrote_any = true;
+    }
+
+    if let Some(shortcutbuttons) = root.get("shortcutbuttons").and_then(Value::as_array) {
+        for button in shortcutbuttons {
+            let Some(button_obj) = button.as_object() else {
+                continue;
+            };
+
+            let Some(name) = button_obj.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+
+            if wrote_any {
+                out.push('\n');
+            }
+
+            out.push('[');
+            out.push_str("shortcutbutton ");
+            out.push_str(name.trim());
+            out.push_str("]\n");
+
+            let mut keys: Vec<String> = button_obj
+                .keys()
+                .filter(|k| k.as_str() != "name")
+                .cloned()
+                .collect();
+
+            keys.sort();
+
+            if let Some(pos_index) = keys.iter().position(|k| k == "position") {
+                let pos = keys.remove(pos_index);
+                keys.insert(0, pos);
+            }
+
+            for key in keys {
+                let value = button_obj.get(&key).unwrap_or(&Value::Null);
+
+                match value {
+                    Value::Null => continue,
+                    Value::String(s) if s.trim().is_empty() => continue,
+                    _ => {}
+                }
+
+                out.push_str(&key);
+                out.push_str(": ");
+                out.push_str(&serialize_scalar(value));
+                out.push('\n');
+            }
+
+            wrote_any = true;
         }
     }
 
@@ -311,6 +454,89 @@ fn parse_cfg_to_json(input: &str) -> Result<Value, String> {
                 root.insert(key.to_string(), value);
             }
         }
+    }
+
+    // Build ordered shortcutbuttons array from [shortcutbutton ...] sections
+    let mut shortcutbuttons: Vec<Value> = Vec::new();
+
+    for (key, value) in &root {
+        if !key.to_lowercase().starts_with("shortcutbutton ") {
+            continue;
+        }
+
+        let Some(section_obj) = value.as_object() else {
+            continue;
+        };
+
+        let name = key["shortcutbutton ".len()..].trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        let macro_inactive = section_obj
+            .get("macro_inactive")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
+        let icon = section_obj
+            .get("icon")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+
+        if macro_inactive.is_empty() || icon.is_empty() {
+            continue;
+        }
+
+        let mut button = Map::new();
+        button.insert("name".to_string(), Value::String(name.to_string()));
+        button.insert("macro_inactive".to_string(), Value::String(macro_inactive));
+        button.insert("icon".to_string(), Value::String(icon));
+
+        if let Some(value) = section_obj.get("position") {
+            if value.is_number() {
+                button.insert("position".to_string(), value.clone());
+            }
+        }
+
+        if let Some(value) = section_obj.get("macro_active").and_then(Value::as_str) {
+            if !value.trim().is_empty() {
+                button.insert("macro_active".to_string(), Value::String(value.trim().to_string()));
+            }
+        }
+
+        if let Some(value) = section_obj.get("active_config").and_then(Value::as_str) {
+            if !value.trim().is_empty() {
+                button.insert("active_config".to_string(), Value::String(value.trim().to_string()));
+            }
+        }
+
+        if let Some(value) = section_obj.get("active_type").and_then(Value::as_str) {
+            if !value.trim().is_empty() {
+                button.insert("active_type".to_string(), Value::String(value.trim().to_string()));
+            }
+        }
+
+        if let Some(value) = section_obj.get("active_threshould") {
+            if value.is_number() {
+                button.insert("active_threshould".to_string(), value.clone());
+            }
+        }
+
+        shortcutbuttons.push(Value::Object(button));
+    }
+
+    if !shortcutbuttons.is_empty() {
+        shortcutbuttons.sort_by(|a, b| {
+            let a_pos = a.get("position").and_then(Value::as_i64).unwrap_or(i64::MAX);
+            let b_pos = b.get("position").and_then(Value::as_i64).unwrap_or(i64::MAX);
+            a_pos.cmp(&b_pos)
+        });
+
+        root.insert("shortcutbuttons".to_string(), Value::Array(shortcutbuttons));
     }
 
     Ok(Value::Object(root))

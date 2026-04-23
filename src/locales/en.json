@@ -160,7 +160,8 @@
     "tab": {
       "network": "Network",
       "settings": "Settings",
-      "tools": "Tools"
+      "tools": "Tools",
+      "shortcuts": "Shortcuts"
     },
     "config": {
       "colors": "Colors",
@@ -169,6 +170,34 @@
       "secondary": "Secondary Color",
       "language": "Language",
       "default_colors": "Default Colors"
+    },
+    "shortcuts": {
+      "dialog": {
+        "title": "Edit Shortcut Button",
+        "fields": {
+          "sectionName": "Section name",
+          "icon": "Icon",
+          "macroInactive": "Macro inactive",
+          "macroActive": "Macro active",
+          "activeConfig": "Active config"
+        },
+        "placeholders": {
+          "sectionName": "chamber",
+          "macroInactive": "TOGGLE_CHAMBERLIGHT",
+          "macroActive": "optional",
+          "activeConfig": "output_pin chamberlight"
+        },
+        "threshold": {
+          "outputPin": "Threshold is automatic: 0.5",
+          "fan": "Threshold is automatic: 0.2",
+          "none": "No threshold needed"
+        },
+        "actions": {
+          "cancel": "Cancel",
+          "save": "Save"
+        }
+      },
+      "add": "Add"
     }
   }
 }

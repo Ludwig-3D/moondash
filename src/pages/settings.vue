@@ -15,6 +15,7 @@ const { t } = useI18n()
         <v-tab value="network">{{ t('settings.tab.network') }}</v-tab>
         <v-tab value="settings">{{ t('settings.tab.settings') }}</v-tab>
         <v-tab value="tools">{{ t('settings.tab.tools') }}</v-tab>
+        <v-tab value="shortcuts">{{ t('settings.tab.shortcuts') }}</v-tab>
       </v-tabs>
     </v-app-bar>
 
@@ -32,6 +33,11 @@ const { t } = useI18n()
       <v-tabs-window-item value="tools">
         <v-sheet class="pa-0 pr-3 pb-3 pt-2" color="green">
 
+        </v-sheet>
+      </v-tabs-window-item>
+      <v-tabs-window-item value="shortcuts">
+        <v-sheet class="pa-0 pr-3 pb-3 pt-2" color="transparent">
+          <ShortcutButtonsPanel/>
         </v-sheet>
       </v-tabs-window-item>
 

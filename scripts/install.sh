@@ -85,7 +85,7 @@ install_packages() {
 
 modify_user() {
   status_msg "Update user permissions"
-  sudo usermod -aG video,render,input,seat,tty "$USER"
+  sudo usermod -aG video,render,input,tty "$USER"
   sudo loginctl enable-linger "$USER"
 }
 

@@ -76,8 +76,7 @@ install_packages() {
     cmake \
     g++ \
     scdoc \
-    libevdev-dev \
-    libuinput-dev
+    libevdev-dev
 
   status_msg "Moondash deb install placeholder"
   # TODO: Later, after adding your apt server:

@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build-release:
-    name: Build release Linux ${{ matrix.arch }} Debian ${{ matrix.debian }}
+    name: Build release Linux ${{ matrix.arch }} ${{ matrix.osname }}
     runs-on: ${{ matrix.runner }}
     container: debian:${{ matrix.debian }}
 
@@ -20,37 +20,29 @@ jobs:
           - arch: amd64
             runner: ubuntu-latest
             debian: "12"
+            osname: bookworm
           - arch: amd64
             runner: ubuntu-latest
             debian: "13"
+            osname: trixie
           - arch: arm64
             runner: ubuntu-24.04-arm
             debian: "12"
+            osname: bookworm
           - arch: arm64
             runner: ubuntu-24.04-arm
             debian: "13"
+            osname: trixie
 
     steps:
       - name: Install base tools
         run: |
           apt-get update
           apt-get install -y \
-            ca-certificates \
-            curl \
-            git \
-            xz-utils \
-            build-essential \
-            pkg-config \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            clang \
-            mold \
-            binutils
+            ca-certificates curl git xz-utils build-essential \
+            pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libssl-dev clang mold binutils
 
       - name: Checkout release tag
         uses: actions/checkout@v4
@@ -74,6 +66,7 @@ jobs:
 
       - name: Prepare release assets
         run: |
+          VERSION="$(node -p "require('./package.json').version")"
           mkdir -p release-assets
 
           DEB_FILE="$(find src-tauri/target/release/bundle -type f -name "*.deb" | head -n 1 || true)"
@@ -82,20 +75,17 @@ jobs:
             exit 1
           fi
 
-          cp "$DEB_FILE" "release-assets/mooncord-linux-${{ matrix.arch }}-debian${{ matrix.debian }}.deb"
+          cp "$DEB_FILE" "release-assets/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}.deb"
 
-          if [ -f "src-tauri/target/release/mooncord" ]; then
-            cp "src-tauri/target/release/mooncord" "release-assets/mooncord-linux-${{ matrix.arch }}-debian${{ matrix.debian }}"
-            chmod +x "release-assets/mooncord-linux-${{ matrix.arch }}-debian${{ matrix.debian }}"
-          else
-            echo "No executable found at src-tauri/target/release/mooncord"
-            exit 1
+          if [ -f "src-tauri/target/release/moondash" ]; then
+            cp "src-tauri/target/release/moondash" "release-assets/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
+            chmod +x "release-assets/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
           fi
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-linux-${{ matrix.arch }}-debian${{ matrix.debian }}
+          name: release-moondash-${{ matrix.osname }}-${{ matrix.arch }}
           path: release-assets/*
           if-no-files-found: error
 
@@ -116,11 +106,6 @@ jobs:
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
-            release-assets/mooncord-linux-amd64-debian12.deb
-            release-assets/mooncord-linux-amd64-debian12
-            release-assets/mooncord-linux-amd64-debian13.deb
-            release-assets/mooncord-linux-amd64-debian13
-            release-assets/mooncord-linux-arm64-debian12.deb
-            release-assets/mooncord-linux-arm64-debian12
-            release-assets/mooncord-linux-arm64-debian13.deb
-            release-assets/mooncord-linux-arm64-debian13
+            release-assets/*.deb
+            release-assets/moondash_*_amd64
+            release-assets/moondash_*_arm64

@@ -23,21 +23,10 @@ jobs:
         run: |
           apt-get update
           apt-get install -y \
-            ca-certificates \
-            curl \
-            git \
-            xz-utils \
-            build-essential \
-            pkg-config \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            clang \
-            mold
+            ca-certificates curl git xz-utils build-essential \
+            pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libssl-dev clang mold
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -72,7 +61,7 @@ jobs:
         run: cargo check --all-targets
 
   build-linux:
-    name: Build Linux ${{ matrix.arch }} Debian ${{ matrix.debian }}
+    name: Build Linux ${{ matrix.arch }} ${{ matrix.osname }}
     needs: audit
     runs-on: ${{ matrix.runner }}
     container: debian:${{ matrix.debian }}
@@ -84,37 +73,29 @@ jobs:
           - arch: amd64
             runner: ubuntu-latest
             debian: "12"
+            osname: bookworm
           - arch: amd64
             runner: ubuntu-latest
             debian: "13"
+            osname: trixie
           - arch: arm64
             runner: ubuntu-24.04-arm
             debian: "12"
+            osname: bookworm
           - arch: arm64
             runner: ubuntu-24.04-arm
             debian: "13"
+            osname: trixie
 
     steps:
       - name: Install base tools
         run: |
           apt-get update
           apt-get install -y \
-            ca-certificates \
-            curl \
-            git \
-            xz-utils \
-            build-essential \
-            pkg-config \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            clang \
-            mold \
-            binutils
+            ca-certificates curl git xz-utils build-essential \
+            pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libssl-dev clang mold binutils
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -137,27 +118,29 @@ jobs:
       - name: Verify GLIBC requirement
         run: |
           ldd --version
-          if [ -f "src-tauri/target/release/mooncord" ]; then
-            objdump -T src-tauri/target/release/mooncord | grep GLIBC_ | sort -Vu | tail -n 30 || true
+          if [ -f "src-tauri/target/release/moondash" ]; then
+            objdump -T src-tauri/target/release/moondash | grep GLIBC_ | sort -Vu | tail -n 30 || true
           fi
 
       - name: Collect artifacts
         run: |
-          mkdir -p "dist-artifacts/linux-${{ matrix.arch }}-debian${{ matrix.debian }}"
+          VERSION="$(node -p "require('./package.json').version")"
+          OUT_DIR="dist-artifacts/${{ matrix.osname }}-${{ matrix.arch }}"
+          mkdir -p "$OUT_DIR"
 
           DEB_FILE="$(find src-tauri/target/release/bundle -type f -name "*.deb" | head -n 1 || true)"
           if [ -n "$DEB_FILE" ]; then
-            cp -v "$DEB_FILE" "dist-artifacts/linux-${{ matrix.arch }}-debian${{ matrix.debian }}/mooncord-linux-${{ matrix.arch }}-debian${{ matrix.debian }}.deb"
+            cp -v "$DEB_FILE" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}.deb"
           fi
 
-          if [ -f "src-tauri/target/release/mooncord" ]; then
-            cp -v "src-tauri/target/release/mooncord" "dist-artifacts/linux-${{ matrix.arch }}-debian${{ matrix.debian }}/mooncord-linux-${{ matrix.arch }}-debian${{ matrix.debian }}"
-            chmod +x "dist-artifacts/linux-${{ matrix.arch }}-debian${{ matrix.debian }}/mooncord-linux-${{ matrix.arch }}-debian${{ matrix.debian }}"
+          if [ -f "src-tauri/target/release/moondash" ]; then
+            cp -v "src-tauri/target/release/moondash" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
+            chmod +x "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
           fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-${{ matrix.arch }}-debian${{ matrix.debian }}-artifacts
-          path: dist-artifacts/linux-${{ matrix.arch }}-debian${{ matrix.debian }}
+          name: moondash-${{ matrix.osname }}-${{ matrix.arch }}
+          path: dist-artifacts/${{ matrix.osname }}-${{ matrix.arch }}
           if-no-files-found: error

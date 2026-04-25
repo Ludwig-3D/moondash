@@ -103,10 +103,33 @@ install_ydotool_service() {
   fi
 }
 
+install_ydotool_binary() {
+  status_msg "Install ydotool"
+
+  if command -v ydotool >/dev/null 2>&1 && command -v ydotoold >/dev/null 2>&1; then
+    ok_msg "ydotool already installed"
+    return
+  fi
+
+  sudo apt-get -y install git cmake g++ scdoc libevdev-dev libuinput-dev
+
+  BUILD_DIR="/tmp/ydotool-build"
+  rm -rf "$BUILD_DIR"
+
+  git clone https://github.com/ReimuNotMoe/ydotool "$BUILD_DIR"
+
+  cmake -S "$BUILD_DIR" -B "$BUILD_DIR/build"
+  cmake --build "$BUILD_DIR/build" -j"$(nproc)"
+  sudo cmake --install "$BUILD_DIR/build"
+
+  ok_msg "ydotool installed"
+}
+
 questions
 setup_custom_apt_repo_placeholder
 install_packages
 modify_user
+install_ydotool_binary
 install_ydotool_service
 install_service
 

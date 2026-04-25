@@ -747,8 +747,6 @@ pub fn run() {
 
             if fullscreen {
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.set_cursor_visible(false);
-
                     if let Ok(Some(monitor)) = window.current_monitor() {
                         let size = monitor.size();
 

@@ -471,8 +471,7 @@ watch(
   right: 0;
   padding: 12px 14px;
   font-weight: 700;
-  backdrop-filter: blur(10px);
-  background: rgba(var(--v-theme-on-surface), 0.12);
+  background: rgba(var(--v-theme-background), 0.8);
 }
 
 .current-print-panel__bottombar {
@@ -484,8 +483,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 10px;
-  backdrop-filter: blur(10px);
-  background: rgba(var(--v-theme-on-surface), 0.12);
+  background: rgba(var(--v-theme-background), 0.8);
 }
 
 .current-print-panel__stats {
@@ -523,8 +521,7 @@ watch(
   border: 1px solid rgba(var(--v-theme-on-surface), 0.22);
   border-radius: 14px;
   overflow: hidden;
-  backdrop-filter: blur(10px);
-  background: rgba(var(--v-theme-surface), 0.16);
+  background: rgba(var(--v-theme-background), 0.8);
 }
 
 .current-print-panel__action {

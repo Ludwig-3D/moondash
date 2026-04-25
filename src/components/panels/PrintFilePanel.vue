@@ -418,8 +418,7 @@ onMounted(async () => {
 .print-file-card__title,
 .print-file-card__meta {
   z-index: 2;
-  background: rgba(var(--v-theme-on-surface), 0.2);
-  backdrop-filter: blur(10px);
+  background: rgba(var(--v-theme-background), 0.8);
 }
 
 .print-file-card__title {

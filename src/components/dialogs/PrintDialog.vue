@@ -924,11 +924,10 @@ async function startPrint() {
   right: 0;
   bottom: 0;
   padding: 12px 14px;
-  background: rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-background), 0.8);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  backdrop-filter: blur(10px);
 }
 
 .print-dialog-info-bar__name {

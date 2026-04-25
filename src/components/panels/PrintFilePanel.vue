@@ -273,7 +273,6 @@ onMounted(async () => {
       <v-btn
           v-if="canGoUp"
           icon="mdi-chevron-up"
-          variant="tonal"
           :disabled="loadingFiles || loadingPage"
           @click="previousPage"
       />
@@ -283,7 +282,6 @@ onMounted(async () => {
       <v-btn
           v-if="canGoDown"
           icon="mdi-chevron-down"
-          variant="tonal"
           :disabled="loadingFiles || loadingPage"
           @click="nextPage"
       />

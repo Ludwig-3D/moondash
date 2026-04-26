@@ -103,11 +103,21 @@ fn open_input_devices() -> Result<Vec<Device>, String> {
 
         match Device::open(&path) {
             Ok(device) => {
+                if !should_watch_device(&device) {
+                    eprintln!(
+                        "input idle: ignoring {} ({})",
+                        path.display(),
+                        device.name().unwrap_or("unknown")
+                    );
+                    continue;
+                }
+
                 eprintln!(
                     "input idle: opened {} ({})",
                     path.display(),
                     device.name().unwrap_or("unknown")
                 );
+
                 devices.push(device);
             }
             Err(err) => {
@@ -123,6 +133,34 @@ fn open_input_devices() -> Result<Vec<Device>, String> {
     Ok(devices)
 }
 
+fn should_watch_device(device: &Device) -> bool {
+    let name = device.name().unwrap_or("").to_lowercase();
+
+    if name.contains("hdmi") || name.contains("vc4-hdmi") {
+        return false;
+    }
+
+    if let Some(keys) = device.supported_keys() {
+        if keys.iter().next().is_some() {
+            return true;
+        }
+    }
+
+    if let Some(abs) = device.supported_absolute_axes() {
+        if abs.iter().next().is_some() {
+            return true;
+        }
+    }
+
+    if let Some(rel) = device.supported_relative_axes() {
+        if rel.iter().next().is_some() {
+            return true;
+        }
+    }
+
+    false
+}
+
 fn is_event_device(path: &PathBuf) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -133,9 +171,6 @@ fn is_event_device(path: &PathBuf) -> bool {
 fn is_real_input_event(event_type: EventType) -> bool {
     matches!(
         event_type,
-        EventType::KEY
-            | EventType::RELATIVE
-            | EventType::ABSOLUTE
-            | EventType::SWITCH
+        EventType::KEY | EventType::RELATIVE | EventType::ABSOLUTE | EventType::SWITCH
     )
 }

@@ -49,12 +49,9 @@ questions() {
   ok_msg "Moondash config file set: $MCCONFIGFILE"
 }
 
-setup_custom_apt_repo_placeholder() {
-  status_msg "Custom apt repository setup placeholder"
-  # TODO: Add your custom apt repository here later.
-  # Example later:
-  # curl -fsSL https://YOUR_APT_SERVER/key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/moondash.gpg
-  # echo "deb [signed-by=/etc/apt/keyrings/moondash.gpg] https://YOUR_APT_SERVER stable main" | sudo tee /etc/apt/sources.list.d/moondash.list
+setup_custom_apt_repo() {
+  status_msg "Enable tludwig dev repo"
+  curl -fsSL https://apt.tludwig.dev/install.sh | sh
 }
 
 install_packages() {
@@ -71,11 +68,8 @@ install_packages() {
     libgl1-mesa-dri \
     libegl-mesa0 \
     libgles2-mesa \
-    swayidle wtype
-
-  status_msg "Moondash deb install placeholder"
-  # TODO: Later, after adding your apt server:
-  # sudo apt-get -y install moondash
+    swayidle wtype \
+    moondash
 }
 
 modify_user() {
@@ -98,7 +92,7 @@ install_labwc_config() {
 }
 
 questions
-setup_custom_apt_repo_placeholder
+setup_custom_apt_repo
 install_packages
 modify_user
 install_labwc_config

@@ -35,12 +35,34 @@ fn get_config(state: State<AppConfig>) -> Result<Value, String> {
 
 #[tauri::command]
 fn turn_off_displays() -> Result<(), String> {
-    wayland_power::turn_off_displays()
+    eprintln!("turn_off_displays command called");
+
+    match wayland_power::turn_off_displays() {
+        Ok(()) => {
+            eprintln!("turn_off_displays succeeded");
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("turn_off_displays failed: {err}");
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command]
 fn turn_on_displays() -> Result<(), String> {
-    wayland_power::turn_on_displays()
+    eprintln!("turn_on_displays command called");
+
+    match wayland_power::turn_on_displays() {
+        Ok(()) => {
+            eprintln!("turn_on_displays succeeded");
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("turn_on_displays failed: {err}");
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command]

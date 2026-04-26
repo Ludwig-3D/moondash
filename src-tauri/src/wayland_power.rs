@@ -1,7 +1,7 @@
 use wayland_client::{
     globals::{registry_queue_init, GlobalListContents},
     protocol::{wl_output::WlOutput, wl_registry},
-    Connection, Dispatch, Proxy, QueueHandle,
+    Connection, Dispatch, QueueHandle,
 };
 
 use wayland_protocols_wlr::output_power_management::v1::client::{
@@ -10,7 +10,6 @@ use wayland_protocols_wlr::output_power_management::v1::client::{
 };
 
 struct WaylandPowerState {
-    outputs: Vec<WlOutput>,
     power_handles: Vec<ZwlrOutputPowerV1>,
 }
 
@@ -33,54 +32,40 @@ fn set_outputs_power(mode: Mode) -> Result<(), String> {
     let qh = event_queue.handle();
 
     let mut state = WaylandPowerState {
-        outputs: Vec::new(),
         power_handles: Vec::new(),
     };
-
-    event_queue
-        .roundtrip(&mut state)
-        .map_err(|e| format!("Wayland registry roundtrip failed: {e}"))?;
 
     let power_manager = globals
         .bind::<ZwlrOutputPowerManagerV1, _, _>(&qh, 1..=1, ())
         .map_err(|_| "compositor does not expose zwlr_output_power_manager_v1".to_string())?;
 
-    if state.outputs.is_empty() {
-        return Err("no Wayland outputs found".to_string());
-    }
+    let output = globals
+        .bind::<WlOutput, _, _>(&qh, 1..=4, ())
+        .map_err(|_| "compositor does not expose wl_output".to_string())?;
 
-    for output in &state.outputs {
-        let power = power_manager.get_output_power(output, &qh, ());
-        power.set_mode(mode);
-        state.power_handles.push(power);
-    }
+    let power = power_manager.get_output_power(&output, &qh, ());
+    power.set_mode(mode);
+    state.power_handles.push(power);
 
     conn.flush()
-        .map_err(|e| format!("failed to flush Wayland requests: {e}"))?;
+        .map_err(|e| format!("failed to flush Wayland power request: {e}"))?;
+
+    event_queue
+        .roundtrip(&mut state)
+        .map_err(|e| format!("Wayland power roundtrip failed: {e}"))?;
 
     Ok(())
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for WaylandPowerState {
     fn event(
-        state: &mut Self,
-        registry: &wl_registry::WlRegistry,
-        event: wl_registry::Event,
+        _state: &mut Self,
+        _registry: &wl_registry::WlRegistry,
+        _event: wl_registry::Event,
         _data: &GlobalListContents,
         _conn: &Connection,
-        qh: &QueueHandle<Self>,
+        _qh: &QueueHandle<Self>,
     ) {
-        if let wl_registry::Event::Global {
-            name,
-            interface,
-            version,
-        } = event
-        {
-            if interface == WlOutput::interface().name {
-                let output = registry.bind::<WlOutput, _, _>(name, version.min(4), qh, ());
-                state.outputs.push(output);
-            }
-        }
     }
 }
 

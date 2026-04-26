@@ -190,7 +190,7 @@ jobs:
     needs:
       - frontend-build
       - audit
-    runs-on: [self-hosted, Linux, ARM]
+    runs-on: ubuntu-24.04-arm
 
     strategy:
       fail-fast: false
@@ -212,6 +212,11 @@ jobs:
           name: frontend-dist
           path: .
 
+      - name: Test armhf container support
+        run: |
+          docker run --rm --platform linux/arm/v7 arm32v7/debian:${{ matrix.debian }} \
+            bash -lc 'dpkg --print-architecture && uname -m'
+
       - name: Build Tauri app armhf in Debian ${{ matrix.debian }}
         run: |
           CORES="$(nproc)"
@@ -221,7 +226,7 @@ jobs:
           echo "Using jobs: $JOBS"
 
           docker run --rm \
-            --cpus="$CORES" \
+            --platform linux/arm/v7 \
             -e CARGO_BUILD_JOBS="$JOBS" \
             -e MAKEFLAGS="-j$JOBS" \
             -v "$PWD:/work" \

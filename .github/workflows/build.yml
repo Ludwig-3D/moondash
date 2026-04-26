@@ -34,7 +34,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "25"
           cache: "npm"
 
       - name: Install frontend dependencies
@@ -71,24 +71,50 @@ jobs:
       matrix:
         include:
           - arch: amd64
+            rust_target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             debian: "12"
             osname: bookworm
+            cross: "false"
+
           - arch: amd64
+            rust_target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             debian: "13"
             osname: trixie
+            cross: "false"
+
           - arch: arm64
+            rust_target: aarch64-unknown-linux-gnu
             runner: ubuntu-24.04-arm
             debian: "12"
             osname: bookworm
+            cross: "false"
+
           - arch: arm64
+            rust_target: aarch64-unknown-linux-gnu
             runner: ubuntu-24.04-arm
             debian: "13"
             osname: trixie
+            cross: "false"
+
+          - arch: armhf
+            rust_target: armv7-unknown-linux-gnueabihf
+            runner: ubuntu-latest
+            debian: "12"
+            osname: bookworm
+            cross: "true"
+
+          - arch: armhf
+            rust_target: armv7-unknown-linux-gnueabihf
+            runner: ubuntu-latest
+            debian: "13"
+            osname: trixie
+            cross: "true"
 
     steps:
-      - name: Install base tools
+      - name: Install native build tools
+        if: matrix.cross == 'false'
         run: |
           apt-get update
           apt-get install -y \
@@ -97,13 +123,31 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev patchelf \
             libssl-dev clang mold binutils
 
+      - name: Install armhf cross build tools
+        if: matrix.cross == 'true'
+        run: |
+          dpkg --add-architecture armhf
+
+          apt-get update
+          apt-get install -y \
+            ca-certificates curl git xz-utils build-essential \
+            pkg-config patchelf clang binutils \
+            gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf \
+            libc6-dev-armhf-cross \
+            libssl-dev:armhf \
+            libglib2.0-dev:armhf \
+            libgtk-3-dev:armhf \
+            libwebkit2gtk-4.1-dev:armhf \
+            libayatana-appindicator3-dev:armhf \
+            librsvg2-dev:armhf
+
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "25"
           cache: "npm"
 
       - name: Install frontend dependencies
@@ -111,15 +155,56 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Configure armhf cross environment
+        if: matrix.cross == 'true'
+        run: |
+          mkdir -p .cargo
+
+          cat > .cargo/config.toml <<'EOF'
+          [target.armv7-unknown-linux-gnueabihf]
+          linker = "arm-linux-gnueabihf-gcc"
+
+          [target.armv7-unknown-linux-gnueabihf.env]
+          PKG_CONFIG_ALLOW_CROSS = "1"
+          PKG_CONFIG_PATH = "/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig"
+          PKG_CONFIG_LIBDIR = "/usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig"
+          OPENSSL_DIR = "/usr"
+          OPENSSL_LIB_DIR = "/usr/lib/arm-linux-gnueabihf"
+          OPENSSL_INCLUDE_DIR = "/usr/include"
+          EOF
 
       - name: Build Tauri app
+        if: matrix.cross == 'false'
         run: npm run tauri build
+
+      - name: Build Tauri app armhf
+        if: matrix.cross == 'true'
+        env:
+          PKG_CONFIG_ALLOW_CROSS: "1"
+          PKG_CONFIG_PATH: /usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+          PKG_CONFIG_LIBDIR: /usr/lib/arm-linux-gnueabihf/pkgconfig:/usr/share/pkgconfig
+          CC_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
+          CXX_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-g++
+          AR_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-ar
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+        run: npm run tauri build -- --target armv7-unknown-linux-gnueabihf
 
       - name: Verify GLIBC requirement
         run: |
           ldd --version
-          if [ -f "src-tauri/target/release/moondash" ]; then
-            objdump -T src-tauri/target/release/moondash | grep GLIBC_ | sort -Vu | tail -n 30 || true
+
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            BIN="src-tauri/target/${{ matrix.rust_target }}/release/moondash"
+          else
+            BIN="src-tauri/target/release/moondash"
+          fi
+
+          if [ -f "$BIN" ]; then
+            objdump -T "$BIN" | grep GLIBC_ | sort -Vu | tail -n 30 || true
+            file "$BIN" || true
           fi
 
       - name: Collect artifacts
@@ -128,13 +213,22 @@ jobs:
           OUT_DIR="dist-artifacts/${{ matrix.osname }}-${{ matrix.arch }}"
           mkdir -p "$OUT_DIR"
 
-          DEB_FILE="$(find src-tauri/target/release/bundle -type f -name "*.deb" | head -n 1 || true)"
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            SEARCH_DIR="src-tauri/target/${{ matrix.rust_target }}/release"
+            BIN_FILE="src-tauri/target/${{ matrix.rust_target }}/release/moondash"
+          else
+            SEARCH_DIR="src-tauri/target/release"
+            BIN_FILE="src-tauri/target/release/moondash"
+          fi
+
+          DEB_FILE="$(find "$SEARCH_DIR/bundle" -type f -name "*.deb" | head -n 1 || true)"
+
           if [ -n "$DEB_FILE" ]; then
             cp -v "$DEB_FILE" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}.deb"
           fi
 
-          if [ -f "src-tauri/target/release/moondash" ]; then
-            cp -v "src-tauri/target/release/moondash" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
+          if [ -f "$BIN_FILE" ]; then
+            cp -v "$BIN_FILE" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
             chmod +x "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
           fi
 

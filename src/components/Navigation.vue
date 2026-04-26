@@ -38,7 +38,7 @@ function onPowerClick() {
 </script>
 
 <template>
-  <v-navigation-drawer rail permanent class="sidenav" rail-width="58">
+  <v-navigation-drawer rail permanent class="sidenav" rail-width="56">
     <v-list class="nav-list" density="compact" nav>
       <v-list-item color="primary" prepend-icon="mdi-home-variant" to="/" />
       <v-list-item color="primary" prepend-icon="mdi-tune-vertical-variant" to="/tune" />

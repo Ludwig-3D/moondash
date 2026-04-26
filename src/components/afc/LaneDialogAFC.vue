@@ -211,7 +211,7 @@ async function saveDialog() {
             <div class="control-row control-row--compact">
               <button
                   type="button"
-                  class="control-btn control-btn--small"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustWeight(-100)"
               >
@@ -219,7 +219,7 @@ async function saveDialog() {
               </button>
               <button
                   type="button"
-                  class="control-btn control-btn--small"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustWeight(-10)"
               >
@@ -227,7 +227,7 @@ async function saveDialog() {
               </button>
               <button
                   type="button"
-                  class="control-btn control-btn--small"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustWeight(-1)"
               >
@@ -251,7 +251,7 @@ async function saveDialog() {
 
               <button
                   type="button"
-                  class="control-btn control-btn--small"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustWeight(1)"
               >
@@ -259,7 +259,7 @@ async function saveDialog() {
               </button>
               <button
                   type="button"
-                  class="control-btn control-btn--small"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustWeight(10)"
               >
@@ -267,7 +267,7 @@ async function saveDialog() {
               </button>
               <button
                   type="button"
-                  class="control-btn control-btn--small"
+                  class="control-btn"
                   :disabled="saving"
                   @click="adjustWeight(100)"
               >
@@ -278,14 +278,13 @@ async function saveDialog() {
         </div>
       </v-card-text>
 
-      <v-card-actions class="px-6 pb-6">
+      <v-card-actions>
         <v-spacer />
         <v-btn variant="text" :disabled="saving" @click="closeDialog">
           {{ t('afc.edit.cancel') }}
         </v-btn>
         <v-btn
             color="primary"
-            variant="flat"
             :loading="saving"
             :disabled="saving"
             @click="saveDialog"

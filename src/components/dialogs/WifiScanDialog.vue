@@ -79,12 +79,12 @@ watch(
         <span>{{ t('settings.network.wifi.scan') }}</span>
 
         <v-btn
-            size="small"
             variant="tonal"
             prepend-icon="mdi-wifi-refresh"
             :disabled="!enabled || scanBusy"
             :loading="scanBusy"
             @click="scanWifi"
+            style="font-size: 15px"
         >
           {{ t('settings.network.wifi.scan') }}
         </v-btn>
@@ -112,7 +112,6 @@ watch(
               <template #append>
                 <v-chip
                     v-if="connectedSsid === network.ssid"
-                    size="small"
                     color="success"
                     variant="tonal"
                 >
@@ -120,7 +119,6 @@ watch(
                 </v-chip>
                 <v-chip
                     v-else-if="network.saved"
-                    size="small"
                     variant="tonal"
                 >
                   {{ t('settings.network.wifi.saved') }}

@@ -214,7 +214,7 @@ function close() {
             <v-text-field
                 v-model="localItem.name"
                 variant="outlined"
-                :label="t('settings.shortcuts.dialog.fields.sectionName')"
+                :label="t('settings.shortcuts.dialog.fields.section_name')"
                 density="compact"
                 @focus="openKeyboardForName"
             />
@@ -296,7 +296,7 @@ function close() {
                 variant="tonal"
                 density="compact"
             >
-              {{ t('settings.shortcuts.dialog.threshold.outputPin') }}
+              {{ t('settings.shortcuts.dialog.threshold.output_pin') }}
             </v-alert>
 
             <v-alert
@@ -320,7 +320,8 @@ function close() {
         </v-row>
       </v-card-text>
 
-      <v-card-actions class="justify-end">
+      <v-card-actions>
+        <v-spacer/>
         <v-btn variant="text" @click="close">
           {{ t('settings.shortcuts.dialog.actions.cancel') }}
         </v-btn>

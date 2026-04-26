@@ -346,7 +346,7 @@ async function moveItemDown(index: number) {
       </div>
     </v-card-text>
 
-    <v-card-actions class="config-editor-panel__actions">
+    <v-card-actions>
       <v-spacer />
       <v-btn
           color="primary"
@@ -373,10 +373,6 @@ async function moveItemDown(index: number) {
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-.config-editor-panel__actions {
-  flex: 0 0 auto;
 }
 
 .shortcut-buttons-panel {

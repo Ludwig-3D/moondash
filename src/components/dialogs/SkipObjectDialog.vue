@@ -256,7 +256,7 @@ async function skipSelectedObject() {
               </v-btn>
               <v-btn
                   color="secondary"
-                  variant="flat"
+                  variant="text"
                   :disabled="loading || !selectedObject || selectedObject.excluded"
                   @click="skipSelectedObject"
               >

@@ -218,7 +218,7 @@ async function saveConfig() {
         </div>
       </v-card-text>
 
-      <v-card-actions class="tool-card__actions">
+      <v-card-actions>
         <v-spacer />
 
         <v-btn
@@ -268,12 +268,6 @@ async function saveConfig() {
   gap: 24px;
   align-items: start;
   overflow: auto;
-}
-
-.tool-card__actions {
-  flex: 0 0 auto;
-  margin-top: auto;
-  gap: 8px;
 }
 
 .no-elevation :deep(.v-field) {

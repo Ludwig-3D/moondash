@@ -73,7 +73,6 @@ async function forgetNetwork(ssid: string) {
               <template #append>
                 <v-btn
                     icon="mdi-delete"
-                    size="small"
                     variant="text"
                     color="error"
                     :loading="forgettingSsid === network.ssid"

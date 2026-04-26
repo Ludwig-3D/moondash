@@ -1,9 +1,12 @@
 {
   "tune": {
+    "flow": "Fluss",
+    "pa": "Druckvorschub (PA)",
+    "pa_smooth": "PA-Glättungszeit",
     "tab": {
       "controls": "Steuerung",
       "filament": "Filament",
-      "printoptions": "Druckeinstellungen"
+      "printoptions": "Druckoptionen"
     }
   },
   "afc": {
@@ -14,20 +17,216 @@
     },
     "edit": {
       "save": "Speichern",
-      "cancel": "Abbruch",
+      "cancel": "Abbrechen",
       "filament": "Filament",
       "color": "Farbe",
       "weight": "Gewicht",
       "choose_color": "Farbe auswählen",
-      "other_lane_colors": "Farben von den anderen Spuren",
-      "other_colors": "andere Farben"
+      "other_lane_colors": "Farben anderer Spuren",
+      "other_colors": "Andere Farben"
     }
   },
   "temp": {
-    "current": "Aktuell",
-    "max": "Maximum",
-    "set": "Festlegen",
-    "cancel": "Abbruch",
-    "target": "Ziel"
+    "dialog": {
+      "current": "Aktuell",
+      "max": "Max",
+      "set": "Setzen",
+      "cancel": "Abbrechen",
+      "target": "Ziel"
+    }
+  },
+  "fan": {
+    "dialog": {
+      "title": "Lüfter",
+      "current": "Aktuell",
+      "target": "Ziel",
+      "speed": "Geschwindigkeit",
+      "adjust": "Anpassen",
+      "temp_placeholder": "0",
+      "speed_placeholder": "0",
+      "cancel": "Abbrechen",
+      "save": "Speichern"
+    }
+  },
+  "extruder": {
+    "load": "Laden",
+    "unload": "Entladen"
+  },
+  "speed": {
+    "dialog": {
+      "title": "Druckgeschwindigkeit",
+      "cancel": "Abbrechen",
+      "save": "Speichern",
+      "target": "Ziel"
+    }
+  },
+  "print_files": {
+    "none_found": "Keine Druckdateien gefunden",
+    "unknown_file": "Unbekannte Datei"
+  },
+  "print": {
+    "current": {
+      "no_preview": "Keine Objektvorschau verfügbar.",
+      "select_object": "Auswählbares Objekt",
+      "progress": "Fortschritt",
+      "layer": "Schicht",
+      "remaining": "Verbleibend",
+      "skip_object": "Objekt überspringen",
+      "pause": "Pausieren",
+      "resume": "Fortsetzen",
+      "stop": "Stoppen",
+      "reprint": "Erneut drucken",
+      "clear_file": "Datei löschen",
+      "no_objects": "Keine überspringbaren Objekte gefunden.",
+      "current_object": "Wird derzeit gedruckt",
+      "already_skipped": "Bereits übersprungen",
+      "skip": "Überspringen",
+      "close": "Schließen"
+    },
+    "dialog": {
+      "timelapse": "Zeitraffer",
+      "cancel": "Abbrechen",
+      "print": "Drucken",
+      "lane_update_failed": "Aktualisierung der Spurzuordnung fehlgeschlagen.",
+      "print_start_failed": "Druck konnte nicht gestartet werden.",
+      "timelapse_update_failed": "Zeitraffer konnte nicht aktualisiert werden."
+    }
+  },
+  "notifications": {
+    "title": "Benachrichtigungen",
+    "afc": {
+      "title": "AFC",
+      "clear": "Löschen"
+    },
+    "klipper": {
+      "title": "Klipper",
+      "title_shutdown": "Klipper heruntergefahren",
+      "title_startup": "Klipper startet",
+      "title_error": "Klipper-Fehler",
+      "message_fallback": "Klipper hat ein Problem gemeldet.",
+      "restart": "Neustart",
+      "firmware_restart": "Firmware-Neustart",
+      "message_startup": "Klipper wird gestartet."
+    },
+    "moonraker": {
+      "title": "Moonraker",
+      "message_disconnected": "Moonraker ist getrennt oder Klippy ist nicht bereit.",
+      "message_fallback": "Moonraker hat ein Verbindungsproblem gemeldet.",
+      "reconnect": "Wiederverbinden"
+    }
+  },
+  "power_dialog": {
+    "title": "Strom",
+    "shutdown": "Ausschalten",
+    "reboot": "Neustarten",
+    "restart_klipper": "Klipper neu starten",
+    "restart_firmware": "Firmware neu starten",
+    "close": "Schließen"
+  },
+  "color_dialog": {
+    "choose_color": "Farbe auswählen",
+    "additional_colors": "Zusätzliche Farben",
+    "other_colors": "Andere Farben"
+  },
+  "settings": {
+    "network": {
+      "title": "Netzwerk",
+      "refresh": "Aktualisieren",
+      "cancel": "Abbrechen",
+      "close": "Schließen",
+      "connect": "Verbinden",
+      "none": "Keine",
+      "wifi": {
+        "title": "WLAN",
+        "hidden": "Versteckte SSID",
+        "connected_ssid": "Verbundenes WLAN",
+        "ip": "IP-Adresse",
+        "scan": "Suchen",
+        "available": "Verfügbare Netzwerke",
+        "saved_networks": "Gespeicherte Netzwerke",
+        "connected": "Verbunden",
+        "saved": "Gespeichert",
+        "no_networks": "Keine Netzwerke gefunden",
+        "no_saved_networks": "Keine gespeicherten Netzwerke",
+        "connect_to": "Verbinden mit {ssid}",
+        "ssid": "SSID",
+        "password": "Passwort"
+      },
+      "wired": {
+        "title": "Kabelgebunden",
+        "no_interfaces": "Keine kabelgebundenen Schnittstellen"
+      }
+    },
+    "tab": {
+      "network": "Netzwerk",
+      "settings": "Einstellungen",
+      "tools": "Werkzeuge",
+      "shortcuts": "Kurzbefehle"
+    },
+    "config": {
+      "colors": "Farben",
+      "darkmode": "Dunkelmodus",
+      "primary": "Primärfarbe",
+      "secondary": "Sekundärfarbe",
+      "language": "Sprache",
+      "default_colors": "Standardfarben",
+      "use_idle_timeout": "Display bei Inaktivität ausschalten",
+      "idle_timeout": "Timeout bei Inaktivität",
+      "idle_timeout_options": {
+        "1_minute": "1 Minute",
+        "5_minutes": "5 Minuten",
+        "15_minutes": "15 Minuten",
+        "30_minutes": "30 Minuten",
+        "1_hour": "1 Stunde"
+      }
+    },
+    "shortcuts": {
+      "dialog": {
+        "title": "Shortcut-Taste bearbeiten",
+        "fields": {
+          "section_name": "Name",
+          "icon": "Symbol",
+          "macro_inactive": "Makro inaktiv",
+          "macro_active": "Makro aktiv",
+          "active_config": "Sensor"
+        },
+        "threshold": {
+          "output_pin": "Schwellwert ist automatisch: 0,5",
+          "fan": "Schwellwert ist automatisch: 0,2",
+          "none": "Kein Schwellwert erforderlich"
+        },
+        "actions": {
+          "cancel": "Abbrechen",
+          "save": "Speichern"
+        }
+      },
+      "add": "Hinzufügen"
+    },
+    "tools": {
+      "bed_mesh": {
+        "title": "Bett-Mesh",
+        "no_loaded_mesh": "Kein Bett-Mesh geladen",
+        "available_meshes": "Mesh-Profile",
+        "no_meshes": "Keine Bett-Mesh-Profile verfügbar",
+        "actions": {
+          "clear_mesh": "Mesh löschen",
+          "calibrate": "Kalibrieren"
+        }
+      },
+      "pid": {
+        "title": "PID-Kalibrierung",
+        "run": "Starten",
+        "heater": "Heizer",
+        "target_temp": "Zieltemperatur",
+        "current_temp": "Aktuelle Temperatur",
+        "save_config": "Konfiguration speichern"
+      },
+      "webcam": {
+        "title": "Webcam",
+        "no_webcam": "Keine Webcam gefunden",
+        "refresh": "Aktualisieren",
+        "reload_webcams": "Webcams neu laden"
+      }
+    }
   }
 }

@@ -243,7 +243,7 @@ onMounted(() => {
 
             <v-btn
                 prepend-icon="mdi-reload"
-                variant="text"
+                variant="tonal"
                 :loading="loading"
                 @click="loadWebcams"
             >

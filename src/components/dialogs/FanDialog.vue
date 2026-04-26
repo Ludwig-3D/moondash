@@ -244,14 +244,13 @@ async function saveDialog() {
         </div>
       </v-card-text>
 
-      <v-card-actions class="px-6 pb-6">
+      <v-card-actions>
         <v-spacer />
         <v-btn variant="text" :disabled="saving" @click="closeDialog">
           {{ t('fan.dialog.cancel') }}
         </v-btn>
         <v-btn
             color="primary"
-            variant="flat"
             :loading="saving"
             :disabled="saving"
             @click="saveDialog"

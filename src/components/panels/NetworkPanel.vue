@@ -142,7 +142,6 @@ onMounted(async () => {
           <div class="network-panel__wifi-controls">
             <v-btn
                 icon="mdi-wifi-plus"
-                size="small"
                 variant="text"
                 :disabled="!(wifiSettings?.enabled) || wifiBusy || loading"
                 @click="openHiddenDialog"
@@ -177,7 +176,6 @@ onMounted(async () => {
 
           <div class="network-panel__actions">
             <v-btn
-                size="small"
                 variant="tonal"
                 prepend-icon="mdi-wifi-refresh"
                 :disabled="!(wifiSettings?.enabled)"
@@ -187,7 +185,6 @@ onMounted(async () => {
             </v-btn>
 
             <v-btn
-                size="small"
                 variant="tonal"
                 prepend-icon="mdi-content-save"
                 :disabled="!savedNetworks.length"

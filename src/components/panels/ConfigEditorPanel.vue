@@ -228,7 +228,7 @@ watch(localIdleTimeout, scheduleSave)
       </div>
     </v-card-text>
 
-    <v-card-actions class="px-6 pb-6">
+    <v-card-actions>
       <v-spacer />
       <v-progress-circular
           v-if="saving"

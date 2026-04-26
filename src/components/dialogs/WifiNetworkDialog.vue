@@ -157,7 +157,6 @@ function submit() {
         </v-btn>
         <v-btn
             color="primary"
-            variant="flat"
             :disabled="!localSsid.trim()"
             @click="submit"
         >

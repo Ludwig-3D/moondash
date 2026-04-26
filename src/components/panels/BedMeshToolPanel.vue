@@ -383,7 +383,6 @@ function formatVariance(value: number | null): string {
                   <div class="bed-mesh-list__actions">
                     <v-btn
                         v-if="profile.name !== bedMeshState.loadedProfileName"
-                        size="small"
                         variant="text"
                         color="secondary"
                         :loading="busyAction === 'calibrate'"
@@ -394,7 +393,6 @@ function formatVariance(value: number | null): string {
                     </v-btn>
 
                     <v-btn
-                        size="small"
                         variant="text"
                         color="error"
                         :loading="busyAction === `delete:${profile.name}`"

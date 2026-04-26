@@ -868,7 +868,7 @@ async function startPrint() {
               <v-btn variant="text" :disabled="saving" @click="closeDialog">
                 {{ t('print.dialog.cancel') }}
               </v-btn>
-              <v-btn color="primary" variant="flat" :disabled="saving" @click="startPrint">
+              <v-btn variant="text" color="primary" :disabled="saving" @click="startPrint">
                 {{ t('print.dialog.print') }}
               </v-btn>
             </div>

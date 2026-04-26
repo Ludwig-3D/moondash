@@ -104,7 +104,7 @@ jobs:
 
       - name: Build Tauri app
         run: |
-          set -euo pipefail
+          set -eu
 
           CORES="$(nproc)"
           JOBS="$((CORES > 1 ? CORES - 1 : 1))"
@@ -120,7 +120,7 @@ jobs:
 
       - name: Prepare release assets
         run: |
-          set -euo pipefail
+          set -eu
 
           VERSION="$(node -p "require('./package.json').version")"
           mkdir -p release-assets
@@ -194,7 +194,7 @@ jobs:
 
       - name: Build release armhf in Debian ${{ matrix.debian }}
         run: |
-          set -euo pipefail
+          set -eu
 
           CORES="$(nproc)"
           JOBS="$((CORES > 1 ? CORES - 1 : 1))"
@@ -210,7 +210,7 @@ jobs:
             -w /work \
             arm32v7/debian:${{ matrix.debian }} \
             bash -lc '
-              set -euo pipefail
+              set -eu
 
               CORES="$(nproc)"
               JOBS="${CARGO_BUILD_JOBS:-$CORES}"

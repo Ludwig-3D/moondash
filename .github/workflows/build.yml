@@ -143,11 +143,10 @@ jobs:
 
           export CARGO_BUILD_JOBS="$JOBS"
           export MAKEFLAGS="-j$JOBS"
-          export npm_config_jobs="$JOBS"
 
           echo "Using $JOBS build jobs out of $CORES cores"
 
-          npm run tauri build -- --jobs "$JOBS"
+          npm run tauri build
 
       - name: Verify GLIBC requirement
         run: |
@@ -225,7 +224,6 @@ jobs:
             --cpus="$CORES" \
             -e CARGO_BUILD_JOBS="$JOBS" \
             -e MAKEFLAGS="-j$JOBS" \
-            -e npm_config_jobs="$JOBS" \
             -v "$PWD:/work" \
             -w /work \
             arm32v7/debian:${{ matrix.debian }} \
@@ -237,7 +235,6 @@ jobs:
 
               export CARGO_BUILD_JOBS="$JOBS"
               export MAKEFLAGS="-j$JOBS"
-              export npm_config_jobs="$JOBS"
 
               echo "Container cores: $CORES"
               echo "Using build jobs: $JOBS"
@@ -271,7 +268,7 @@ jobs:
               cargo --version
 
               npm ci
-              npm run tauri build -- --jobs "$JOBS"
+              npm run tauri build
 
               VERSION="$(node -p "require(\"./package.json\").version")"
               OUT_DIR="dist-artifacts/${{ matrix.osname }}-armhf"

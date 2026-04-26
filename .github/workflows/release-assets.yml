@@ -50,12 +50,12 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-latest
+            runner: [self-hosted, linux, x64]
             debian: "12"
             osname: bookworm
 
           - arch: amd64
-            runner: ubuntu-latest
+            runner: [self-hosted, linux, x64]
             debian: "13"
             osname: trixie
 
@@ -103,7 +103,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build Tauri app
-        run: npm run tauri build
+        run: |
+          CORES="$(nproc)"
+          JOBS="$((CORES > 1 ? CORES - 1 : 1))"
+
+          export CARGO_BUILD_JOBS="$JOBS"
+          export MAKEFLAGS="-j$JOBS"
+          export npm_config_jobs="$JOBS"
+
+          echo "Using $JOBS build jobs out of $CORES cores"
+
+          npm run tauri build -- --jobs "$JOBS"
 
       - name: Prepare release assets
         run: |
@@ -125,6 +135,8 @@ jobs:
           if [ -f "$BIN_FILE" ]; then
             cp "$BIN_FILE" "release-assets/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
             chmod +x "release-assets/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
+            file "release-assets/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}" || true
+            objdump -T "release-assets/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}" | grep GLIBC_ | sort -Vu | tail -n 30 || true
           fi
 
       - name: Upload release artifact
@@ -163,12 +175,32 @@ jobs:
 
       - name: Build release armhf in Debian ${{ matrix.debian }}
         run: |
+          CORES="$(nproc)"
+          JOBS="$((CORES > 1 ? CORES - 1 : 1))"
+
+          echo "Host cores: $CORES"
+          echo "Using jobs: $JOBS"
+
           docker run --rm \
+            --cpus="$CORES" \
+            -e CARGO_BUILD_JOBS="$JOBS" \
+            -e MAKEFLAGS="-j$JOBS" \
+            -e npm_config_jobs="$JOBS" \
             -v "$PWD:/work" \
             -w /work \
             arm32v7/debian:${{ matrix.debian }} \
             bash -lc '
               set -euo pipefail
+
+              CORES="$(nproc)"
+              JOBS="${CARGO_BUILD_JOBS:-$CORES}"
+
+              export CARGO_BUILD_JOBS="$JOBS"
+              export MAKEFLAGS="-j$JOBS"
+              export npm_config_jobs="$JOBS"
+
+              echo "Container cores: $CORES"
+              echo "Using build jobs: $JOBS"
 
               apt-get update
               apt-get install -y \
@@ -199,7 +231,7 @@ jobs:
               cargo --version
 
               npm ci
-              npm run tauri build
+              npm run tauri build -- --jobs "$JOBS"
 
               VERSION="$(node -p "require(\"./package.json\").version")"
               mkdir -p release-assets
@@ -244,6 +276,9 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: List release assets
+        run: find release-assets -type f -maxdepth 2 -print | sort
 
       - name: Upload assets to GitHub Release
         uses: softprops/action-gh-release@v2

@@ -169,7 +169,16 @@
       "primary": "Primary Color",
       "secondary": "Secondary Color",
       "language": "Language",
-      "default_colors": "Default Colors"
+      "default_colors": "Default Colors",
+      "use_idle_timeout": "Turn off display when idle",
+      "idle_timeout": "Idle timeout",
+      "idle_timeout_options": {
+        "1_minute": "1 minute",
+        "5_minutes": "5 minutes",
+        "15_minutes": "15 minutes",
+        "30_minutes": "30 minutes",
+        "1_hour": "1 hour"
+      }
     },
     "shortcuts": {
       "dialog": {

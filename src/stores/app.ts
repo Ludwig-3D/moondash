@@ -15,6 +15,8 @@ type DevConfig = {
 
 type SystemConfig = {
   language?: string | null
+  idle_timeout?: number
+  use_idle_timeout?: boolean
 }
 
 export type ShortcutButtonConfig = {
@@ -236,6 +238,8 @@ export const useAppStore = defineStore('app', {
     zoom: 1.0 as number,
     debug: false as boolean,
     language: null as string | null,
+    idleTimeout: 360 as number,
+    useIdleTimeout: true as boolean,
     primaryColor: null as string | null,
     secondaryColor: null as string | null,
     shortcutButtons: [] as ShortcutButtonConfig[],
@@ -337,6 +341,8 @@ export const useAppStore = defineStore('app', {
     getZoom: (state) => state.zoom,
     isDebugEnabled: (state) => state.debug,
     getLanguage: (state) => state.language,
+    getIdleTimeout: (state) => state.idleTimeout,
+    getUseIdleTimeout: (state) => state.useIdleTimeout,
     getPrimaryColor: (state) => state.primaryColor,
     getSecondaryColor: (state) => state.secondaryColor,
     getShortcutButtons: (state) => state.shortcutButtons,
@@ -393,6 +399,16 @@ export const useAppStore = defineStore('app', {
       this.language = value
     },
 
+    setIdleTimeout(value: number) {
+      if (Number.isFinite(value) && value > 0) {
+        this.idleTimeout = value
+      }
+    },
+
+    setUseIdleTimeout(value: boolean) {
+      this.useIdleTimeout = value
+    },
+
     setWebsocketIp(ip: string) {
       this.websocket.ip = ip
     },
@@ -446,6 +462,14 @@ export const useAppStore = defineStore('app', {
         this.setLanguage(null)
       }
 
+      if (typeof config.system?.idle_timeout === 'number') {
+        this.setIdleTimeout(config.system.idle_timeout)
+      }
+
+      if (typeof config.system?.use_idle_timeout === 'boolean') {
+        this.setUseIdleTimeout(config.system.use_idle_timeout)
+      }
+
       if (config.shortcutbuttons && Array.isArray(config.shortcutbuttons)) {
         this.setShortcutButtons(
             config.shortcutbuttons.filter(
@@ -490,6 +514,8 @@ export const useAppStore = defineStore('app', {
       }
       system?: {
         language?: string | null
+        idle_timeout?: number
+        use_idle_timeout?: boolean
       }
       shortcutbuttons?: ShortcutButtonConfig[]
     }) {
@@ -716,30 +742,28 @@ export const useAppStore = defineStore('app', {
       if (status.print_stats || status.printStats) {
         const printStats = status.print_stats ?? status.printStats
 
-        if ('state' in printStats) {
-          this.moonraker.printStats.state = asString(printStats.state)
-        }
-        if ('filename' in printStats) {
-          this.moonraker.printStats.filename = asString(printStats.filename)
-        }
-        if ('message' in printStats) {
-          this.moonraker.printStats.message = asString(printStats.message)
-        }
+        if ('state' in printStats) this.moonraker.printStats.state = asString(printStats.state)
+        if ('filename' in printStats) this.moonraker.printStats.filename = asString(printStats.filename)
+        if ('message' in printStats) this.moonraker.printStats.message = asString(printStats.message)
+
         if ('print_duration' in printStats) {
           this.moonraker.printStats.printDuration = asNumber(printStats.print_duration)
         } else if ('printDuration' in printStats) {
           this.moonraker.printStats.printDuration = asNumber(printStats.printDuration)
         }
+
         if ('total_duration' in printStats) {
           this.moonraker.printStats.totalDuration = asNumber(printStats.total_duration)
         } else if ('totalDuration' in printStats) {
           this.moonraker.printStats.totalDuration = asNumber(printStats.totalDuration)
         }
+
         if ('filament_used' in printStats) {
           this.moonraker.printStats.filamentUsed = asNumber(printStats.filament_used)
         } else if ('filamentUsed' in printStats) {
           this.moonraker.printStats.filamentUsed = asNumber(printStats.filamentUsed)
         }
+
         if ('info' in printStats && printStats.info && typeof printStats.info === 'object') {
           this.moonraker.printStats.info = printStats.info
         }
@@ -795,25 +819,13 @@ export const useAppStore = defineStore('app', {
       ) {
         const stats = payload.moonraker_stats as Record<string, unknown>
 
-        if ('cpu_usage' in stats) {
-          this.moonraker.procStats.moonrakerCpuUsage = asNumber(stats.cpu_usage)
-        }
-        if ('memory' in stats) {
-          this.moonraker.procStats.memory = asNumber(stats.memory)
-        }
+        if ('cpu_usage' in stats) this.moonraker.procStats.moonrakerCpuUsage = asNumber(stats.cpu_usage)
+        if ('memory' in stats) this.moonraker.procStats.memory = asNumber(stats.memory)
       }
 
-      if ('cpu_temp' in payload) {
-        this.moonraker.procStats.cpuTemp = asNumber(payload.cpu_temp)
-      }
-
-      if ('system_cpu_usage' in payload) {
-        this.moonraker.procStats.systemCpuUsage = asNumber(payload.system_cpu_usage)
-      }
-
-      if ('system_uptime' in payload) {
-        this.moonraker.procStats.systemUptime = asNumber(payload.system_uptime)
-      }
+      if ('cpu_temp' in payload) this.moonraker.procStats.cpuTemp = asNumber(payload.cpu_temp)
+      if ('system_cpu_usage' in payload) this.moonraker.procStats.systemCpuUsage = asNumber(payload.system_cpu_usage)
+      if ('system_uptime' in payload) this.moonraker.procStats.systemUptime = asNumber(payload.system_uptime)
 
       if ('network' in payload && payload.network && typeof payload.network === 'object') {
         this.moonraker.procStats.network = payload.network
@@ -936,20 +948,6 @@ export const useAppStore = defineStore('app', {
         items: [],
         lastUpdated: null,
       }
-    },
-
-    resetToDefaults() {
-      this.setDarkmode(true)
-      this.setZoom(1.0)
-      this.setDebug(false)
-      this.setLanguage(null)
-      this.primaryColor = null
-      this.secondaryColor = null
-      this.setShortcutButtons([])
-      this.setWebsocketIp('127.0.0.1:7125')
-      this.resetConnectionState()
-      this.resetMoonrakerData()
-      this.resetFiles()
     },
   },
 })

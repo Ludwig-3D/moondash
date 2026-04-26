@@ -14,6 +14,8 @@ const localDarkmode = ref(true)
 const localPrimary = ref('')
 const localSecondary = ref('')
 const localLanguage = ref<string | null>(null)
+const localUseIdleTimeout = ref(true)
+const localIdleTimeout = ref(360)
 
 const primaryPickerOpen = ref(false)
 const secondaryPickerOpen = ref(false)
@@ -25,6 +27,14 @@ const languageItems = [
   { title: 'English', value: 'en' },
   { title: 'Deutsch', value: 'de' },
 ]
+
+const idleTimeoutItems = computed(() => [
+  { title: t('settings.config.idle_timeout_options.1_minute'), value: 60 },
+  { title: t('settings.config.idle_timeout_options.5_minutes'), value: 300 },
+  { title: t('settings.config.idle_timeout_options.15_minutes'), value: 900 },
+  { title: t('settings.config.idle_timeout_options.30_minutes'), value: 1800 },
+  { title: t('settings.config.idle_timeout_options.1_hour'), value: 3600 },
+])
 
 const defaultLightPrimary = '#1867C0'
 const defaultLightSecondary = '#48A9A6'
@@ -48,6 +58,8 @@ watch(
       appStore.getPrimaryColor,
       appStore.getSecondaryColor,
       appStore.getLanguage,
+      appStore.getUseIdleTimeout,
+      appStore.getIdleTimeout,
     ],
     () => {
       suppressAutoSave.value = true
@@ -56,6 +68,8 @@ watch(
       localPrimary.value = appStore.getPrimaryColor ?? ''
       localSecondary.value = appStore.getSecondaryColor ?? ''
       localLanguage.value = appStore.getLanguage
+      localUseIdleTimeout.value = appStore.getUseIdleTimeout
+      localIdleTimeout.value = appStore.getIdleTimeout ?? 360
 
       queueMicrotask(() => {
         suppressAutoSave.value = false
@@ -96,6 +110,8 @@ async function saveConfig() {
       },
       system: {
         language: localLanguage.value,
+        use_idle_timeout: localUseIdleTimeout.value,
+        idle_timeout: localIdleTimeout.value,
       },
     })
   } finally {
@@ -120,6 +136,8 @@ watch(localDarkmode, scheduleSave)
 watch(localPrimary, scheduleSave)
 watch(localSecondary, scheduleSave)
 watch(localLanguage, scheduleSave)
+watch(localUseIdleTimeout, scheduleSave)
+watch(localIdleTimeout, scheduleSave)
 </script>
 
 <template>
@@ -175,6 +193,38 @@ watch(localLanguage, scheduleSave)
               :disabled="saving"
           />
         </div>
+
+        <div class="config-editor-label">
+          {{ t('settings.config.use_idle_timeout') }}
+        </div>
+        <div>
+          <v-switch
+              v-model="localUseIdleTimeout"
+              color="primary"
+              hide-details
+              inset
+              density="compact"
+              :disabled="saving"
+          />
+        </div>
+
+        <template v-if="localUseIdleTimeout">
+          <div class="config-editor-label">
+            {{ t('settings.config.idle_timeout') }}
+          </div>
+          <div>
+            <v-select
+                v-model="localIdleTimeout"
+                :items="idleTimeoutItems"
+                item-title="title"
+                item-value="value"
+                variant="outlined"
+                density="comfortable"
+                hide-details
+                :disabled="saving"
+            />
+          </div>
+        </template>
       </div>
     </v-card-text>
 

@@ -1,4 +1,6 @@
 mod network;
+mod wayland_idle;
+mod wayland_power;
 
 use notify::{RecursiveMode, Watcher};
 use serde_json::{json, Map, Value};
@@ -14,6 +16,7 @@ use tauri_plugin_cli::CliExt;
 
 struct AppConfig(Mutex<Value>);
 struct WatchedConfigPath(Mutex<Option<String>>);
+struct IdleWatcherGeneration(Mutex<u64>);
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -28,6 +31,16 @@ fn get_config(state: State<AppConfig>) -> Result<Value, String> {
         .map_err(|_| "failed to lock config state".to_string())?;
 
     Ok(guard.clone())
+}
+
+#[tauri::command]
+fn turn_off_displays() -> Result<(), String> {
+    wayland_power::turn_off_displays()
+}
+
+#[tauri::command]
+fn turn_on_displays() -> Result<(), String> {
+    wayland_power::turn_on_displays()
 }
 
 #[tauri::command]
@@ -46,6 +59,8 @@ fn load_config_file(
             .map_err(|_| "failed to lock config state".to_string())?;
         *guard = merged.clone();
     }
+
+    bump_idle_generation(&app);
 
     let _ = app.emit("config-loaded", merged.clone());
     ensure_config_watcher(&app, &config_path, &watched_path_state);
@@ -88,9 +103,83 @@ fn save_editable_config(
         *guard = current.clone();
     }
 
+    bump_idle_generation(&app);
+
     let _ = app.emit("config-loaded", current.clone());
 
     Ok(current)
+}
+
+fn bump_idle_generation(app: &AppHandle) {
+    if let Some(state) = app.try_state::<IdleWatcherGeneration>() {
+        if let Ok(mut guard) = state.0.lock() {
+            *guard += 1;
+        }
+    }
+}
+
+fn get_idle_generation(app: &AppHandle) -> u64 {
+    app.try_state::<IdleWatcherGeneration>()
+        .and_then(|state| state.0.lock().ok().map(|guard| *guard))
+        .unwrap_or(0)
+}
+
+fn start_idle_display_watcher(app: AppHandle) {
+    thread::spawn(move || loop {
+        let generation_before_wait = get_idle_generation(&app);
+
+        let timeout_seconds = {
+            let Some(state) = app.try_state::<AppConfig>() else {
+                thread::sleep(Duration::from_secs(5));
+                continue;
+            };
+
+            let Ok(config) = state.0.lock() else {
+                thread::sleep(Duration::from_secs(5));
+                continue;
+            };
+
+            let system = config.get("system").and_then(Value::as_object);
+
+            let enabled = system
+                .and_then(|s| s.get("use_idle_timeout"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+
+            if !enabled {
+                drop(config);
+
+                while get_idle_generation(&app) == generation_before_wait {
+                    thread::sleep(Duration::from_millis(500));
+                }
+
+                continue;
+            }
+
+            system
+                .and_then(|s| s.get("idle_timeout"))
+                .and_then(Value::as_u64)
+                .unwrap_or(900)
+        };
+
+        match wayland_idle::wait_for_idle_or_generation_change(timeout_seconds, || {
+            get_idle_generation(&app) != generation_before_wait
+        }) {
+            Ok(Some(wayland_idle::IdleEvent::Idled)) => {
+                let _ = wayland_power::turn_off_displays();
+            }
+            Ok(Some(wayland_idle::IdleEvent::Resumed)) => {
+                let _ = wayland_power::turn_on_displays();
+            }
+            Ok(None) => {
+                continue;
+            }
+            Err(err) => {
+                eprintln!("idle watcher error: {err}");
+                thread::sleep(Duration::from_secs(10));
+            }
+        }
+    });
 }
 
 fn apply_editable_config(target: &mut Value, patch: &Value) {
@@ -138,16 +227,27 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
         if let Some(value) = system_patch.get("language") {
             system_obj.insert("language".to_string(), normalize_nullable_string(value));
         }
+
+        if let Some(value) = system_patch.get("idle_timeout") {
+            if value.is_number() {
+                system_obj.insert("idle_timeout".to_string(), value.clone());
+            }
+        }
+
+        if let Some(value) = system_patch.get("use_idle_timeout") {
+            if value.is_boolean() {
+                system_obj.insert("use_idle_timeout".to_string(), value.clone());
+            }
+        }
     }
 
-    if let Some(shortcutbuttons_patch) = patch_obj.get("shortcutbuttons").and_then(Value::as_array) {
-        // keep ordered array in memory
+    if let Some(shortcutbuttons_patch) = patch_obj.get("shortcutbuttons").and_then(Value::as_array)
+    {
         target_obj.insert(
             "shortcutbuttons".to_string(),
             Value::Array(shortcutbuttons_patch.clone()),
         );
 
-        // remove old section entries
         let keys_to_remove: Vec<String> = target_obj
             .keys()
             .filter(|key| key.to_lowercase().starts_with("shortcutbutton "))
@@ -158,7 +258,6 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
             target_obj.remove(&key);
         }
 
-        // recreate sections from ordered array
         for button in shortcutbuttons_patch {
             let Some(button_obj) = button.as_object() else {
                 continue;
@@ -168,7 +267,9 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
                 continue;
             };
 
-            let Some(macro_inactive) = button_obj.get("macro_inactive").and_then(Value::as_str) else {
+            let Some(macro_inactive) =
+                button_obj.get("macro_inactive").and_then(Value::as_str)
+            else {
                 continue;
             };
 
@@ -192,19 +293,28 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
 
             if let Some(value) = button_obj.get("macro_active").and_then(Value::as_str) {
                 if !value.trim().is_empty() {
-                    section.insert("macro_active".to_string(), Value::String(value.trim().to_string()));
+                    section.insert(
+                        "macro_active".to_string(),
+                        Value::String(value.trim().to_string()),
+                    );
                 }
             }
 
             if let Some(value) = button_obj.get("active_config").and_then(Value::as_str) {
                 if !value.trim().is_empty() {
-                    section.insert("active_config".to_string(), Value::String(value.trim().to_string()));
+                    section.insert(
+                        "active_config".to_string(),
+                        Value::String(value.trim().to_string()),
+                    );
                 }
             }
 
             if let Some(value) = button_obj.get("active_type").and_then(Value::as_str) {
                 if !value.trim().is_empty() {
-                    section.insert("active_type".to_string(), Value::String(value.trim().to_string()));
+                    section.insert(
+                        "active_type".to_string(),
+                        Value::String(value.trim().to_string()),
+                    );
                 }
             }
 
@@ -361,7 +471,11 @@ fn serialize_scalar(value: &Value) -> String {
     match value {
         Value::Null => String::new(),
         Value::Bool(v) => {
-            if *v { "true".to_string() } else { "false".to_string() }
+            if *v {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
         }
         Value::Number(v) => v.to_string(),
         Value::String(v) => v.clone(),
@@ -384,7 +498,9 @@ fn default_config() -> Value {
             "debug": false
         },
         "system": {
-            "language": null
+            "language": "en",
+            "idle_timeout": 900,
+            "use_idle_timeout": true
         }
     })
 }
@@ -456,7 +572,6 @@ fn parse_cfg_to_json(input: &str) -> Result<Value, String> {
         }
     }
 
-    // Build ordered shortcutbuttons array from [shortcutbutton ...] sections
     let mut shortcutbuttons: Vec<Value> = Vec::new();
 
     for (key, value) in &root {
@@ -504,19 +619,28 @@ fn parse_cfg_to_json(input: &str) -> Result<Value, String> {
 
         if let Some(value) = section_obj.get("macro_active").and_then(Value::as_str) {
             if !value.trim().is_empty() {
-                button.insert("macro_active".to_string(), Value::String(value.trim().to_string()));
+                button.insert(
+                    "macro_active".to_string(),
+                    Value::String(value.trim().to_string()),
+                );
             }
         }
 
         if let Some(value) = section_obj.get("active_config").and_then(Value::as_str) {
             if !value.trim().is_empty() {
-                button.insert("active_config".to_string(), Value::String(value.trim().to_string()));
+                button.insert(
+                    "active_config".to_string(),
+                    Value::String(value.trim().to_string()),
+                );
             }
         }
 
         if let Some(value) = section_obj.get("active_type").and_then(Value::as_str) {
             if !value.trim().is_empty() {
-                button.insert("active_type".to_string(), Value::String(value.trim().to_string()));
+                button.insert(
+                    "active_type".to_string(),
+                    Value::String(value.trim().to_string()),
+                );
             }
         }
 
@@ -575,8 +699,10 @@ fn merge_json(defaults: Value, overrides: Value) -> Value {
 }
 
 fn get_app_config_arg() -> Option<String> {
-    std::env::args()
-        .find_map(|arg| arg.strip_prefix("--app-config=").map(|s| s.to_string()))
+    std::env::args().find_map(|arg| {
+        arg.strip_prefix("--app-config=")
+            .map(|s| s.to_string())
+    })
 }
 
 fn get_default_project_config_path() -> Option<String> {
@@ -659,6 +785,8 @@ fn start_config_watcher(app: AppHandle, config_path: String) {
                                 continue;
                             }
 
+                            bump_idle_generation(&app);
+
                             last_emitted = Some(config_json.clone());
                             let _ = app.emit("config-loaded", config_json);
                         }
@@ -684,6 +812,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(AppConfig(Mutex::new(default_config())))
         .manage(WatchedConfigPath(Mutex::new(None)))
+        .manage(IdleWatcherGeneration(Mutex::new(0)))
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -691,6 +820,8 @@ pub fn run() {
             get_config,
             load_config_file,
             save_editable_config,
+            turn_off_displays,
+            turn_on_displays,
             network::get_network_status,
             network::get_wifi_settings,
             network::get_wired_settings,
@@ -743,7 +874,11 @@ pub fn run() {
                 }
             }
 
+            bump_idle_generation(app.handle());
+
             let _ = app.emit("config-loaded", final_config.clone());
+
+            start_idle_display_watcher(app.handle().clone());
 
             if fullscreen {
                 if let Some(window) = app.get_webview_window("main") {

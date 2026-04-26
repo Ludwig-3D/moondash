@@ -34,7 +34,10 @@ mkdir -p "$HOME/.config/labwc"
 
 cat > "$HOME/.config/labwc/autostart" <<EOF
 #!/bin/sh
-unclutter -idle 2 -jitter 1 &
+swayidle -w \
+  timeout 2 'labwc -r hide_cursor' \
+  resume 'labwc -r show_cursor' &
+
 exec /usr/bin/moondash --app-config "$MCCONFIGFILE"
 EOF
 

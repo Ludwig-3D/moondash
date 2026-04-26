@@ -1,4 +1,5 @@
 mod network;
+mod input_idle;
 mod wayland_idle;
 mod wayland_power;
 
@@ -80,29 +81,27 @@ fn sleep_displays_until_input() -> Result<(), String> {
     }
 
     thread::spawn(|| {
-        eprintln!("wake listener started");
+        eprintln!("manual sleep: waiting for input activity");
 
-        match wayland_idle::wait_for_resume_after_sleep() {
+        match input_idle::wait_for_input_activity() {
             Ok(()) => {
-                eprintln!("input resumed, turning displays on");
+                eprintln!("manual sleep: input detected, waking display");
 
                 for attempt in 1..=3 {
                     match wayland_power::turn_on_displays() {
                         Ok(()) => {
-                            eprintln!("turn_on_displays succeeded after wake");
+                            eprintln!("manual sleep: display wake succeeded");
                             break;
                         }
                         Err(err) => {
-                            eprintln!(
-                                "turn_on_displays failed after wake, attempt {attempt}: {err}"
-                            );
+                            eprintln!("manual sleep: display wake failed attempt {attempt}: {err}");
                             thread::sleep(Duration::from_millis(250));
                         }
                     }
                 }
             }
             Err(err) => {
-                eprintln!("wake listener failed: {err}");
+                eprintln!("manual sleep: input wake watcher failed: {err}");
             }
         }
     });
@@ -211,88 +210,83 @@ fn turn_on_displays_with_retry(reason: &str) {
 
 fn start_idle_display_watcher(app: AppHandle) {
     thread::spawn(move || loop {
-        let generation_before_wait = get_idle_generation(&app);
+        let generation = get_idle_generation(&app);
 
-        let timeout_seconds = {
-            let Some(state) = app.try_state::<AppConfig>() else {
-                thread::sleep(Duration::from_secs(5));
-                continue;
-            };
-
-            let Ok(config) = state.0.lock() else {
-                thread::sleep(Duration::from_secs(5));
-                continue;
-            };
-
-            let system = config.get("system").and_then(Value::as_object);
-
-            let enabled = system
-                .and_then(|s| s.get("use_idle_timeout"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-
-            let timeout = system
-                .and_then(|s| s.get("idle_timeout"))
-                .and_then(Value::as_u64)
-                .unwrap_or(900);
-
-            eprintln!(
-                "idle config read: enabled={enabled}, timeout={timeout}s, generation={generation_before_wait}"
-            );
-
-            if !enabled {
-                drop(config);
-
-                while get_idle_generation(&app) == generation_before_wait {
-                    thread::sleep(Duration::from_millis(500));
-                }
-
-                continue;
-            }
-
-            timeout
+        let Some((enabled, timeout_seconds)) = read_idle_config(&app) else {
+            eprintln!("input idle watcher: failed to read config");
+            thread::sleep(Duration::from_secs(5));
+            continue;
         };
 
-        eprintln!("automatic idle watcher armed for {timeout_seconds}s");
+        eprintln!(
+            "input idle watcher config: enabled={enabled}, timeout={timeout_seconds}s, generation={generation}"
+        );
 
-        match wayland_idle::wait_for_idle_or_generation_change(timeout_seconds, || {
-            get_idle_generation(&app) != generation_before_wait
-        }) {
-            Ok(Some(wayland_idle::IdleEvent::Idled)) => {
-                eprintln!("automatic idle timeout reached, turning displays off");
-
-                match wayland_power::turn_off_displays() {
-                    Ok(()) => {
-                        eprintln!("automatic sleep succeeded");
-                    }
-                    Err(err) => {
-                        eprintln!("automatic sleep failed: {err}");
-                        thread::sleep(Duration::from_secs(5));
-                        continue;
-                    }
-                }
-
-                eprintln!("automatic wake listener armed");
-
-                match wayland_idle::wait_for_resume_after_sleep() {
-                    Ok(()) => {
-                        turn_on_displays_with_retry("automatic idle wake");
-                    }
-                    Err(err) => {
-                        eprintln!("automatic wake listener failed: {err}");
-                    }
-                }
+        if !enabled {
+            while get_idle_generation(&app) == generation {
+                thread::sleep(Duration::from_millis(500));
             }
-            Ok(Some(wayland_idle::IdleEvent::Resumed)) => {
-                eprintln!("unexpected resumed event from idle watcher");
-            }
-            Ok(None) => {
-                eprintln!("automatic idle watcher cancelled because config changed");
+            continue;
+        }
+
+        let rx = match input_idle::start_input_idle_watcher(timeout_seconds) {
+            Ok(rx) => rx,
+            Err(err) => {
+                eprintln!("input idle watcher failed to start: {err}");
+                thread::sleep(Duration::from_secs(10));
                 continue;
             }
-            Err(err) => {
-                eprintln!("automatic idle watcher error: {err}");
-                thread::sleep(Duration::from_secs(10));
+        };
+
+        let mut sleeping = false;
+
+        loop {
+            if get_idle_generation(&app) != generation {
+                eprintln!("input idle watcher restarting because config changed");
+                break;
+            }
+
+            match rx.recv_timeout(Duration::from_millis(500)) {
+                Ok(input_idle::InputIdleEvent::Activity) => {
+                    if sleeping {
+                        eprintln!("input activity detected while sleeping, waking displays");
+
+                        for attempt in 1..=3 {
+                            match wayland_power::turn_on_displays() {
+                                Ok(()) => {
+                                    eprintln!("automatic wake succeeded");
+                                    sleeping = false;
+                                    break;
+                                }
+                                Err(err) => {
+                                    eprintln!("automatic wake failed attempt {attempt}: {err}");
+                                    thread::sleep(Duration::from_millis(250));
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(input_idle::InputIdleEvent::Idle) => {
+                    if !sleeping {
+                        eprintln!("input idle timeout reached, turning displays off");
+
+                        match wayland_power::turn_off_displays() {
+                            Ok(()) => {
+                                eprintln!("automatic display sleep succeeded");
+                                sleeping = true;
+                            }
+                            Err(err) => {
+                                eprintln!("automatic display sleep failed: {err}");
+                            }
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(err) => {
+                    eprintln!("input idle watcher channel closed: {err}");
+                    thread::sleep(Duration::from_secs(5));
+                    break;
+                }
             }
         }
     });

@@ -231,6 +231,15 @@ fn start_idle_display_watcher(app: AppHandle) {
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
 
+            let timeout = system
+                .and_then(|s| s.get("idle_timeout"))
+                .and_then(Value::as_u64)
+                .unwrap_or(900);
+
+            eprintln!(
+                "idle config read: enabled={enabled}, timeout={timeout}s, generation={generation_before_wait}"
+            );
+
             if !enabled {
                 drop(config);
 
@@ -241,26 +250,29 @@ fn start_idle_display_watcher(app: AppHandle) {
                 continue;
             }
 
-            system
-                .and_then(|s| s.get("idle_timeout"))
-                .and_then(Value::as_u64)
-                .unwrap_or(900)
+            timeout
         };
 
-        eprintln!("idle watcher armed with timeout {timeout_seconds}s");
+        eprintln!("automatic idle watcher armed for {timeout_seconds}s");
 
         match wayland_idle::wait_for_idle_or_generation_change(timeout_seconds, || {
             get_idle_generation(&app) != generation_before_wait
         }) {
             Ok(Some(wayland_idle::IdleEvent::Idled)) => {
-                eprintln!("idle timeout reached, turning displays off");
+                eprintln!("automatic idle timeout reached, turning displays off");
 
-                if let Err(err) = wayland_power::turn_off_displays() {
-                    eprintln!("turn_off_displays after idle failed: {err}");
-                    continue;
+                match wayland_power::turn_off_displays() {
+                    Ok(()) => {
+                        eprintln!("automatic sleep succeeded");
+                    }
+                    Err(err) => {
+                        eprintln!("automatic sleep failed: {err}");
+                        thread::sleep(Duration::from_secs(5));
+                        continue;
+                    }
                 }
 
-                eprintln!("automatic sleep armed wake listener");
+                eprintln!("automatic wake listener armed");
 
                 match wayland_idle::wait_for_resume_after_sleep() {
                     Ok(()) => {
@@ -272,14 +284,14 @@ fn start_idle_display_watcher(app: AppHandle) {
                 }
             }
             Ok(Some(wayland_idle::IdleEvent::Resumed)) => {
-                turn_on_displays_with_retry("idle resumed");
+                eprintln!("unexpected resumed event from idle watcher");
             }
             Ok(None) => {
-                eprintln!("idle watcher cancelled because config changed");
+                eprintln!("automatic idle watcher cancelled because config changed");
                 continue;
             }
             Err(err) => {
-                eprintln!("idle watcher error: {err}");
+                eprintln!("automatic idle watcher error: {err}");
                 thread::sleep(Duration::from_secs(10));
             }
         }

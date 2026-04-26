@@ -47,6 +47,19 @@ where
     }
 }
 
+pub fn wait_for_resume_after_sleep() -> Result<(), String> {
+    let rx = start_idle_listener(1)?;
+
+    loop {
+        match rx.recv_timeout(Duration::from_millis(500)) {
+            Ok(IdleEvent::Resumed) => return Ok(()),
+            Ok(IdleEvent::Idled) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(err) => return Err(format!("wake listener closed before resume: {err}")),
+        }
+    }
+}
+
 fn start_idle_listener(timeout_seconds: u64) -> Result<Receiver<IdleEvent>, String> {
     let timeout_ms = timeout_seconds
         .saturating_mul(1000)
@@ -64,12 +77,13 @@ fn start_idle_listener(timeout_seconds: u64) -> Result<Receiver<IdleEvent>, Stri
 }
 
 fn run_idle_listener(timeout_ms: u32, tx: Sender<IdleEvent>) -> Result<(), String> {
+    eprintln!("starting Wayland idle listener with timeout {timeout_ms}ms");
+
     let conn = Connection::connect_to_env()
         .map_err(|e| format!("failed to connect to Wayland: {e}"))?;
 
-    let (globals, mut event_queue) =
-        registry_queue_init::<WaylandIdleState>(&conn)
-            .map_err(|e| format!("failed to init Wayland registry: {e}"))?;
+    let (globals, mut event_queue) = registry_queue_init::<WaylandIdleState>(&conn)
+        .map_err(|e| format!("failed to init Wayland registry: {e}"))?;
 
     let qh = event_queue.handle();
 
@@ -86,9 +100,7 @@ fn run_idle_listener(timeout_ms: u32, tx: Sender<IdleEvent>) -> Result<(), Strin
         .bind::<WlSeat, _, _>(&qh, 1..=9, ())
         .map_err(|_| "compositor does not expose wl_seat".to_string())?;
 
-    let notification =
-        idle_notifier.get_idle_notification(timeout_ms, &seat, &qh, ());
-
+    let notification = idle_notifier.get_idle_notification(timeout_ms, &seat, &qh, ());
     state.notifications.push(notification);
 
     conn.flush()
@@ -148,9 +160,11 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
     ) {
         match event {
             ext_idle_notification_v1::Event::Idled => {
+                eprintln!("Wayland idle event: idled");
                 let _ = state.tx.send(IdleEvent::Idled);
             }
             ext_idle_notification_v1::Event::Resumed => {
+                eprintln!("Wayland idle event: resumed");
                 let _ = state.tx.send(IdleEvent::Resumed);
             }
             _ => {}

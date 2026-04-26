@@ -66,6 +66,51 @@ fn turn_on_displays() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn sleep_displays_until_input() -> Result<(), String> {
+    eprintln!("sleep_displays_until_input command called");
+
+    match wayland_power::turn_off_displays() {
+        Ok(()) => {
+            eprintln!("displays turned off");
+        }
+        Err(err) => {
+            eprintln!("failed to turn displays off: {err}");
+            return Err(err);
+        }
+    }
+
+    thread::spawn(|| {
+        eprintln!("wake listener started");
+
+        match wayland_idle::wait_for_resume_after_sleep() {
+            Ok(()) => {
+                eprintln!("input resumed, turning displays on");
+
+                for attempt in 1..=3 {
+                    match wayland_power::turn_on_displays() {
+                        Ok(()) => {
+                            eprintln!("turn_on_displays succeeded after wake");
+                            break;
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "turn_on_displays failed after wake, attempt {attempt}: {err}"
+                            );
+                            thread::sleep(Duration::from_millis(250));
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!("wake listener failed: {err}");
+            }
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
 fn load_config_file(
     config_path: String,
     app: AppHandle,
@@ -136,6 +181,7 @@ fn bump_idle_generation(app: &AppHandle) {
     if let Some(state) = app.try_state::<IdleWatcherGeneration>() {
         if let Ok(mut guard) = state.0.lock() {
             *guard += 1;
+            eprintln!("idle watcher generation bumped to {}", *guard);
         }
     }
 }
@@ -144,6 +190,23 @@ fn get_idle_generation(app: &AppHandle) -> u64 {
     app.try_state::<IdleWatcherGeneration>()
         .and_then(|state| state.0.lock().ok().map(|guard| *guard))
         .unwrap_or(0)
+}
+
+fn turn_on_displays_with_retry(reason: &str) {
+    eprintln!("{reason}, turning displays on");
+
+    for attempt in 1..=3 {
+        match wayland_power::turn_on_displays() {
+            Ok(()) => {
+                eprintln!("turn_on_displays succeeded for reason: {reason}");
+                break;
+            }
+            Err(err) => {
+                eprintln!("turn_on_displays failed, attempt {attempt}, reason {reason}: {err}");
+                thread::sleep(Duration::from_millis(250));
+            }
+        }
+    }
 }
 
 fn start_idle_display_watcher(app: AppHandle) {
@@ -181,19 +244,26 @@ fn start_idle_display_watcher(app: AppHandle) {
             system
                 .and_then(|s| s.get("idle_timeout"))
                 .and_then(Value::as_u64)
-                .unwrap_or(900)
+                .unwrap_or(360)
         };
+
+        eprintln!("idle watcher armed with timeout {timeout_seconds}s");
 
         match wayland_idle::wait_for_idle_or_generation_change(timeout_seconds, || {
             get_idle_generation(&app) != generation_before_wait
         }) {
             Ok(Some(wayland_idle::IdleEvent::Idled)) => {
-                let _ = wayland_power::turn_off_displays();
+                eprintln!("idle timeout reached, turning displays off");
+
+                if let Err(err) = wayland_power::turn_off_displays() {
+                    eprintln!("turn_off_displays after idle failed: {err}");
+                }
             }
             Ok(Some(wayland_idle::IdleEvent::Resumed)) => {
-                let _ = wayland_power::turn_on_displays();
+                turn_on_displays_with_retry("idle resumed");
             }
             Ok(None) => {
+                eprintln!("idle watcher cancelled because config changed");
                 continue;
             }
             Err(err) => {
@@ -521,7 +591,7 @@ fn default_config() -> Value {
         },
         "system": {
             "language": "en",
-            "idle_timeout": 900,
+            "idle_timeout": 360,
             "use_idle_timeout": true
         }
     })
@@ -844,6 +914,7 @@ pub fn run() {
             save_editable_config,
             turn_off_displays,
             turn_on_displays,
+            sleep_displays_until_input,
             network::get_network_status,
             network::get_wifi_settings,
             network::get_wired_settings,

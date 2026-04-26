@@ -111,7 +111,7 @@ function togglePause() {
 }
 
 async function sleepDisplay() {
-  await invoke('turn_off_displays')
+  await invoke('sleep_displays_until_input')
 }
 </script>
 

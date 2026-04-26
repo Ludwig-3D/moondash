@@ -22,12 +22,13 @@ pub fn turn_on_displays() -> Result<(), String> {
 }
 
 fn set_outputs_power(mode: Mode) -> Result<(), String> {
+    eprintln!("Wayland power request: {mode:?}");
+
     let conn = Connection::connect_to_env()
         .map_err(|e| format!("failed to connect to Wayland: {e}"))?;
 
-    let (globals, mut event_queue) =
-        registry_queue_init::<WaylandPowerState>(&conn)
-            .map_err(|e| format!("failed to init Wayland registry: {e}"))?;
+    let (globals, mut event_queue) = registry_queue_init::<WaylandPowerState>(&conn)
+        .map_err(|e| format!("failed to init Wayland registry: {e}"))?;
 
     let qh = event_queue.handle();
 
@@ -53,6 +54,8 @@ fn set_outputs_power(mode: Mode) -> Result<(), String> {
     event_queue
         .roundtrip(&mut state)
         .map_err(|e| format!("Wayland power roundtrip failed: {e}"))?;
+
+    eprintln!("Wayland power request finished: {mode:?}");
 
     Ok(())
 }
@@ -97,10 +100,11 @@ impl Dispatch<ZwlrOutputPowerV1, ()> for WaylandPowerState {
     fn event(
         _state: &mut Self,
         _proxy: &ZwlrOutputPowerV1,
-        _event: wayland_protocols_wlr::output_power_management::v1::client::zwlr_output_power_v1::Event,
+        event: wayland_protocols_wlr::output_power_management::v1::client::zwlr_output_power_v1::Event,
         _data: &(),
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
+        eprintln!("Wayland output power event: {event:?}");
     }
 }

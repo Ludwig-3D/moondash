@@ -244,7 +244,7 @@ fn start_idle_display_watcher(app: AppHandle) {
             system
                 .and_then(|s| s.get("idle_timeout"))
                 .and_then(Value::as_u64)
-                .unwrap_or(360)
+                .unwrap_or(900)
         };
 
         eprintln!("idle watcher armed with timeout {timeout_seconds}s");
@@ -591,7 +591,7 @@ fn default_config() -> Value {
         },
         "system": {
             "language": "en",
-            "idle_timeout": 360,
+            "idle_timeout": 900,
             "use_idle_timeout": true
         }
     })

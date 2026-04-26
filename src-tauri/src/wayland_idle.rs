@@ -23,6 +23,7 @@ pub enum IdleEvent {
 struct WaylandIdleState {
     notifications: Vec<ExtIdleNotificationV1>,
     tx: Sender<IdleEvent>,
+    done: bool,
 }
 
 pub fn wait_for_idle_or_generation_change<F>(
@@ -90,6 +91,7 @@ fn run_idle_listener(timeout_ms: u32, tx: Sender<IdleEvent>) -> Result<(), Strin
     let mut state = WaylandIdleState {
         notifications: Vec::new(),
         tx,
+        done: false,
     };
 
     let idle_notifier = globals
@@ -106,11 +108,15 @@ fn run_idle_listener(timeout_ms: u32, tx: Sender<IdleEvent>) -> Result<(), Strin
     conn.flush()
         .map_err(|e| format!("failed to flush Wayland idle request: {e}"))?;
 
-    loop {
+    while !state.done {
         event_queue
             .blocking_dispatch(&mut state)
             .map_err(|e| format!("Wayland idle dispatch failed: {e}"))?;
     }
+
+    eprintln!("Wayland idle listener finished");
+
+    Ok(())
 }
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for WaylandIdleState {
@@ -162,10 +168,12 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleState {
             ext_idle_notification_v1::Event::Idled => {
                 eprintln!("Wayland idle event: idled");
                 let _ = state.tx.send(IdleEvent::Idled);
+                state.done = true;
             }
             ext_idle_notification_v1::Event::Resumed => {
                 eprintln!("Wayland idle event: resumed");
                 let _ = state.tx.send(IdleEvent::Resumed);
+                state.done = true;
             }
             _ => {}
         }

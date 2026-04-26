@@ -13,21 +13,11 @@ permissions:
   contents: read
 
 jobs:
-  audit:
-    name: Security audit
+  frontend-build:
+    name: Build frontend
     runs-on: ubuntu-latest
-    container: debian:12
 
     steps:
-      - name: Install base tools
-        run: |
-          apt-get update
-          apt-get install -y \
-            ca-certificates curl git xz-utils build-essential \
-            pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev librsvg2-dev patchelf \
-            libssl-dev clang mold
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -46,6 +36,34 @@ jobs:
       - name: Frontend build
         run: npm run build --if-present
 
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: |
+            dist
+            build
+          if-no-files-found: error
+
+  audit:
+    name: Security audit
+    needs: frontend-build
+    runs-on: ubuntu-latest
+    container: debian:12
+
+    steps:
+      - name: Install base tools
+        run: |
+          apt-get update
+          apt-get install -y \
+            ca-certificates curl git xz-utils build-essential \
+            pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libssl-dev clang mold
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -62,7 +80,9 @@ jobs:
 
   build-linux-native:
     name: Build Linux ${{ matrix.arch }} ${{ matrix.osname }}
-    needs: audit
+    needs:
+      - frontend-build
+      - audit
     runs-on: ${{ matrix.runner }}
     container: debian:${{ matrix.debian }}
 
@@ -102,6 +122,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: .
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -157,7 +183,9 @@ jobs:
 
   build-linux-armhf:
     name: Build Linux armhf ${{ matrix.osname }}
-    needs: audit
+    needs:
+      - frontend-build
+      - audit
     runs-on: ubuntu-latest
 
     strategy:
@@ -173,6 +201,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: .
 
       - name: Set up QEMU for armhf
         uses: docker/setup-qemu-action@v3

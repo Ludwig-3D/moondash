@@ -8,8 +8,40 @@ permissions:
   contents: write
 
 jobs:
+  frontend-build:
+    name: Build frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "25"
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Frontend build
+        run: npm run build --if-present
+
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: |
+            dist
+            build
+          if-no-files-found: error
+
   build-release-native:
     name: Build release Linux ${{ matrix.arch }} ${{ matrix.osname }}
+    needs: frontend-build
     runs-on: ${{ matrix.runner }}
     container: debian:${{ matrix.debian }}
 
@@ -51,6 +83,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
+
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: .
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -98,6 +136,7 @@ jobs:
 
   build-release-armhf:
     name: Build release Linux armhf ${{ matrix.osname }}
+    needs: frontend-build
     runs-on: ubuntu-latest
 
     strategy:
@@ -115,6 +154,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
+
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: .
 
       - name: Set up QEMU for armhf
         uses: docker/setup-qemu-action@v3

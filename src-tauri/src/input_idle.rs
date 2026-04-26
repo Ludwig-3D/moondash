@@ -55,16 +55,20 @@ pub fn start_input_idle_watcher(timeout_seconds: u64) -> Result<Receiver<InputId
 }
 
 pub fn wait_for_input_activity() -> Result<(), String> {
-    let rx = start_input_idle_watcher(3600)?;
+    let (tx, rx) = channel();
 
-    loop {
-        match rx.recv_timeout(Duration::from_millis(500)) {
-            Ok(InputIdleEvent::Activity) => return Ok(()),
-            Ok(InputIdleEvent::Idle) => continue,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(err) => return Err(format!("input activity watcher closed: {err}")),
+    let devices = open_input_devices()?;
+
+    thread::spawn(move || {
+        eprintln!("input wake: watching {} input devices", devices.len());
+
+        for device in devices {
+            spawn_device_reader(device, tx.clone());
         }
-    }
+    });
+
+    rx.recv()
+        .map_err(|err| format!("input activity watcher closed: {err}"))
 }
 
 fn spawn_device_reader(mut device: Device, tx: Sender<()>) {

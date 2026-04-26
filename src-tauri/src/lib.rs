@@ -1,6 +1,5 @@
 mod network;
 mod input_idle;
-mod wayland_idle;
 mod wayland_power;
 
 use notify::{RecursiveMode, Watcher};

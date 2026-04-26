@@ -17,7 +17,7 @@ Environment=GTK_THEME=Adwaita:dark
 Environment=COLOR_SCHEME=prefer-dark
 Environment=WLR_RENDERER=gles2
 Environment=GDK_GL=gles
-Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
+#Environment=WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 ExecStart=/usr/bin/labwc
 

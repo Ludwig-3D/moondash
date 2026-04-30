@@ -38,41 +38,52 @@ function onPowerClick() {
 </script>
 
 <template>
-  <v-navigation-drawer rail permanent class="sidenav" rail-width="56">
-    <v-list class="nav-list" density="compact" nav>
-      <v-list-item color="primary" prepend-icon="mdi-home-variant" to="/" />
-      <v-list-item color="primary" prepend-icon="mdi-tune-vertical-variant" to="/tune" />
-      <v-list-item color="primary" prepend-icon="mdi-printer-3d" to="/files" />
-      <v-list-item color="primary" prepend-icon="mdi-cog" to="/settings" />
+  <v-navigation-drawer rail permanent class="sidenav" width="58" rail-width="58">
+    <div class="nav-list">
+      <RouterLink class="nav-button" active-class="nav-button--active" to="/">
+        <v-icon icon="mdi-home-variant" />
+      </RouterLink>
 
-      <v-list-item
+      <RouterLink class="nav-button" active-class="nav-button--active" to="/tune">
+        <v-icon icon="mdi-tune-vertical-variant" />
+      </RouterLink>
+
+      <RouterLink class="nav-button" active-class="nav-button--active" to="/files">
+        <v-icon icon="mdi-printer-3d" />
+      </RouterLink>
+
+      <RouterLink class="nav-button" active-class="nav-button--active" to="/settings">
+        <v-icon icon="mdi-cog" />
+      </RouterLink>
+
+      <RouterLink
           v-if="isDebugEnabled"
-          color="primary"
-          prepend-icon="mdi-code-json"
+          class="nav-button"
+          active-class="nav-button--active"
           to="/dev"
-      />
+      >
+        <v-icon icon="mdi-code-json" />
+      </RouterLink>
 
-      <v-list-item
+      <button
+          class="nav-button"
+          type="button"
           :disabled="emergencyStopping"
           @click="onPowerClick"
       >
-        <template #prepend>
-          <v-icon :color="isPrinterRunning ? 'error' : undefined">
-            {{ isPrinterRunning ? 'mdi-alert-octagon' : 'mdi-power' }}
-          </v-icon>
-        </template>
+        <v-progress-circular
+            v-if="emergencyStopping"
+            indeterminate
+            size="16"
+            width="2"
+            color="error"
+        />
 
-        <template #append>
-          <v-progress-circular
-              v-if="emergencyStopping"
-              indeterminate
-              size="16"
-              width="2"
-              color="error"
-          />
-        </template>
-      </v-list-item>
-    </v-list>
+        <v-icon v-else :color="isPrinterRunning ? 'error' : undefined">
+          {{ isPrinterRunning ? 'mdi-alert-octagon' : 'mdi-power' }}
+        </v-icon>
+      </button>
+    </div>
   </v-navigation-drawer>
 
   <PowerDialog v-model="powerDialogOpen" />
@@ -80,14 +91,43 @@ function onPowerClick() {
 
 <style scoped>
 .nav-list {
-  min-height: 100vh;
+  height: 100vh;
+  width: 58px;
   display: flex;
   flex-direction: column;
-  justify-content: space-evenly;
+  padding: 0;
   margin: 0;
+  gap: 5px;
+}
+
+.nav-button {
+  flex: 1;
+  width: 58px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: rgba(var(--v-theme-on-background), 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  font-size: 1.45em;
+}
+
+.nav-button--active {
+  color: rgb(var(--v-theme-primary));
+}
+
+.nav-button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .sidenav {
+  width: 58px !important;
   background: rgb(var(--v-theme-background));
   border: none;
 }

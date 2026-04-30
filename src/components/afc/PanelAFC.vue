@@ -305,6 +305,7 @@ async function handleLoad(lane: AfcLane) {
                   :style="{ background: getActionOverlayColor(lane.color) }"
               >
                 <v-btn
+                    class="afc-lane-edit afc-action-btn"
                     icon="mdi-pen"
                     variant="plain"
                     :style="{ color: getContrastTextColor(lane.color) }"
@@ -335,6 +336,7 @@ async function handleLoad(lane: AfcLane) {
                   :style="{ background: getActionOverlayColor(lane.color) }"
               >
                 <v-btn
+                    class="afc-action-btn"
                     icon="mdi-eject"
                     variant="plain"
                     :style="{ color: getContrastTextColor(lane.color) }"
@@ -343,6 +345,7 @@ async function handleLoad(lane: AfcLane) {
                     @click="handleEject(lane)"
                 />
                 <v-btn
+                    class="afc-action-btn"
                     icon="mdi-tray-arrow-down"
                     variant="plain"
                     :style="{ color: getContrastTextColor(lane.color) }"
@@ -459,6 +462,10 @@ async function handleLoad(lane: AfcLane) {
   justify-content: space-around;
 }
 
+.afc-lane-edit {
+  width: 100%;
+}
+
 .lane-top-actions {
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
@@ -468,5 +475,9 @@ async function handleLoad(lane: AfcLane) {
   display: flex;
   align-items: center;
   justify-content: space-around;
+}
+
+.afc-action-btn {
+  border-radius: 0;
 }
 </style>

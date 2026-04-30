@@ -59,8 +59,7 @@ function createFallbackItem(): ShortcutButtonEditorItem {
   }
 }
 
-function autoThresholdForType(type: ActiveType): number | undefined {
-  console.log(thresholdMap[type])
+function autoThresholdForType(type: ActiveType|string): number | undefined {
   if(Object.keys(thresholdMap).includes(type)) return thresholdMap[type]
   return undefined
 }
@@ -191,6 +190,9 @@ function onActiveSelectionChanged(value: string | null) {
 
 function save() {
   if (!localItem.value || !canSave.value) return
+  if(localItem.value.active_threshold === 0) {
+    localItem.value.active_threshold = autoThresholdForType(localItem?.value?.active_type?.trim() ?? '') ?? 0
+  }
 
   emit('save', {
     ...localItem.value,

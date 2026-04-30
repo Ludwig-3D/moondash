@@ -69,7 +69,10 @@ install_packages() {
     libegl-mesa0 \
     libgles2 \
     swayidle wtype \
-    moondash
+    moondash seatd
+
+  status_msg "Emable seatd service"
+  sudo systemctl enable --now seatd
 }
 
 modify_user() {

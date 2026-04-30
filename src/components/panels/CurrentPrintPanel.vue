@@ -37,7 +37,10 @@ const fileDisplayName = computed(() => printFilename.value.replace(/\.gcode$/i, 
 const hasLoadedFile = computed(() => Boolean(printFilename.value))
 const isPrinting = computed(() => printState.value === 'printing')
 const isPaused = computed(() => printState.value === 'paused')
-const isFinished = computed(() => printState.value === 'complete')
+const isFinished = computed(() => (
+  printState.value === 'complete' ||
+  printState.value === 'cancelled'
+))
 const isActivePrint = computed(() => isPrinting.value || isPaused.value || isFinished.value)
 
 const progressRatio = computed(() => {

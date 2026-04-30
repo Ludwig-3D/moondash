@@ -4,11 +4,19 @@ import { useI18n } from 'vue-i18n'
 import type { ShortcutButtonConfig } from '@/stores/app'
 import KeyboardOverlay from '@/components/KeyboardOverlay.vue'
 
-type ActiveType = '' | 'output_pin' | 'fan_generic' | 'fan' | 'temperature_fan'
+type ActiveType = '' | 'output_pin' | 'fan_generic' | 'fan' | 'temperature_fan' | 'led'
 
 type ShortcutButtonEditorItem = ShortcutButtonConfig & {
   id: string
   position?: number
+}
+
+const thresholdMap: any = {
+  'output_pin': 0.5,
+  'fan_generic': 0.2,
+  'fan': 0.2,
+  'temperature_fan': 0.2,
+  'led': 0.5,
 }
 
 const { t } = useI18n()
@@ -46,14 +54,14 @@ function createFallbackItem(): ShortcutButtonEditorItem {
     icon: 'mdi-lightbulb',
     active_config: '',
     active_type: '',
-    active_threshould: undefined,
+    active_threshold: undefined,
     position: undefined,
   }
 }
 
 function autoThresholdForType(type: ActiveType): number | undefined {
-  if (type === 'output_pin') return 0.5
-  if (type === 'fan_generic' || type === 'fan' || type === 'temperature_fan') return 0.2
+  console.log(thresholdMap[type])
+  if(Object.keys(thresholdMap).includes(type)) return thresholdMap[type]
   return undefined
 }
 
@@ -178,7 +186,7 @@ function onActiveSelectionChanged(value: string | null) {
   const parsed = parseActiveSelection(value ?? '')
   localItem.value.active_type = parsed.active_type
   localItem.value.active_config = parsed.active_config
-  localItem.value.active_threshould = autoThresholdForType(parsed.active_type)
+  localItem.value.active_threshold = autoThresholdForType(parsed.active_type)
 }
 
 function save() {
@@ -192,6 +200,7 @@ function save() {
     icon: localItem.value.icon?.trim() ?? '',
     active_config: localItem.value.active_config?.trim() ?? '',
     active_type: localItem.value.active_type?.trim() as ActiveType,
+    active_threshold: localItem.value.active_threshold ?? 0,
   })
 }
 
@@ -209,7 +218,7 @@ function close() {
       </v-card-title>
 
       <v-card-text v-if="localItem" class="px-6 pb-2">
-        <v-row dense>
+        <v-row density="comfortable">
           <v-col cols="10">
             <v-text-field
                 v-model="localItem.name"
@@ -291,21 +300,14 @@ function close() {
 
           <v-col cols="12">
             <v-alert
-                v-if="localItem.active_type === 'output_pin'"
+                v-if="
+                  Object.keys(thresholdMap).includes(localItem.active_type ?? '')
+                "
                 type="info"
                 variant="tonal"
                 density="compact"
             >
-              {{ t('settings.shortcuts.dialog.threshold.output_pin') }}
-            </v-alert>
-
-            <v-alert
-                v-else-if="localItem.active_type === 'fan_generic' || localItem.active_type === 'fan' || localItem.active_type === 'temperature_fan'"
-                type="info"
-                variant="tonal"
-                density="compact"
-            >
-              {{ t('settings.shortcuts.dialog.threshold.fan') }}
+              {{ t('settings.shortcuts.dialog.threshold.generic') }} {{ thresholdMap[localItem.active_type ?? ''] }}
             </v-alert>
 
             <v-alert

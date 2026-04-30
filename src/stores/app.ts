@@ -27,7 +27,7 @@ export type ShortcutButtonConfig = {
   icon: string
   active_config?: string
   active_type?: string
-  active_threshould?: number
+  active_threshold?: number
 }
 
 type AppConfig = {
@@ -181,9 +181,9 @@ function normalizeShortcutButtons(items: ShortcutButtonConfig[]): ShortcutButton
     icon: item.icon.trim(),
     active_config: item.active_config?.trim() || undefined,
     active_type: item.active_type?.trim() || undefined,
-    active_threshould:
-        typeof item.active_threshould === 'number' && Number.isFinite(item.active_threshould)
-            ? item.active_threshould
+    active_threshold:
+        typeof item.active_threshold === 'number' && Number.isFinite(item.active_threshold)
+            ? item.active_threshold
             : undefined,
     position: index,
   }))
@@ -223,8 +223,8 @@ function parseShortcutButtonsFromConfig(config: Record<string, unknown>): Shortc
     const activeType = asString(record.active_type)
     if (activeType) button.active_type = activeType
 
-    const threshold = asNumber(record.active_threshould)
-    if (typeof threshold === 'number') button.active_threshould = threshold
+    const threshold = asNumber(record.active_threshold)
+    if (typeof threshold === 'number') button.active_threshold = threshold
 
     result.push(button)
   }

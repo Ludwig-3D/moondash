@@ -34,6 +34,7 @@ function resolveActiveObject(activeConfig: string): unknown {
     `fan_generic ${wanted}`,
     `heater_fan ${wanted}`,
     `temperature_fan ${wanted}`,
+    `led ${wanted}`,
     `filament_switch_sensor ${wanted}`,
   ]
 
@@ -49,6 +50,44 @@ function resolveActiveObject(activeConfig: string): unknown {
   }
 
   return undefined
+}
+
+function parseLedActiveConfig(activeConfig: string): { ledName: string; channel: string } | null {
+  const trimmed = activeConfig.trim()
+  if (!trimmed) return null
+
+  const parts = trimmed.split(/\s+/)
+  const channel = parts.pop()?.toLowerCase() ?? ''
+  const ledName = parts.join(' ').trim()
+
+  if (!ledName || !channel) return null
+  if (!['red', 'green', 'blue', 'white'].includes(channel)) return null
+
+  return { ledName, channel }
+}
+
+function getLedChannelValue(raw: unknown, channel: string): number | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+
+  const record = raw as Record<string, unknown>
+  const colorData = record.color_data
+
+  if (!Array.isArray(colorData)) return null
+
+  const firstLed = colorData[0]
+  if (!Array.isArray(firstLed)) return null
+
+  const channelIndexByName: Record<string, number> = {
+    red: 0,
+    green: 1,
+    blue: 2,
+    white: 3,
+  }
+
+  const index = channelIndexByName[channel]
+  if (typeof index !== 'number') return null
+
+  return normalizeNumber(firstLed[index])
 }
 
 function getNumericValue(raw: unknown, activeType?: string): number | null {
@@ -76,17 +115,28 @@ const isActive = computed(() => {
   const item = props.item
   if (!item.active_config) return false
 
+  if (item.active_type === 'led') {
+    const parsed = parseLedActiveConfig(item.active_config)
+    if (!parsed) return false
+
+    const raw = resolveActiveObject(parsed.ledName)
+    const numeric = getLedChannelValue(raw, parsed.channel)
+    const threshold = item.active_threshold ?? 0.5
+
+    return numeric !== null ? numeric >= threshold : false
+  }
+
   const raw = resolveActiveObject(item.active_config)
 
   if (item.active_type === 'output_pin') {
     const numeric = getNumericValue(raw, item.active_type)
-    const threshold = item.active_threshould ?? 0
+    const threshold = item.active_threshold ?? 0
     return numeric !== null ? numeric >= threshold : false
   }
 
   if (item.active_type === 'fan_generic' || item.active_type === 'fan' || item.active_type === 'temperature_fan') {
     const numeric = getNumericValue(raw, item.active_type)
-    const threshold = item.active_threshould ?? 0
+    const threshold = item.active_threshold ?? 0
     return numeric !== null ? numeric >= threshold : false
   }
 

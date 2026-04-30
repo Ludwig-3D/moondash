@@ -191,8 +191,7 @@
           "active_config": "Sensor"
         },
         "threshold": {
-          "output_pin": "Threshold is automatic: 0.5",
-          "fan": "Threshold is automatic: 0.2",
+          "generic": "Threshold is automatic: ",
           "none": "No threshold needed"
         },
         "actions": {

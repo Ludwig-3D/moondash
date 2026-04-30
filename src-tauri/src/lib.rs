@@ -428,9 +428,9 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
                 }
             }
 
-            if let Some(value) = button_obj.get("active_threshould") {
+            if let Some(value) = button_obj.get("active_threshold") {
                 if value.is_number() {
-                    section.insert("active_threshould".to_string(), value.clone());
+                    section.insert("active_threshold".to_string(), value.clone());
                 }
             }
 
@@ -754,9 +754,9 @@ fn parse_cfg_to_json(input: &str) -> Result<Value, String> {
             }
         }
 
-        if let Some(value) = section_obj.get("active_threshould") {
+        if let Some(value) = section_obj.get("active_threshold") {
             if value.is_number() {
-                button.insert("active_threshould".to_string(), value.clone());
+                button.insert("active_threshold".to_string(), value.clone());
             }
         }
 

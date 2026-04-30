@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore, type ShortcutButtonConfig } from '@/stores/app'
 import ShortcutButtonEditDialog from '@/components/dialogs/ShortcutButtonEditDialog.vue'
 
-type ActiveType = '' | 'output_pin' | 'fan_generic' | 'fan' | 'temperature_fan'
+type ActiveType = '' | 'output_pin' | 'fan_generic' | 'fan' | 'temperature_fan' | 'led'
 
 type ShortcutButtonEditorItem = ShortcutButtonConfig & {
   id: string
@@ -35,12 +35,6 @@ function createId(): string {
   return `${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
 
-function autoThresholdForType(type: ActiveType): number | undefined {
-  if (type === 'output_pin') return 0.5
-  if (type === 'fan_generic' || type === 'fan' || type === 'temperature_fan') return 0.2
-  return undefined
-}
-
 function sortByPosition<T extends { position?: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
 }
@@ -61,7 +55,7 @@ function makeEmptyButton(): ShortcutButtonEditorItem {
     icon: 'mdi-lightbulb',
     active_config: '',
     active_type: '',
-    active_threshould: undefined,
+    active_threshold: undefined,
     position: editorItems.value.length,
   }
 }
@@ -75,7 +69,7 @@ function toEditorItems(items: ShortcutButtonConfig[]): ShortcutButtonEditorItem[
     icon: item.icon,
     active_config: item.active_config ?? '',
     active_type: (item.active_type as ActiveType | undefined) ?? '',
-    active_threshould: item.active_threshould,
+    active_threshold: item.active_threshold,
     position: typeof item.position === 'number' ? item.position : index,
   }))
 }
@@ -107,15 +101,77 @@ const macroSuggestions = computed(() => {
   ).sort((a, b) => a.localeCompare(b))
 })
 
+function getLedConfigSections(): Record<string, unknown> {
+  const configfile = rawObjects.value.configfile
+
+  if (!configfile || typeof configfile !== 'object' || Array.isArray(configfile)) {
+    return {}
+  }
+
+  const configfileRecord = configfile as Record<string, unknown>
+  const settings = configfileRecord.settings
+  const config = configfileRecord.config
+
+  if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
+    return settings as Record<string, unknown>
+  }
+
+  if (config && typeof config === 'object' && !Array.isArray(config)) {
+    return config as Record<string, unknown>
+  }
+
+  return {}
+}
+
+function getAvailableLedChannels(section: unknown): string[] {
+  if (!section || typeof section !== 'object' || Array.isArray(section)) return []
+
+  const record = section as Record<string, unknown>
+
+  return ['red', 'green', 'blue', 'white'].filter((channel) => `${channel}_pin` in record)
+}
+
+const ledSuggestions = computed(() => {
+  const suggestions: string[] = []
+  const sections = getLedConfigSections()
+
+  for (const [key, value] of Object.entries(sections)) {
+    const lower = key.toLowerCase()
+    if (!lower.startsWith('led ')) continue
+
+    const ledName = key.slice('led '.length).trim()
+    if (!ledName || ledName.startsWith('_')) continue
+
+    const channels = getAvailableLedChannels(value)
+
+    for (const channel of channels) {
+      suggestions.push(`led ${ledName} ${channel}`)
+    }
+  }
+
+  return suggestions
+})
+
 const activeConfigSuggestions = computed(() => {
   const keys = Object.keys(rawObjects.value)
 
-  return Array.from(new Set(keys))
+  return Array.from(new Set([...keys, ...ledSuggestions.value]))
       .filter((key) => {
         const trimmed = key.trim()
         const lower = trimmed.toLowerCase()
 
         if (lower === 'fan') return false
+
+        if (lower.startsWith('led ')) {
+          const ledSelection = trimmed.slice('led '.length).trim()
+          if (!ledSelection) return false
+          if (ledSelection.startsWith('_')) return false
+
+          const parts = ledSelection.split(/\s+/)
+          const channel = parts.at(-1)?.toLowerCase() ?? ''
+
+          return ['red', 'green', 'blue', 'white'].includes(channel)
+        }
 
         const prefixes = ['output_pin ', 'fan_generic ', 'temperature_fan ']
 
@@ -164,8 +220,8 @@ function normalizeButton(item: ShortcutButtonEditorItem): ShortcutButtonConfig |
   const activeType = item.active_type?.trim() as ActiveType
   if (activeType) normalized.active_type = activeType
 
-  if (typeof item.active_threshould === 'number' && Number.isFinite(item.active_threshould)) {
-    normalized.active_threshould = item.active_threshould
+  if (typeof item.active_threshold === 'number' && Number.isFinite(item.active_threshold)) {
+    normalized.active_threshold = item.active_threshold
   }
 
   return normalized
@@ -193,6 +249,8 @@ async function persistEditorItems() {
 }
 
 async function onEditDialogSave(updated: ShortcutButtonDialogItem) {
+  const activeType = (updated.active_type?.trim() ?? '') as ActiveType
+
   const normalizedUpdated: ShortcutButtonEditorItem = {
     ...updated,
     name: updated.name?.trim() ?? '',
@@ -200,9 +258,8 @@ async function onEditDialogSave(updated: ShortcutButtonDialogItem) {
     macro_active: updated.macro_active?.trim() ?? '',
     icon: updated.icon?.trim() ?? '',
     active_config: updated.active_config?.trim() ?? '',
-    active_type: (updated.active_type?.trim() ?? '') as ActiveType,
-    active_threshould:
-        autoThresholdForType((updated.active_type?.trim() ?? '') as ActiveType) ?? updated.active_threshould,
+    active_type: activeType,
+    active_threshold: updated.active_threshold ?? 0,
     position: typeof updated.position === 'number' ? updated.position : editorItems.value.length,
   }
 

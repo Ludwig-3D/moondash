@@ -191,8 +191,7 @@
           "active_config": "Sensor"
         },
         "threshold": {
-          "output_pin": "Schwellwert ist automatisch: 0,5",
-          "fan": "Schwellwert ist automatisch: 0,2",
+          "generic": "Schwellwert ist automatisch: ",
           "none": "Kein Schwellwert erforderlich"
         },
         "actions": {

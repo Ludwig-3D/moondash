@@ -12,48 +12,6 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const { moonraker, websocket, moonrakerReady } = storeToRefs(appStore)
 
-const SIMULATE_AFC_ALERT = false
-const SIMULATE_KLIPPER_ALERT = false
-const SIMULATE_MOONRAKER_ALERT = false
-
-function extractAfcMessage(): string {
-  const objects = moonraker.value.afc.objects as Record<string, any>
-  const afcRoot = objects.AFC ?? {}
-
-  const candidates: unknown[] = [
-    afcRoot.message,
-    afcRoot.error,
-    afcRoot.alert,
-    afcRoot.current_message,
-    afcRoot.last_message,
-  ]
-
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-
-  for (const [, value] of Object.entries(objects)) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-
-    const record = value as Record<string, unknown>
-    const nestedCandidates = [
-      record.message,
-      record.error,
-      record.alert,
-      record.current_message,
-      record.last_message,
-    ]
-
-    for (const candidate of nestedCandidates) {
-      if (typeof candidate === 'string' && candidate.trim()) {
-        return candidate.trim()
-      }
-    }
-  }
-
-  return ''
-}
-
 function isBenignKlipperMessage(message: string): boolean {
   const normalized = message.trim().toLowerCase()
 
@@ -64,52 +22,77 @@ function isBenignKlipperMessage(message: string): boolean {
   ].includes(normalized)
 }
 
-const afcMessage = computed(() => {
-  if (SIMULATE_AFC_ALERT) {
-    return 'AFC lane 4 is empty. Please reload filament or assign a different lane.'
+function findMessageDeep(value: unknown): string {
+  if (!value || typeof value !== 'object') return ''
+
+  const record = value as Record<string, unknown>
+
+  for (const key of [
+    'message',
+    'error',
+    'alert',
+    'current_message',
+    'last_message',
+    'state_message',
+    'stateMessage',
+  ]) {
+    const candidate = record[key]
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim()
+    }
   }
 
-  return extractAfcMessage()
+  for (const child of Object.values(record)) {
+    if (child && typeof child === 'object' && !Array.isArray(child)) {
+      const found = findMessageDeep(child)
+      if (found) return found
+    }
+  }
+
+  return ''
+}
+
+const afcMessage = computed(() => {
+  return findMessageDeep(moonraker.value.afc)
 })
 
-const klipperState = computed(() => moonraker.value.webhooks.state?.toLowerCase() ?? '')
-const klipperStateMessage = computed(() => moonraker.value.webhooks.stateMessage?.trim() ?? '')
-const klipperPrintMessage = computed(() => moonraker.value.printStats.message?.trim() ?? '')
+const klipperState = computed(() => {
+  return moonraker.value.webhooks.state?.trim().toLowerCase() ?? ''
+})
+
+const klipperStateMessage = computed(() => {
+  return moonraker.value.webhooks.stateMessage?.trim() ?? ''
+})
+
+const klipperPrintMessage = computed(() => {
+  return moonraker.value.printStats.message?.trim() ?? ''
+})
 
 const showMoonrakerAlert = computed(() => {
-  if (SIMULATE_MOONRAKER_ALERT) return true
   return !websocket.value.connected
 })
 
 const moonrakerMessage = computed(() => {
-  if (SIMULATE_MOONRAKER_ALERT) {
-    return 'Moonraker is disconnected or Klippy is not reachable.'
-  }
-
   return t('notifications.moonraker.message_disconnected')
 })
 
 const showKlipperAlert = computed(() => {
-  if (SIMULATE_KLIPPER_ALERT) return true
   if (!websocket.value.connected) return false
 
   const state = klipperState.value
-  const stateMessage = klipperStateMessage.value
-  const printMessage = klipperPrintMessage.value
 
-  return Boolean(
-      state === 'startup' ||
-      state === 'shutdown' ||
-      state === 'error' ||
-      !moonrakerReady.value ||
-      !isBenignKlipperMessage(stateMessage) ||
-      !isBenignKlipperMessage(printMessage),
-  )
+  if (state === 'startup') return true
+  if (state === 'shutdown') return true
+  if (state === 'error') return true
+  if (moonrakerReady.value === false) return true
+
+  if (!isBenignKlipperMessage(klipperStateMessage.value)) return true
+  if (!isBenignKlipperMessage(klipperPrintMessage.value)) return true
+
+  return false
 })
 
 const klipperTitleKey = computed(() => {
-  if (SIMULATE_KLIPPER_ALERT) return 'notifications.klipper.title_error'
-
   if (klipperState.value === 'shutdown') {
     return 'notifications.klipper.title_shutdown'
   }
@@ -120,7 +103,7 @@ const klipperTitleKey = computed(() => {
 
   if (
       klipperState.value === 'startup' ||
-      (websocket.value.connected && !moonrakerReady.value)
+      moonrakerReady.value === false
   ) {
     return 'notifications.klipper.title_startup'
   }
@@ -129,10 +112,6 @@ const klipperTitleKey = computed(() => {
 })
 
 const klipperMessage = computed(() => {
-  if (SIMULATE_KLIPPER_ALERT) {
-    return 'MCU shutdown: Heater extruder not heating'
-  }
-
   if (!isBenignKlipperMessage(klipperStateMessage.value)) {
     return klipperStateMessage.value
   }
@@ -143,7 +122,7 @@ const klipperMessage = computed(() => {
 
   if (
       klipperState.value === 'startup' ||
-      (websocket.value.connected && !moonrakerReady.value)
+      moonrakerReady.value === false
   ) {
     return t('notifications.klipper.message_startup')
   }
@@ -152,7 +131,9 @@ const klipperMessage = computed(() => {
 })
 
 const hasAlerts = computed(() => {
-  return showMoonrakerAlert.value || showKlipperAlert.value || Boolean(afcMessage.value)
+  return showMoonrakerAlert.value ||
+      showKlipperAlert.value ||
+      Boolean(afcMessage.value)
 })
 </script>
 

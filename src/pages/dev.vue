@@ -113,6 +113,17 @@ function togglePause() {
 async function sleepDisplay() {
   await invoke('sleep_displays_until_input')
 }
+
+async function copyToClipboard() {
+  const valueByTab: Record<string, string> = {
+    other: frozenOther.value,
+    moonraker: frozenMoonraker.value,
+    afc: frozenAfc.value,
+    full: frozenFull.value,
+  }
+
+  await navigator.clipboard.writeText(valueByTab[activeTab.value] ?? '')
+}
 </script>
 
 <template>
@@ -148,6 +159,14 @@ async function sleepDisplay() {
               @click="togglePause"
           >
             {{ paused ? 'Resume' : 'Pause' }}
+          </v-btn>
+
+          <v-btn
+              variant="tonal"
+              size="small"
+              @click="copyToClipboard"
+          >
+            Copy
           </v-btn>
         </div>
       </div>

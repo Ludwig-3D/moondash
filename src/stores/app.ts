@@ -2,6 +2,11 @@ import { defineStore } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
+type ThemePayload = {
+  css?: string
+  logo?: string
+}
+
 type StylingConfig = {
   zoom?: number
   darkmode?: boolean
@@ -235,6 +240,9 @@ function parseShortcutButtonsFromConfig(config: Record<string, unknown>): Shortc
 
 export const useAppStore = defineStore('app', {
   state: () => ({
+    themeCss: '' as string,
+    themeLogo: '' as string,
+    themeListener: null as UnlistenFn | null,
     darkmode: true as boolean,
     zoom: 1.0 as number,
     debug: false as boolean,
@@ -340,6 +348,8 @@ export const useAppStore = defineStore('app', {
   }),
 
   getters: {
+    getThemeCss: (state) => state.themeCss,
+    getThemeLogo: (state) => state.themeLogo,
     isDarkmode: (state) => state.darkmode,
     getZoom: (state) => state.zoom,
     isDebugEnabled: (state) => state.debug,
@@ -388,6 +398,34 @@ export const useAppStore = defineStore('app', {
   },
 
   actions: {
+    applyTheme(payload: ThemePayload) {
+      this.themeCss = typeof payload.css === 'string' ? payload.css : ''
+      this.themeLogo = typeof payload.logo === 'string' ? payload.logo : ''
+    },
+
+    async loadThemeAssets() {
+      if (!isTauriRuntime()) return null
+
+      const theme = await invoke<ThemePayload>('get_theme_assets')
+      this.applyTheme(theme)
+      return theme
+    },
+
+    async startThemeListener() {
+      if (this.themeListener || !isTauriRuntime()) return
+
+      this.themeListener = await listen<ThemePayload>('theme-loaded', (event) => {
+        this.applyTheme(event.payload)
+      })
+    },
+
+    stopThemeListener() {
+      if (this.themeListener) {
+        this.themeListener()
+        this.themeListener = null
+      }
+    },
+
     setDarkmode(value: boolean) {
       this.darkmode = value
     },

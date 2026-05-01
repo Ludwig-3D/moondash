@@ -449,7 +449,13 @@ watch(
 
     <template v-else>
       <div class="current-print-panel__idle">
-        <v-icon icon="mdi-cube-outline" size="96" />
+        <img
+            v-if="appStore.getThemeLogo"
+            class="current-print-panel__logo"
+            :src="appStore.getThemeLogo"
+            alt="Moondash logo"
+        />
+        <v-icon v-else icon="mdi-cube-outline" size="96" />
       </div>
     </template>
   </v-card>
@@ -570,5 +576,11 @@ watch(
 
 .current-print-panel__action :deep(.v-btn__overlay) {
   opacity: 0.06;
+}
+
+.current-print-panel__logo {
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
 }
 </style>

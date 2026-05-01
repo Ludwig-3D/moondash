@@ -7,7 +7,7 @@ import { useAppStore } from './stores/app'
 import { moonraker } from './plugins/moonraker'
 import { resolveLocale } from './plugins/i18n'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import IdleOverlay from "@/components/IdleOverlay.vue";
+import IdleOverlay from '@/components/IdleOverlay.vue'
 
 const appStore = useAppStore()
 const { locale } = useI18n({ useScope: 'global' })
@@ -40,6 +40,18 @@ watchEffect(() => {
   }
 })
 
+watchEffect(() => {
+  let style = document.getElementById('moondash-custom-css') as HTMLStyleElement | null
+
+  if (!style) {
+    style = document.createElement('style')
+    style.id = 'moondash-custom-css'
+    document.head.appendChild(style)
+  }
+
+  style.textContent = appStore.getThemeCss
+})
+
 watch(
     () => appStore.getLanguage,
     (value) => {
@@ -51,6 +63,8 @@ watch(
 onMounted(async () => {
   try {
     await appStore.startConfigListener()
+    await appStore.startThemeListener()
+    await appStore.loadThemeAssets()
     await appStore.loadConfig()
 
     locale.value = resolveLocale(appStore.getLanguage)
@@ -65,6 +79,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   appStore.stopConfigListener()
+  appStore.stopThemeListener()
   appStore.resetConnectionState()
   moonraker.stopAutoConnectFromConfig()
   moonraker.disconnect()
@@ -77,7 +92,7 @@ onBeforeUnmount(() => {
       :style="{ zoom: String(appStore.getZoom) }"
   >
     <v-layout>
-      <IdleOverlay/>
+      <IdleOverlay />
       <Navigation />
       <router-view />
     </v-layout>

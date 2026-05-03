@@ -376,10 +376,6 @@ function pressKey(key: KeyboardKey) {
   transition: transform 0.08s ease, background 0.12s ease;
 }
 
-.keyboard-overlay__key:hover {
-  background: rgba(var(--v-theme-on-surface), 0.1);
-}
-
 .keyboard-overlay__key:active {
   transform: scale(0.97);
 }

@@ -189,11 +189,12 @@ async function saveDialog() {
           </div>
 
           <div class="color-row">
-            <button
+            <v-btn
                 class="color-swatch color-swatch--button"
                 :style="{ backgroundColor: localColor }"
-                type="button"
                 :disabled="saving"
+                variant="flat"
+                min-width="0"
                 @click="openColorPicker"
             />
 
@@ -208,69 +209,69 @@ async function saveDialog() {
 
           <div class="form-field">
             <div class="control-row control-row--compact">
-              <button
-                  type="button"
+              <v-btn
                   class="control-btn"
                   :disabled="saving"
+                  variant="flat"
                   @click="adjustWeight(-50)"
               >
                 -50
-              </button>
-              <button
-                  type="button"
+              </v-btn>
+              <v-btn
                   class="control-btn"
                   :disabled="saving"
+                  variant="flat"
                   @click="adjustWeight(-10)"
               >
                 -10
-              </button>
-              <button
-                  type="button"
+              </v-btn>
+              <v-btn
                   class="control-btn"
                   :disabled="saving"
+                  variant="flat"
                   @click="adjustWeight(-1)"
               >
                 -1
-              </button>
+              </v-btn>
 
               <div class="control-input">
                 <v-text-field
+                    disabled
                     v-model="localWeight"
-                    variant="outlined"
+                    variant="solo-filled"
                     density="comfortable"
                     hide-details
                     type="number"
                     min="0"
                     step="1"
                     suffix="g"
-                    :disabled="saving"
                 />
               </div>
 
-              <button
-                  type="button"
+              <v-btn
                   class="control-btn"
                   :disabled="saving"
+                  variant="flat"
                   @click="adjustWeight(1)"
               >
                 +1
-              </button>
-              <button
-                  type="button"
+              </v-btn>
+              <v-btn
                   class="control-btn"
                   :disabled="saving"
+                  variant="flat"
                   @click="adjustWeight(10)"
               >
                 +10
-              </button>
-              <button
-                  type="button"
+              </v-btn>
+              <v-btn
                   class="control-btn"
                   :disabled="saving"
+                  variant="flat"
                   @click="adjustWeight(50)"
               >
                 +50
-              </button>
+              </v-btn>
             </div>
           </div>
         </div>

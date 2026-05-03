@@ -221,7 +221,7 @@ async function savePressureAdvanceSmoothTime() {
               <div class="control-input control-input--tall">
                 <v-text-field
                     v-model="flowInput"
-                    variant="outlined"
+                    variant="solo-filled"
                     density="comfortable"
                     hide-details
                     type="number"
@@ -229,7 +229,7 @@ async function savePressureAdvanceSmoothTime() {
                     max="300"
                     step="1"
                     suffix="%"
-                    :disabled="!!savingAction"
+                    disabled
                 />
               </div>
 
@@ -314,14 +314,14 @@ async function savePressureAdvanceSmoothTime() {
               <div class="control-input control-input--tall">
                 <v-text-field
                     v-model="paInput"
-                    variant="outlined"
+                    variant="solo-filled"
                     density="comfortable"
                     hide-details
                     type="number"
                     min="0"
                     max="2"
                     step="0.001"
-                    :disabled="!!savingAction"
+                    disabled
                 />
               </div>
 
@@ -406,7 +406,7 @@ async function savePressureAdvanceSmoothTime() {
               <div class="control-input control-input--tall">
                 <v-text-field
                     v-model="paSmoothTimeInput"
-                    variant="outlined"
+                    variant="solo-filled"
                     density="comfortable"
                     hide-details
                     type="number"
@@ -414,7 +414,7 @@ async function savePressureAdvanceSmoothTime() {
                     max="1"
                     step="0.001"
                     suffix="s"
-                    :disabled="!!savingAction"
+                    disabled
                 />
               </div>
 

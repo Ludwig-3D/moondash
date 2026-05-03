@@ -133,7 +133,7 @@ async function saveDialog() {
                 <v-text-field
                     v-model="localValue"
                     class="speed-dialog-inline-input"
-                    variant="outlined"
+                    variant="solo-filled"
                     density="comfortable"
                     hide-details
                     type="number"
@@ -141,8 +141,7 @@ async function saveDialog() {
                     max="999"
                     step="1"
                     suffix="%"
-                    :placeholder="t('speed.dialog.placeholder')"
-                    :disabled="saving"
+                    disabled
                 />
               </div>
 
@@ -230,10 +229,6 @@ async function saveDialog() {
   padding: 0 8px;
   min-height: 50px;
   cursor: pointer;
-}
-
-.speed-dialog-adjust:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
 }
 
 .speed-dialog-adjust:disabled {

@@ -394,14 +394,13 @@ onMounted(async () => {
           mandatory
           density="comfortable"
           divided
+          color="primary"
       >
         <v-btn
             v-for="button in sortButtons"
             :key="button.mode"
             :value="button.mode"
             :icon="button.icon"
-            :aria-label="button.label"
-            :title="button.label"
             style="min-width: 50px;"
         />
       </v-btn-toggle>

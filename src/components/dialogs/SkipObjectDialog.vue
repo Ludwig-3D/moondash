@@ -318,10 +318,6 @@ async function skipSelectedObject() {
   transition: fill 0.16s ease, stroke 0.16s ease, opacity 0.16s ease;
 }
 
-.skip-object-preview__polygon:hover {
-  fill: rgba(var(--v-theme-primary), 0.28);
-}
-
 .skip-object-preview__polygon--selected {
   stroke: rgba(var(--v-theme-primary), 1);
   stroke-width: 2.4;
@@ -372,10 +368,6 @@ async function skipSelectedObject() {
   transition: background 0.16s ease, opacity 0.16s ease, border-color 0.16s ease;
   border-left: 3px solid transparent;
   cursor: pointer;
-}
-
-.skip-object-item:hover {
-  background: rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .skip-object-item--selected {

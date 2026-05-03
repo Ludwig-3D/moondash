@@ -11,3 +11,51 @@ main {
   transition: none !important;
   animation: none !important;
 }
+
+html,
+body,
+#app,
+.v-application,
+.v-application__wrap {
+  background: rgb(var(--v-theme-background)) !important;
+}
+
+.v-dialog .v-card,
+.v-dialog .v-field,
+.v-dialog .v-list-item,
+.v-dialog .v-input,
+.v-dialog .v-selection-control {
+  transition: none !important;
+  animation: none !important;
+}
+
+.v-btn {
+  --v-theme-overlay-multiplier: 0 !important;
+}
+
+.v-dialog *:hover,
+.v-overlay__content *:hover {
+  --v-theme-overlay-multiplier: 0 !important;
+}
+
+.v-dialog .v-btn:hover > .v-btn__overlay,
+.v-overlay__content .v-btn:hover > .v-btn__overlay,
+.v-dialog .v-card:hover > .v-card__overlay,
+.v-overlay__content .v-card:hover > .v-card__overlay,
+.v-dialog .v-list-item:hover > .v-list-item__overlay,
+.v-overlay__content .v-list-item:hover > .v-list-item__overlay {
+  opacity: 0 !important;
+}
+
+.v-btn--variant-plain:hover,
+.v-btn--variant-plain:focus,
+.v-btn--variant-plain:active {
+  opacity: 1 !important;
+}
+
+.v-btn--variant-plain > .v-btn__overlay,
+.v-btn--variant-plain > .v-btn__underlay {
+  opacity: 0 !important;
+  background: transparent !important;
+}
+

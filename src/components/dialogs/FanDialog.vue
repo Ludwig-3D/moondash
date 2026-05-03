@@ -200,7 +200,7 @@ async function saveDialog() {
               <div class="control-input">
                 <v-text-field
                     v-model="localValue"
-                    variant="outlined"
+                    variant="solo-filled"
                     density="comfortable"
                     hide-details
                     type="number"
@@ -208,8 +208,7 @@ async function saveDialog() {
                     :max="resolvedMax"
                     step="1"
                     :suffix="fan?.isTemperatureFan ? '°C' : '%'"
-                    :placeholder="fan?.isTemperatureFan ? t('fan.dialog.temp_placeholder') : t('fan.dialog.speed_placeholder')"
-                    :disabled="saving"
+                    disabled
                 />
               </div>
 

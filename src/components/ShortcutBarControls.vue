@@ -306,16 +306,8 @@ function handleFanClick(item: (typeof fanItems.value)[number]) {
   background: transparent;
 }
 
-.control-card:hover {
-  background: rgba(var(--v-theme-on-surface), 0.18);
-}
-
 .control-card--disabled {
   cursor: default;
-}
-
-.control-card--disabled:hover {
-  background: transparent;
 }
 
 .control-card-name {

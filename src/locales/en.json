@@ -45,8 +45,6 @@
       "target": "Target",
       "speed": "Speed",
       "adjust": "Adjust",
-      "temp_placeholder": "0",
-      "speed_placeholder": "0",
       "cancel": "Cancel",
       "save": "Save"
     }

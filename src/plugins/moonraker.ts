@@ -424,21 +424,32 @@ class MoonrakerConnection {
     }
 
     async registerAllKnownObjects() {
-        const result = await this.call<{ objects: string[] }>('printer.objects.list')
-
         const objects: Record<string, string[] | null> = {
-            webhooks: ['state', 'state_message'],
+            ...this.subscriptionObjects,
             configfile: ['config', 'settings', 'warnings'],
-            gcode_move: ['speed', 'speed_factor'],
         }
 
-        for (const name of result.objects ?? []) {
-            if (!(name in objects)) {
-                objects[name] = null
+        try {
+            const result = await this.call<{ objects: string[] }>('printer.objects.list')
+
+            for (const name of result.objects ?? []) {
+                if (!(name in objects)) {
+                    objects[name] = null
+                }
             }
+        } catch (error) {
+            if (!this.isMethodNotFoundError(error)) {
+                throw error
+            }
+
+            console.warn('moonraker object list not available, using default subscriptions')
         }
 
         return await this.subscribeToPrinterObjects(objects)
+    }
+
+    private isMethodNotFoundError(error: unknown): boolean {
+        return error instanceof Error && error.message.toLowerCase().includes('method not found')
     }
 
     private async requestWithId<T = unknown>(

@@ -45,8 +45,6 @@
       "target": "Ziel",
       "speed": "Geschwindigkeit",
       "adjust": "Anpassen",
-      "temp_placeholder": "0",
-      "speed_placeholder": "0",
       "cancel": "Abbrechen",
       "save": "Speichern"
     }

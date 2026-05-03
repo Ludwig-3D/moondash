@@ -221,10 +221,6 @@ onMounted(() => {
                 :model-value="currentWebcam?.value"
                 @update:model-value="(value) => selectWebcam(webcams.findIndex((w) => w.value === value))"
             />
-
-            <v-alert v-else-if="!loading" type="info" variant="tonal">
-              {{ t('settings.tools.webcam.no_webcam') }}
-            </v-alert>
           </div>
 
           <div class="tool-webcam__actions">

@@ -81,6 +81,19 @@ const fanDialogModel = computed({
   },
 })
 
+function getHeaterColor(current: number|null, target: number|null): string {
+  if(current === null || target === null) return 'default'
+
+  const tolerance = 5
+
+  if (target === 0) return 'default'
+
+  if (current > target + tolerance) return 'info'
+  if (current < target - tolerance) return 'error'
+
+  return 'default'
+}
+
 const heaterItems = computed(() => {
   const items = [
     {
@@ -124,7 +137,7 @@ const heaterItems = computed(() => {
   return items.map((item) => ({
     ...item,
     mainValue: formatTemp(item.currentTemp),
-    isActive: isHeaterActive(item.currentTemp, item.currentTarget),
+    color: getHeaterColor(item.currentTemp, item.currentTarget),
   }))
 })
 
@@ -220,7 +233,7 @@ function handleFanClick(item: (typeof fanItems.value)[number]) {
               <v-icon
                   :icon="item.icon"
                   class="control-card-icon"
-                  :class="{ 'control-card-icon--active': item.isActive }"
+                  :color="item.color"
               />
 
               <div class="control-card-main">

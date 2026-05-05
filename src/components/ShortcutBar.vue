@@ -68,32 +68,21 @@ const printSpeedIcon = computed(() => {
   return 'mdi-speedometer-medium'
 })
 
-const extruderIsHeating = computed(() => {
-  const temp = moonraker.value.extruder.temperature
-  const target = moonraker.value.extruder.target
-
-  return (
-      typeof temp === 'number' &&
-      typeof target === 'number' &&
-      target !== 0 &&
-      Math.abs(target - temp) >= 5
-  )
-})
-
-const heaterBedIsHeating = computed(() => {
-  const temp = moonraker.value.heaterBed.temperature
-  const target = moonraker.value.heaterBed.target
-
-  return (
-      typeof temp === 'number' &&
-      typeof target === 'number' &&
-      target !== 0 &&
-      Math.abs(target - temp) >= 5
-  )
-})
-
 const extruderMaxTemp = computed(() => 300)
 const heaterBedMaxTemp = computed(() => 120)
+
+function getHeaterColor(current: number|null, target: number|null): string {
+  if(current === null || target === null) return 'default'
+
+  const tolerance = 5
+
+  if (target === 0) return 'default'
+
+  if (current > target + tolerance) return 'info'
+  if (current < target - tolerance) return 'error'
+
+  return 'default'
+}
 </script>
 
 <template>
@@ -109,7 +98,7 @@ const heaterBedMaxTemp = computed(() => 120)
         <ShortcutBarButton
             icon="mdi-printer-3d-nozzle-heat"
             :label="extruderLabel"
-            :color="extruderIsHeating ? 'error' : undefined"
+            :color="getHeaterColor(moonraker?.extruder?.temperature, moonraker?.extruder?.target)"
             @click="extruderDialogOpen = true"
         />
       </v-list-item>
@@ -120,7 +109,7 @@ const heaterBedMaxTemp = computed(() => 120)
         <ShortcutBarButton
             icon="mdi-radiator"
             :label="heaterBedLabel"
-            :color="heaterBedIsHeating ? 'error' : undefined"
+            :color="getHeaterColor(moonraker?.heaterBed?.temperature, moonraker?.heaterBed?.target)"
             @click="heaterBedDialogOpen = true"
         />
       </v-list-item>

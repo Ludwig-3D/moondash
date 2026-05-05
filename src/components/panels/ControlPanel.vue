@@ -31,6 +31,32 @@ const isYHomed = computed(() => homedAxes.value.includes('y'))
 const isZHomed = computed(() => homedAxes.value.includes('z'))
 const isXYHomed = computed(() => isXHomed.value && isYHomed.value)
 
+
+const printStatsObject = computed(() => {
+  const value = rawObjects.value.print_stats
+  return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+})
+
+const printerState = computed(() => {
+  const value = printStatsObject.value.state
+  return typeof value === 'string' ? value.toLowerCase() : ''
+})
+
+const isPrinterPrinting = computed(() => {
+  return ['printing', 'paused'].includes(printerState.value)
+})
+
+const isPrinterBusy = computed(() => {
+  return Boolean(runningAction.value) || isPrinterPrinting.value
+})
+
+const canMoveX = computed(() => !isPrinterBusy.value && isXHomed.value)
+const canMoveY = computed(() => !isPrinterBusy.value && isYHomed.value)
+const canMoveZ = computed(() => !isPrinterBusy.value && isZHomed.value)
+const canLevelGantry = computed(() => !isPrinterBusy.value && isXYHomed.value)
+
 const hasZTilt = computed(() => 'z_tilt' in rawObjects.value)
 
 const hasQgl = computed(() => {
@@ -52,7 +78,7 @@ function setMoveDistance(value: number) {
 }
 
 async function runGcode(action: string, script: string) {
-  if (runningAction.value) return
+  if (isPrinterBusy.value) return
 
   try {
     runningAction.value = action
@@ -73,7 +99,7 @@ async function moveXY(x = 0, y = 0) {
   if (y !== 0) parts.push(`Y${y}`)
 
   if (!parts.length) return
-  if ((x !== 0 && !isXHomed.value) || (y !== 0 && !isYHomed.value)) return
+  if ((x !== 0 && !canMoveX.value) || (y !== 0 && !canMoveY.value)) return
 
   await runGcode(
       `move-xy-${x}-${y}`,
@@ -83,7 +109,7 @@ async function moveXY(x = 0, y = 0) {
 
 async function moveZ(z = 0) {
   if (z === 0) return
-  if (!isZHomed.value) return
+  if (!canMoveZ.value) return
 
   await runGcode(
       `move-z-${z}`,
@@ -126,7 +152,7 @@ async function runQgl() {
           <v-btn
               class="move-btn move-btn--up"
               variant="tonal"
-              :disabled="!!runningAction || !isYHomed"
+              :disabled="!canMoveY"
               @click="moveXY(0, moveDistance)"
           >
             <v-icon icon="mdi-chevron-up" />
@@ -135,7 +161,7 @@ async function runQgl() {
           <v-btn
               class="move-btn move-btn--left"
               variant="tonal"
-              :disabled="!!runningAction || !isXHomed"
+              :disabled="!canMoveX"
               @click="moveXY(-moveDistance, 0)"
           >
             <v-icon icon="mdi-chevron-left" />
@@ -145,7 +171,7 @@ async function runQgl() {
               class="move-btn move-btn--center"
               variant="tonal"
               :loading="isBusy('home-xy')"
-              :disabled="!!runningAction"
+              :disabled="isPrinterBusy"
               @click="homeXY"
           >
             <div class="center-btn-content">
@@ -157,7 +183,7 @@ async function runQgl() {
           <v-btn
               class="move-btn move-btn--right"
               variant="tonal"
-              :disabled="!!runningAction || !isXHomed"
+              :disabled="!canMoveX"
               @click="moveXY(moveDistance, 0)"
           >
             <v-icon icon="mdi-chevron-right" />
@@ -166,7 +192,7 @@ async function runQgl() {
           <v-btn
               class="move-btn move-btn--down"
               variant="tonal"
-              :disabled="!!runningAction || !isYHomed"
+              :disabled="!canMoveY"
               @click="moveXY(0, -moveDistance)"
           >
             <v-icon icon="mdi-chevron-down" />
@@ -181,7 +207,7 @@ async function runQgl() {
               :class="{ 'distance-btn--active': moveDistance === distance }"
               :variant="moveDistance === distance ? 'flat' : 'text'"
               :color="moveDistance === distance ? 'primary' : undefined"
-              :disabled="!!runningAction"
+              :disabled="isPrinterBusy"
               rounded="0"
               @click="setMoveDistance(distance)"
           >
@@ -195,7 +221,7 @@ async function runQgl() {
           <v-btn
               class="z-btn"
               variant="tonal"
-              :disabled="!!runningAction || !isZHomed"
+              :disabled="!canMoveZ"
               @click="moveZ(moveDistance)"
           >
             <div class="z-btn-content">
@@ -207,7 +233,7 @@ async function runQgl() {
               class="z-btn"
               variant="tonal"
               :loading="isBusy('home-z')"
-              :disabled="!!runningAction"
+              :disabled="isPrinterBusy"
               @click="homeZ"
           >
             <div class="z-btn-content">
@@ -219,7 +245,7 @@ async function runQgl() {
           <v-btn
               class="z-btn"
               variant="tonal"
-              :disabled="!!runningAction || !isZHomed"
+              :disabled="!canMoveZ"
               @click="moveZ(-moveDistance)"
           >
             <div class="z-btn-content">
@@ -233,7 +259,7 @@ async function runQgl() {
               v-if="hasZTilt"
               variant="tonal"
               :loading="isBusy('z-tilt')"
-              :disabled="!!runningAction || !isXYHomed"
+              :disabled="!canLevelGantry"
               @click="runZTilt"
           >
             Z Tilt
@@ -243,7 +269,7 @@ async function runQgl() {
               v-if="hasQgl"
               variant="tonal"
               :loading="isBusy('qgl')"
-              :disabled="!!runningAction || !isXYHomed"
+              :disabled="!canLevelGantry"
               @click="runQgl"
           >
             QGL

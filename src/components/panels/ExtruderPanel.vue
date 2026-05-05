@@ -113,11 +113,11 @@ async function runGcode(
 }
 
 async function loadFilament() {
-  await runGcode('load-filament', 'LOAD_FILAMENT', 60_000)
+  await runGcode('load-filament', 'LOAD_FILAMENT', 300_000)
 }
 
 async function unloadFilament() {
-  await runGcode('unload-filament', 'UNLOAD_FILAMENT', 60_000)
+  await runGcode('unload-filament', 'UNLOAD_FILAMENT', 300_000)
 }
 
 function getSensorCommandName(key: string): string {
@@ -130,7 +130,7 @@ async function toggleSensor(sensor: SensorItem) {
 
   await runGcode(
       `toggle-sensor-${sensor.key}`,
-      `SET_FILAMENT_SENSOR SENSOR=${sensorName} ENABLE=${enable ? 1 : 0}`,
+      `SET_FILAMENT_SENSOR SENSOR=${sensorName} ENABLE=${enable ? 1 : 0}`
   )
 }
 </script>

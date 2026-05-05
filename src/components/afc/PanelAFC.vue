@@ -250,7 +250,7 @@ async function handleEject(lane: AfcLane) {
 
     await moonrakerClient.call('printer.gcode.script', {
       script: `LANE_UNLOAD LANE=${lane.id}`,
-    })
+    }, 300_000)
   } catch (error) {
     console.error(`Failed to unload lane ${lane.id}`, error)
   } finally {

@@ -1,7 +1,7 @@
 {
   "name": "moondash",
   "private": true,
-  "version": "0.0.4",
+  "version": "0.0.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -28,7 +28,7 @@
     "vue": "^3.5.33",
     "vue-i18n": "^11.4.0",
     "vue-router": "^5",
-    "vue-tsc": "^3.2.7",
+    "vue-tsc": "^3.2.8",
     "vuetify": "^4.0.6",
     "websocket-ts": "^2.3.0",
     "ws": "^8.20.0"

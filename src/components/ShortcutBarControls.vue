@@ -39,15 +39,6 @@ function formatPercentFromUnit(value: number | null): string {
   return typeof value === 'number' ? `${Math.round(value * 100)}%` : ''
 }
 
-function isHeaterActive(currentTemp: number | null, currentTarget: number | null): boolean {
-  return (
-      typeof currentTemp === 'number' &&
-      typeof currentTarget === 'number' &&
-      currentTarget !== 0 &&
-      Math.abs(currentTarget - currentTemp) >= 5
-  )
-}
-
 function isFanControllable(key: string, isTemperatureFan: boolean): boolean {
   if (isTemperatureFan) return true
 

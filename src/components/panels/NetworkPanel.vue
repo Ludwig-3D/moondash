@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from 'vue-i18n'
@@ -41,6 +41,8 @@ type CanbusInterface = {
   txBytes?: number | null
   rxPackets?: number | null
   txPackets?: number | null
+  rxBytesPerSecond?: number | null
+  txBytesPerSecond?: number | null
   bandwidth?: number | null
 }
 
@@ -55,6 +57,7 @@ const { moonraker } = storeToRefs(appStore)
 const loading = ref(false)
 const wifiBusy = ref(false)
 const wiredBusy = ref<string | null>(null)
+let canbusRefreshTimer: ReturnType<typeof window.setInterval> | null = null
 
 const wifiSettings = ref<WifiSettings | null>(null)
 const wiredSettings = ref<WiredSettings | null>(null)
@@ -86,6 +89,8 @@ const canbusInterfacesFromMoonraker = computed<CanbusInterface[]>(() => {
           txBytes: toNullableNumber(record.tx_bytes),
           rxPackets: toNullableNumber(record.rx_packets),
           txPackets: toNullableNumber(record.tx_packets),
+          rxBytesPerSecond: null,
+          txBytesPerSecond: null,
           bandwidth: toNullableNumber(record.bandwidth),
         }
       })
@@ -183,20 +188,67 @@ async function handleNetworksChanged() {
   await loadWifiSettings()
 }
 
+function formatBytes(value: number | null | undefined, fractionDigits = 1): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '--'
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = Math.max(0, value)
+  let unitIndex = 0
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+
+  const precision = unitIndex === 0 ? 0 : fractionDigits
+
+  return `${size.toFixed(precision)} ${units[unitIndex]}`
+}
+
+function formatBytesPerSecond(value: number | null | undefined): string {
+  return value === null || value === undefined ? '--' : `${formatBytes(value)}/s`
+}
+
+function formatBitrate(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '--'
+
+  const units = ['bit/s', 'kbit/s', 'Mbit/s', 'Gbit/s']
+  let size = Math.max(0, value)
+  let unitIndex = 0
+
+  while (size >= 1000 && unitIndex < units.length - 1) {
+    size /= 1000
+    unitIndex += 1
+  }
+
+  const precision = unitIndex === 0 ? 0 : 1
+
+  return `${size.toFixed(precision)} ${units[unitIndex]}`
+}
+
+function formatCount(value: number | null | undefined): string {
+  return value === null || value === undefined || !Number.isFinite(value) ? '--' : new Intl.NumberFormat().format(value)
+}
+
 function formatCanbusSubtitle(iface: CanbusInterface): string {
   const parts: string[] = []
 
   if (iface.bitrate) {
-    parts.push(`${Math.round(iface.bitrate / 1000)} kbit/s`)
+    parts.push(formatBitrate(iface.bitrate))
   }
 
-  if (iface.bandwidth !== null && iface.bandwidth !== undefined) {
-    parts.push(`${iface.bandwidth} B/s`)
+  const rxRate = iface.rxBytesPerSecond ?? null
+  const txRate = iface.txBytesPerSecond ?? null
+
+  if (rxRate !== null || txRate !== null) {
+    parts.push(`RX ${formatBytesPerSecond(rxRate)} / TX ${formatBytesPerSecond(txRate)}`)
+  } else if (iface.bandwidth !== null && iface.bandwidth !== undefined) {
+    parts.push(`${formatBytesPerSecond(iface.bandwidth)} total`)
   }
 
   const packets: string[] = []
-  if (iface.rxPackets !== null && iface.rxPackets !== undefined) packets.push(`RX ${iface.rxPackets}`)
-  if (iface.txPackets !== null && iface.txPackets !== undefined) packets.push(`TX ${iface.txPackets}`)
+  if (iface.rxPackets !== null && iface.rxPackets !== undefined) packets.push(`RX packets ${formatCount(iface.rxPackets)}`)
+  if (iface.txPackets !== null && iface.txPackets !== undefined) packets.push(`TX packets ${formatCount(iface.txPackets)}`)
   if (packets.length) parts.push(packets.join(' / '))
 
   return parts.length ? parts.join(' · ') : '--'
@@ -204,6 +256,17 @@ function formatCanbusSubtitle(iface: CanbusInterface): string {
 
 onMounted(async () => {
   await refreshAll()
+
+  canbusRefreshTimer = window.setInterval(() => {
+    void loadCanbusSettings()
+  }, 1000)
+})
+
+onBeforeUnmount(() => {
+  if (canbusRefreshTimer !== null) {
+    window.clearInterval(canbusRefreshTimer)
+    canbusRefreshTimer = null
+  }
 })
 </script>
 

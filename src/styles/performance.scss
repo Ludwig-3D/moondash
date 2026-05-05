@@ -59,3 +59,19 @@ body,
   background: transparent !important;
 }
 
+.v-btn,
+.v-list-item,
+.v-navigation-drawer,
+.v-navigation-drawer * {
+  &:focus,
+  &:focus-visible,
+  &:focus-within {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+}
+
+.v-btn .v-btn__overlay,
+.v-list-item .v-list-item__overlay {
+  border: 0 !important;
+}

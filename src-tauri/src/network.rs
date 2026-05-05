@@ -8,6 +8,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
+use std::time::Instant;
 use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,6 +64,8 @@ pub struct CanbusInterface {
     tx_bytes: Option<u64>,
     rx_packets: Option<u64>,
     tx_packets: Option<u64>,
+    rx_bytes_per_second: Option<f64>,
+    tx_bytes_per_second: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -459,17 +462,80 @@ fn read_operstate(interface_name: &str) -> String {
 }
 
 #[cfg(target_os = "linux")]
+#[derive(Debug, Clone)]
+struct CanbusCounterSnapshot {
+    captured_at: Instant,
+    rx_bytes: Option<u64>,
+    tx_bytes: Option<u64>,
+}
+
+#[cfg(target_os = "linux")]
+static CANBUS_COUNTER_SNAPSHOTS: OnceLock<Mutex<HashMap<String, CanbusCounterSnapshot>>> = OnceLock::new();
+
+#[cfg(target_os = "linux")]
+fn canbus_counter_snapshots() -> &'static Mutex<HashMap<String, CanbusCounterSnapshot>> {
+    CANBUS_COUNTER_SNAPSHOTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(target_os = "linux")]
+fn bytes_per_second(previous: Option<u64>, current: Option<u64>, elapsed_seconds: f64) -> Option<f64> {
+    if elapsed_seconds <= 0.0 {
+        return None;
+    }
+
+    match (previous, current) {
+        (Some(previous), Some(current)) if current >= previous => {
+            Some((current - previous) as f64 / elapsed_seconds)
+        }
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn canbus_interface_from_name(interface_name: String) -> CanbusInterface {
     let base = format!("/sys/class/net/{}", interface_name);
     let state = read_operstate(&interface_name);
+    let now = Instant::now();
+    let rx_bytes = read_u64_file(format!("{}/statistics/rx_bytes", base));
+    let tx_bytes = read_u64_file(format!("{}/statistics/tx_bytes", base));
+
+    let (rx_bytes_per_second, tx_bytes_per_second) = canbus_counter_snapshots()
+        .lock()
+        .ok()
+        .map(|mut snapshots| {
+            let previous = snapshots.get(&interface_name).cloned();
+
+            snapshots.insert(
+                interface_name.clone(),
+                CanbusCounterSnapshot {
+                    captured_at: now,
+                    rx_bytes,
+                    tx_bytes,
+                },
+            );
+
+            previous
+                .map(|previous| {
+                    let elapsed_seconds = now.duration_since(previous.captured_at).as_secs_f64();
+
+                    (
+                        bytes_per_second(previous.rx_bytes, rx_bytes, elapsed_seconds),
+                        bytes_per_second(previous.tx_bytes, tx_bytes, elapsed_seconds),
+                    )
+                })
+                .unwrap_or((None, None))
+        })
+        .unwrap_or((None, None));
 
     CanbusInterface {
         connected: state == "up" || state == "unknown",
         bitrate: read_u64_file(format!("{}/can_bittiming/bitrate", base)),
-        rx_bytes: read_u64_file(format!("{}/statistics/rx_bytes", base)),
-        tx_bytes: read_u64_file(format!("{}/statistics/tx_bytes", base)),
+        rx_bytes,
+        tx_bytes,
         rx_packets: read_u64_file(format!("{}/statistics/rx_packets", base)),
         tx_packets: read_u64_file(format!("{}/statistics/tx_packets", base)),
+        rx_bytes_per_second,
+        tx_bytes_per_second,
         interface_name,
     }
 }

@@ -2,10 +2,15 @@ use evdev::{Device, EventType};
 use std::{
     fs,
     path::PathBuf,
-    sync::mpsc::{channel, Receiver, Sender},
+    sync::{
+        mpsc::{channel, Receiver, Sender},
+        Mutex, OnceLock,
+    },
     thread,
     time::{Duration, Instant},
 };
+
+static SYNTHETIC_ACTIVITY_TX: OnceLock<Mutex<Option<Sender<()>>>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy)]
 pub enum InputIdleEvent {
@@ -17,6 +22,8 @@ pub fn start_input_idle_watcher(timeout_seconds: u64) -> Result<Receiver<InputId
     let timeout = Duration::from_secs(timeout_seconds.max(1));
     let (external_tx, external_rx) = channel();
     let (activity_tx, activity_rx) = channel();
+
+    register_synthetic_activity_sender(activity_tx.clone());
 
     let devices = open_input_devices()?;
 
@@ -52,6 +59,30 @@ pub fn start_input_idle_watcher(timeout_seconds: u64) -> Result<Receiver<InputId
     });
 
     Ok(external_rx)
+}
+
+pub fn reset_idle_timer() {
+    let Some(lock) = SYNTHETIC_ACTIVITY_TX.get() else {
+        eprintln!("input idle: reset requested before watcher was started");
+        return;
+    };
+
+    let Ok(guard) = lock.lock() else {
+        eprintln!("input idle: reset requested but sender lock is poisoned");
+        return;
+    };
+
+    if let Some(tx) = guard.as_ref() {
+        let _ = tx.send(());
+    }
+}
+
+fn register_synthetic_activity_sender(tx: Sender<()>) {
+    let lock = SYNTHETIC_ACTIVITY_TX.get_or_init(|| Mutex::new(None));
+
+    if let Ok(mut guard) = lock.lock() {
+        *guard = Some(tx);
+    }
 }
 
 pub fn wait_for_input_activity() -> Result<(), String> {

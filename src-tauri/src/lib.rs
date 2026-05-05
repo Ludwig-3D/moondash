@@ -49,12 +49,15 @@ fn turn_off_displays() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn turn_on_displays() -> Result<(), String> {
+fn turn_on_displays(app: AppHandle) -> Result<(), String> {
     eprintln!("turn_on_displays command called");
+
+    input_idle::reset_idle_timer();
 
     match wayland_power::turn_on_displays() {
         Ok(()) => {
             eprintln!("turn_on_displays succeeded");
+            emit_awake_after_delay(&app);
             Ok(())
         }
         Err(err) => {

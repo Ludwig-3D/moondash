@@ -12,6 +12,8 @@ type PointLike =
 type ExcludeObjectDef = {
   name?: string
   polygon?: PointLike[]
+  center?: PointLike
+  location?: PointLike
 }
 
 type PreviewObject = {
@@ -20,6 +22,7 @@ type PreviewObject = {
   current: boolean
   selected: boolean
   points: Array<{ x: number; y: number }>
+  marker: { x: number; y: number } | null
   hasPreview: boolean
 }
 
@@ -63,22 +66,33 @@ const currentObject = computed(() => {
 function normalizePoint(point: PointLike | null | undefined) {
   if (!point) return null
 
+  let normalized: { x: number; y: number } | null = null
+
   if (Array.isArray(point)) {
-    return { x: Number(point[0]), y: Number(point[1]) }
+    normalized = { x: Number(point[0]), y: Number(point[1]) }
+  } else if (typeof point === 'object') {
+    normalized = { x: Number(point.x), y: Number(point.y) }
   }
 
-  if (typeof point === 'object') {
-    return { x: Number(point.x), y: Number(point.y) }
-  }
+  return normalized && Number.isFinite(normalized.x) && Number.isFinite(normalized.y)
+      ? normalized
+      : null
+}
 
-  return null
+function polygonCenter(points: Array<{ x: number; y: number }>) {
+  if (!points.length) return null
+
+  return {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  }
 }
 
 const objectItems = computed(() => {
   const objects = excludeState.value.objects
   if (!Array.isArray(objects)) return []
 
-  return (objects as ExcludeObjectDef[])
+  const items = (objects as ExcludeObjectDef[])
       .map((item) => {
         const name = String(item?.name ?? '').trim()
         if (!name) return null
@@ -87,14 +101,33 @@ const objectItems = computed(() => {
             ? item.polygon.map(normalizePoint).filter((p): p is { x: number; y: number } => Boolean(p))
             : []
 
+        const isCurrent = currentObject.value === name
+        const marker = normalizePoint(item?.center)
+            ?? normalizePoint(item?.location)
+            ?? polygonCenter(polygon)
+            ?? (isCurrent ? { x: 0, y: 0 } : null)
+
         return {
           name,
           excluded: excludedNames.value.includes(name),
-          current: currentObject.value === name,
+          current: isCurrent,
           polygon,
+          marker,
         }
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
+
+  if (currentObject.value && !items.some((item) => item.name === currentObject.value)) {
+    items.unshift({
+      name: currentObject.value,
+      excluded: excludedNames.value.includes(currentObject.value),
+      current: true,
+      polygon: [],
+      marker: { x: 0, y: 0 },
+    })
+  }
+
+  return items
 })
 
 watch(
@@ -120,48 +153,104 @@ const selectedObject = computed(() => {
 })
 
 const previewObjects = computed<PreviewObject[]>(() => {
-  return objectItems.value.map((item) => ({
-    name: item.name,
-    excluded: item.excluded,
-    current: item.current,
-    selected: selectedObjectName.value === item.name,
-    points: item.polygon,
-    hasPreview: item.polygon.length >= 3,
-  }))
+  return objectItems.value
+      .map((item) => ({
+        name: item.name,
+        excluded: item.excluded,
+        current: item.current,
+        selected: selectedObjectName.value === item.name,
+        points: item.polygon,
+        marker: item.marker,
+        hasPreview: item.polygon.length >= 3,
+      }))
+      .sort((a, b) => Number(b.excluded) - Number(a.excluded) || Number(a.current) - Number(b.current))
+})
+
+function numericConfigValue(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function configSection(name: string) {
+  const configfile = moonraker.value.rawObjects['configfile'] as Record<string, unknown> | undefined
+  const config = configfile && typeof configfile === 'object'
+      ? configfile.config as Record<string, unknown> | undefined
+      : undefined
+
+  const section = config?.[name]
+  return section && typeof section === 'object' && !Array.isArray(section)
+      ? section as Record<string, unknown>
+      : {}
+}
+
+const printerBounds = computed(() => {
+  const stepperX = configSection('stepper_x')
+  const stepperY = configSection('stepper_y')
+
+  const configuredMinX = numericConfigValue(stepperX.position_min)
+  const configuredMaxX = numericConfigValue(stepperX.position_max)
+  const configuredMinY = numericConfigValue(stepperY.position_min)
+  const configuredMaxY = numericConfigValue(stepperY.position_max)
+
+  const allPoints = previewObjects.value.flatMap((item) => [
+    ...item.points,
+    ...(item.marker ? [item.marker] : []),
+    { x: 0, y: 0 },
+  ])
+
+  const minObjectX = allPoints.length ? Math.min(...allPoints.map((p) => p.x)) : 0
+  const maxObjectX = allPoints.length ? Math.max(...allPoints.map((p) => p.x)) : 100
+  const minObjectY = allPoints.length ? Math.min(...allPoints.map((p) => p.y)) : 0
+  const maxObjectY = allPoints.length ? Math.max(...allPoints.map((p) => p.y)) : 100
+
+  const minX = configuredMinX ?? Math.min(0, minObjectX)
+  const maxX = configuredMaxX ?? Math.max(100, maxObjectX)
+  const minY = configuredMinY ?? Math.min(0, minObjectY)
+  const maxY = configuredMaxY ?? Math.max(100, maxObjectY)
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+  }
 })
 
 const previewBounds = computed(() => {
-  const allPoints = previewObjects.value.flatMap((item) => item.points)
-  if (!allPoints.length) {
-    return {
-      minX: 0,
-      minY: 0,
-      width: 100,
-      height: 100,
-    }
-  }
-
-  const minX = Math.min(...allPoints.map((p) => p.x))
-  const maxX = Math.max(...allPoints.map((p) => p.x))
-  const minY = Math.min(...allPoints.map((p) => p.y))
-  const maxY = Math.max(...allPoints.map((p) => p.y))
-
-  const width = Math.max(1, maxX - minX)
-  const height = Math.max(1, maxY - minY)
-  const padding = Math.max(width, height) * 0.06
+  const bounds = printerBounds.value
+  const padding = Math.max(bounds.width, bounds.height) * 0.04
 
   return {
-    minX: minX - padding,
-    minY: minY - padding,
-    width: width + padding * 2,
-    height: height + padding * 2,
+    minX: bounds.minX - padding,
+    minY: bounds.minY - padding,
+    width: bounds.width + padding * 2,
+    height: bounds.height + padding * 2,
   }
 })
+const hasAnyPreview = computed(() => previewObjects.value.some((item) => item.hasPreview || item.marker))
 
-const hasAnyPreview = computed(() => previewObjects.value.some((item) => item.hasPreview))
+function svgX(x: number): number {
+  return x
+}
+
+function svgY(y: number): number {
+  const bounds = printerBounds.value
+  return bounds.minY + bounds.maxY - y
+}
 
 function pointsToSvg(points: Array<{ x: number; y: number }>): string {
-  return points.map((p) => `${p.x},${p.y}`).join(' ')
+  return points.map((p) => `${svgX(p.x)},${svgY(p.y)}`).join(' ')
+}
+
+const markerRadius = computed(() => Math.max(printerBounds.value.width, printerBounds.value.height) * 0.018)
+
+function svgPoint(point: { x: number; y: number }) {
+  return {
+    x: svgX(point.x),
+    y: svgY(point.y),
+  }
 }
 
 function selectObject(name: string) {
@@ -213,7 +302,22 @@ async function skipSelectedObject() {
                     }"
                       @click="selectObject(item.name)"
                   />
+
+                  <circle
+                      v-if="!item.hasPreview && item.marker"
+                      :cx="svgPoint(item.marker).x"
+                      :cy="svgPoint(item.marker).y"
+                      :r="markerRadius"
+                      class="skip-object-preview__marker"
+                      :class="{
+                      'skip-object-preview__marker--selected': item.selected && !item.current && !item.excluded,
+                      'skip-object-preview__marker--current': item.current && !item.excluded,
+                      'skip-object-preview__marker--excluded': item.excluded,
+                    }"
+                      @click="selectObject(item.name)"
+                  />
                 </g>
+
               </svg>
 
               <div v-else class="skip-object-preview__empty">
@@ -310,6 +414,33 @@ async function skipSelectedObject() {
   opacity: 0.7;
 }
 
+
+.skip-object-preview__marker {
+  fill: rgba(var(--v-theme-primary), 0.3);
+  stroke: rgba(var(--v-theme-primary), 0.9);
+  stroke-width: 1.8;
+  cursor: pointer;
+  transition: fill 0.16s ease, stroke 0.16s ease, opacity 0.16s ease;
+  vector-effect: non-scaling-stroke;
+}
+
+.skip-object-preview__marker--selected {
+  stroke: rgba(var(--v-theme-primary), 1);
+  stroke-width: 2.8;
+}
+
+.skip-object-preview__marker--current {
+  fill: rgba(var(--v-theme-secondary), 0.34);
+  stroke: rgba(var(--v-theme-secondary), 1);
+  stroke-width: 2.8;
+}
+
+.skip-object-preview__marker--excluded {
+  fill: rgba(var(--v-theme-on-surface), 0.18);
+  stroke: rgba(var(--v-theme-on-surface), 0.44);
+  opacity: 0.5;
+}
+
 .skip-object-preview__polygon {
   fill: rgba(var(--v-theme-primary), 0.2);
   stroke: rgba(var(--v-theme-primary), 0.32);
@@ -324,8 +455,9 @@ async function skipSelectedObject() {
 }
 
 .skip-object-preview__polygon--current {
+  fill: rgba(var(--v-theme-secondary), 0.34);
   stroke: rgba(var(--v-theme-secondary), 1);
-  stroke-width: 2.4;
+  stroke-width: 2.8;
 }
 
 .skip-object-preview__polygon--excluded {
@@ -362,7 +494,7 @@ async function skipSelectedObject() {
 }
 
 .skip-object-item {
-  border-radius: 14px;
+  border-radius: 5px;
   margin-bottom: 0;
   background: rgba(var(--v-theme-on-surface), 0.05);
   transition: background 0.16s ease, opacity 0.16s ease, border-color 0.16s ease;

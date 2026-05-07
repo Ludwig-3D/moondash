@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
@@ -29,10 +29,20 @@ const loading = ref(false)
 const skipDialogOpen = ref(false)
 const currentFileThumbnails = ref<MoonrakerThumbnail[]>([])
 const currentFileMetadata = ref<MoonrakerFileMetadata | null>(null)
+const filenameWrapRef = ref<HTMLElement | null>(null)
+const filenameTextRef = ref<HTMLElement | null>(null)
+const displayMessageWrapRef = ref<HTMLElement | null>(null)
+const displayMessageTextRef = ref<HTMLElement | null>(null)
+const isFilenameOverflowing = ref(false)
+const isDisplayMessageOverflowing = ref(false)
+let filenameResizeObserver: ResizeObserver | null = null
+let displayMessageResizeObserver: ResizeObserver | null = null
 
 const printState = computed(() => moonraker.value.printStats.state?.toLowerCase() ?? '')
 const printFilename = computed(() => moonraker.value.printStats.filename ?? '')
 const fileDisplayName = computed(() => printFilename.value.replace(/\.gcode$/i, ''))
+const displayMessage = computed(() => moonraker.value.displayStatus.message?.trim() ?? '')
+const hasDisplayMessage = computed(() => Boolean(displayMessage.value))
 
 const websocketConnected = computed(() => appStore.isWebsocketConnected)
 const websocketIp = computed(() => appStore.getWebsocketIp)
@@ -298,6 +308,32 @@ const previewUrl = computed(() => {
   return `${httpBase.value}/server/files/gcodes/${encodeMoonrakerFilePath(fullThumbPath)}`
 })
 
+
+async function updateOverflowState(
+    wrapRef: { value: HTMLElement | null },
+    textRef: { value: HTMLElement | null },
+    target: { value: boolean },
+) {
+  await nextTick()
+
+  const wrap = wrapRef.value
+  const text = textRef.value
+  if (!wrap || !text) {
+    target.value = false
+    return
+  }
+
+  target.value = text.scrollWidth > wrap.clientWidth + 1
+}
+
+function updateFilenameOverflow() {
+  return updateOverflowState(filenameWrapRef, filenameTextRef, isFilenameOverflowing)
+}
+
+function updateDisplayMessageOverflow() {
+  return updateOverflowState(displayMessageWrapRef, displayMessageTextRef, isDisplayMessageOverflowing)
+}
+
 async function pausePrint() {
   if (loading.value) return
   try {
@@ -353,6 +389,47 @@ async function clearFile() {
 }
 
 watch(
+    fileDisplayName,
+    () => {
+      void updateFilenameOverflow()
+    },
+    { immediate: true },
+)
+
+watch(
+    [displayMessage, hasDisplayMessage, isActivePrint],
+    () => {
+      void updateDisplayMessageOverflow()
+    },
+    { immediate: true },
+)
+
+onMounted(() => {
+  filenameResizeObserver = new ResizeObserver(() => {
+    void updateFilenameOverflow()
+  })
+
+  displayMessageResizeObserver = new ResizeObserver(() => {
+    void updateDisplayMessageOverflow()
+  })
+
+  if (filenameWrapRef.value) filenameResizeObserver.observe(filenameWrapRef.value)
+  if (filenameTextRef.value) filenameResizeObserver.observe(filenameTextRef.value)
+  if (displayMessageWrapRef.value) displayMessageResizeObserver.observe(displayMessageWrapRef.value)
+  if (displayMessageTextRef.value) displayMessageResizeObserver.observe(displayMessageTextRef.value)
+
+  void updateFilenameOverflow()
+  void updateDisplayMessageOverflow()
+})
+
+onBeforeUnmount(() => {
+  filenameResizeObserver?.disconnect()
+  filenameResizeObserver = null
+  displayMessageResizeObserver?.disconnect()
+  displayMessageResizeObserver = null
+})
+
+watch(
     [printFilename, websocketConnected, websocketIp],
     async ([filename, connected, ip]) => {
       currentFileThumbnails.value = []
@@ -380,7 +457,44 @@ watch(
         </div>
 
         <div class="current-print-panel__topbar">
-          {{ fileDisplayName }}
+          <div
+              ref="filenameWrapRef"
+              class="current-print-panel__filename-wrap"
+              :title="fileDisplayName"
+          >
+            <div
+                ref="filenameTextRef"
+                class="current-print-panel__filename"
+                :class="{ 'current-print-panel__marquee': isFilenameOverflowing }"
+            >
+              <span>{{ fileDisplayName }}</span>
+              <span v-if="isFilenameOverflowing" aria-hidden="true">{{ fileDisplayName }}</span>
+            </div>
+          </div>
+
+          <v-alert
+              v-if="hasDisplayMessage"
+              class="current-print-panel__display-alert"
+              density="compact"
+              color="info"
+              variant="tonal"
+              rounded="lg"
+          >
+            <div
+                ref="displayMessageWrapRef"
+                class="current-print-panel__display-message-wrap"
+                :title="displayMessage"
+            >
+              <div
+                  ref="displayMessageTextRef"
+                  class="current-print-panel__display-message"
+                  :class="{ 'current-print-panel__marquee': isDisplayMessageOverflowing }"
+              >
+                <span>{{ displayMessage }}</span>
+                <span v-if="isDisplayMessageOverflowing" aria-hidden="true">{{ displayMessage }}</span>
+              </div>
+            </div>
+          </v-alert>
         </div>
 
         <div class="current-print-panel__bottombar">
@@ -478,6 +592,29 @@ watch(
 
     <template v-else>
       <div class="current-print-panel__idle">
+        <v-alert
+            v-if="hasDisplayMessage"
+            class="current-print-panel__idle-topbar current-print-panel__display-alert"
+            density="compact"
+            color="info"
+            variant="tonal"
+            rounded="lg"
+        >
+          <div
+              ref="displayMessageWrapRef"
+              class="current-print-panel__display-message-wrap"
+              :title="displayMessage"
+          >
+            <div
+                ref="displayMessageTextRef"
+                class="current-print-panel__display-message current-print-panel__display-message--idle"
+                :class="{ 'current-print-panel__marquee': isDisplayMessageOverflowing }"
+            >
+              <span>{{ displayMessage }}</span>
+              <span v-if="isDisplayMessageOverflowing" aria-hidden="true">{{ displayMessage }}</span>
+            </div>
+          </div>
+        </v-alert>
         <img
             v-if="appStore.getThemeLogo"
             class="current-print-panel__logo"
@@ -515,7 +652,25 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.current-print-panel__placeholder {
   opacity: 0.6;
+}
+
+.current-print-panel__idle {
+  position: relative;
+}
+
+.current-print-panel__idle > :not(.current-print-panel__idle-topbar) {
+  opacity: 0.6;
+}
+
+.current-print-panel__idle-topbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
 }
 
 .current-print-panel__topbar {
@@ -523,9 +678,82 @@ watch(
   top: 0;
   left: 0;
   right: 0;
-  padding: 12px 14px;
+  padding: 10px 14px;
   font-weight: 700;
   background: rgba(var(--v-theme-background), 0.8);
+}
+
+.current-print-panel__display-alert {
+  margin-top: 8px;
+}
+
+.current-print-panel__display-alert :deep(.v-alert__content) {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.current-print-panel__display-message-wrap {
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.current-print-panel__display-message {
+  display: inline-flex;
+  min-width: 100%;
+  gap: 3rem;
+  font-size: 1rem;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.current-print-panel__display-message--idle {
+  font-size: 1.05rem;
+}
+
+.current-print-panel__display-message span {
+  flex: 0 0 auto;
+}
+
+.current-print-panel__filename-wrap {
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.current-print-panel__filename {
+  display: inline-flex;
+  min-width: 100%;
+  gap: 3rem;
+}
+
+.current-print-panel__filename span {
+  flex: 0 0 auto;
+}
+
+.current-print-panel__marquee {
+  animation: current-print-panel-marquee 14s linear infinite;
+}
+
+.current-print-panel__filename-wrap:hover .current-print-panel__marquee,
+.current-print-panel__display-message-wrap:hover .current-print-panel__marquee {
+  animation-play-state: paused;
+}
+
+@keyframes current-print-panel-marquee {
+  0%, 12% {
+    transform: translateX(0);
+  }
+
+  88%, 100% {
+    transform: translateX(calc(-50% - 1.5rem));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .current-print-panel__marquee {
+    animation: none;
+  }
 }
 
 .current-print-panel__bottombar {

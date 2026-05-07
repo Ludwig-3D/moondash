@@ -323,7 +323,13 @@ async function updateOverflowState(
     return
   }
 
-  target.value = text.scrollWidth > wrap.clientWidth + 1
+  const firstItem = text.firstElementChild as HTMLElement | null
+  const contentWidth = firstItem
+      ? Math.ceil(firstItem.getBoundingClientRect().width)
+      : Math.ceil(text.getBoundingClientRect().width)
+  const visibleWidth = Math.floor(wrap.getBoundingClientRect().width)
+
+  target.value = contentWidth > visibleWidth + 1
 }
 
 function updateFilenameOverflow() {
@@ -608,10 +614,9 @@ watch(
             <div
                 ref="displayMessageTextRef"
                 class="current-print-panel__display-message current-print-panel__display-message--idle"
-                :class="{ 'current-print-panel__marquee': isDisplayMessageOverflowing }"
+                :class="{ 'current-print-panel__marquee-single': isDisplayMessageOverflowing }"
             >
               <span>{{ displayMessage }}</span>
-              <span v-if="isDisplayMessageOverflowing" aria-hidden="true">{{ displayMessage }}</span>
             </div>
           </div>
         </v-alert>
@@ -735,8 +740,13 @@ watch(
   animation: current-print-panel-marquee 14s linear infinite;
 }
 
+.current-print-panel__marquee-single {
+  animation: current-print-panel-marquee-single 14s linear infinite;
+}
+
 .current-print-panel__filename-wrap:hover .current-print-panel__marquee,
-.current-print-panel__display-message-wrap:hover .current-print-panel__marquee {
+.current-print-panel__display-message-wrap:hover .current-print-panel__marquee,
+.current-print-panel__display-message-wrap:hover .current-print-panel__marquee-single {
   animation-play-state: paused;
 }
 
@@ -750,8 +760,19 @@ watch(
   }
 }
 
+@keyframes current-print-panel-marquee-single {
+  0%, 12% {
+    transform: translateX(0);
+  }
+
+  88%, 100% {
+    transform: translateX(calc(-100% - 3rem));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .current-print-panel__marquee {
+  .current-print-panel__marquee,
+  .current-print-panel__marquee-single {
     animation: none;
   }
 }

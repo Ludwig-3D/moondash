@@ -63,11 +63,7 @@ const currentFilename = computed(() => {
 })
 
 
-const hasQueue = computed(() => queuedJobs.value.length > 0)
-const active = computed(() => {
-  const state = queueState.value.toLowerCase()
-  return hasQueue.value || ['loading', 'paused'].includes(state)
-})
+const active = computed(() => queuedJobs.value.length > 0)
 
 watch(active, (value) => emit('active-change', value), { immediate: true })
 
@@ -275,6 +271,20 @@ async function printJob(filename: string) {
   await moonrakerClient.call('printer.print.start', { filename })
 }
 
+async function deleteJob(job: PanelJob) {
+  if (job.isCurrent) return
+
+  const queuedJob = queuedJobs.value.find((item) => {
+    const filename = typeof item.filename === 'string' ? item.filename.trim() : ''
+    return normalizeMoonrakerFilePath(filename) === normalizeMoonrakerFilePath(job.filename)
+  })
+
+  if (queuedJob?.job_id === undefined || queuedJob.job_id === null) return
+
+  await moonrakerClient.call('server.job_queue.delete_job', { job_ids: [queuedJob.job_id] })
+  await refreshPanel()
+}
+
 onMounted(() => {
   refreshPanel()
   refreshTimer = window.setInterval(refreshPanel, 5000)
@@ -289,7 +299,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <v-card v-if="active" class="job-query-panel" rounded="lg">
+  <v-card v-if="active" class="job-query-panel mt-2 mr-2" rounded="lg">
     <div class="job-query-panel__header">
       <div class="job-query-panel__title">{{ t('job_queue.title') }}</div>
       <v-progress-circular v-if="loading" indeterminate size="18" width="2" />
@@ -315,16 +325,25 @@ onBeforeUnmount(() => {
               {{ displayName(job.filename) }}
             </div>
 
-            <v-btn
-                icon="mdi-play"
-                size="small"
-                variant="text"
-                :color="job.isCurrent ? undefined : 'primary'"
-                :disabled="job.isCurrent"
-                :aria-label="t('job_queue.print')"
-                :title="t('job_queue.print')"
-                @click="printJob(job.filename)"
-            />
+            <div class="job-query-panel__actions">
+              <v-btn
+                  icon="mdi-play"
+                  size="small"
+                  variant="text"
+                  :color="job.isCurrent ? undefined : 'primary'"
+                  :disabled="job.isCurrent"
+                  @click="printJob(job.filename)"
+              />
+
+              <v-btn
+                  icon="mdi-delete-outline"
+                  size="small"
+                  variant="text"
+                  color="error"
+                  :disabled="job.isCurrent"
+                  @click="deleteJob(job)"
+              />
+            </div>
           </div>
 
           <div class="job-query-panel__stats">
@@ -348,6 +367,7 @@ onBeforeUnmount(() => {
   width: 360px;
   max-width: 360px;
   height: 100%;
+  max-height: calc(100vh - 16px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -422,6 +442,13 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
+}
+
+.job-query-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
 }
 
 .job-query-panel__filename {

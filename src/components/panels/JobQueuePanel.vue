@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useI18n } from 'vue-i18n'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import { useAppStore } from '@/stores/app'
+
+const { t } = useI18n()
 
 const emit = defineEmits<{
   (e: 'active-change', value: boolean): void
@@ -70,17 +73,17 @@ watch(active, (value) => emit('active-change', value), { immediate: true })
 
 function normalizeMoonrakerFilePath(path: string): string {
   return path
-    .trim()
-    .replace(/^\/+/, '')
-    .replace(/^gcodes\//, '')
-    .replace(/^\.\//, '')
+      .trim()
+      .replace(/^\/+/, '')
+      .replace(/^gcodes\//, '')
+      .replace(/^\.\//, '')
 }
 
 function encodeMoonrakerFilePath(path: string): string {
   return normalizeMoonrakerFilePath(path)
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/')
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')
 }
 
 function getMoonrakerHttpBase(): string | null {
@@ -100,14 +103,14 @@ function resolveThumbnailPath(filePath: string, thumbnailPath: string): string {
   const normalizedFilePath = normalizeMoonrakerFilePath(filePath)
   const normalizedThumbPath = normalizeMoonrakerFilePath(thumbnailPath)
   const fileDir = normalizedFilePath.includes('/')
-    ? normalizedFilePath.slice(0, normalizedFilePath.lastIndexOf('/'))
-    : ''
+      ? normalizedFilePath.slice(0, normalizedFilePath.lastIndexOf('/'))
+      : ''
 
   if (!fileDir) return normalizedThumbPath
 
   if (
-    normalizedThumbPath.startsWith(`${fileDir}/`) ||
-    normalizedThumbPath.startsWith(`.thumbs/${fileDir}/`)
+      normalizedThumbPath.startsWith(`${fileDir}/`) ||
+      normalizedThumbPath.startsWith(`.thumbs/${fileDir}/`)
   ) {
     return normalizedThumbPath
   }
@@ -144,10 +147,10 @@ function formatDuration(seconds: unknown): string {
 
 function formatWeight(metadata: JobMetadata | null): string {
   const weight =
-    metadata?.filament_weight_total ??
-    metadata?.filament_weight ??
-    metadata?.filament?.weight_total ??
-    metadata?.filament?.weight
+      metadata?.filament_weight_total ??
+      metadata?.filament_weight ??
+      metadata?.filament?.weight_total ??
+      metadata?.filament?.weight
 
   if (typeof weight !== 'number' || !Number.isFinite(weight)) return '--'
   return `${weight.toFixed(1)}g`
@@ -237,8 +240,8 @@ async function fetchThumbnail(filename: string) {
     }
 
     const selected = [...(thumbnails ?? [])]
-      .sort((a, b) => ((b.width ?? 0) * (b.height ?? 0)) - ((a.width ?? 0) * (a.height ?? 0)))
-      .find((item) => item.thumbnail_path)
+        .sort((a, b) => ((b.width ?? 0) * (b.height ?? 0)) - ((a.width ?? 0) * (a.height ?? 0)))
+        .find((item) => item.thumbnail_path)
 
     thumbnailsByFilename.value = {
       ...thumbnailsByFilename.value,
@@ -288,20 +291,20 @@ onBeforeUnmount(() => {
 <template>
   <v-card v-if="active" class="job-query-panel" rounded="lg">
     <div class="job-query-panel__header">
-      <div class="job-query-panel__title">Job queue</div>
+      <div class="job-query-panel__title">{{ t('jobQueue.title', 'Job queue') }}</div>
       <v-progress-circular v-if="loading" indeterminate size="18" width="2" />
     </div>
 
     <div class="job-query-panel__list">
       <div
-        v-for="job in panelJobs"
-        :key="job.key"
-        class="job-query-panel__item"
-        :class="{ 'job-query-panel__item--current': job.isCurrent }"
+          v-for="job in panelJobs"
+          :key="job.key"
+          class="job-query-panel__item"
+          :class="{ 'job-query-panel__item--current': job.isCurrent }"
       >
         <div
-          class="job-query-panel__preview"
-          :style="{ backgroundImage: job.thumbnailUrl ? `url(${job.thumbnailUrl})` : 'none' }"
+            class="job-query-panel__preview"
+            :style="{ backgroundImage: job.thumbnailUrl ? `url(${job.thumbnailUrl})` : 'none' }"
         >
           <v-icon v-if="!job.thumbnailUrl" icon="mdi-printer-3d" size="30" />
         </div>
@@ -313,12 +316,14 @@ onBeforeUnmount(() => {
             </div>
 
             <v-btn
-              icon="mdi-printer-play"
-              size="small"
-              variant="text"
-              :color="job.isCurrent ? undefined : 'primary'"
-              :disabled="job.isCurrent"
-              @click="printJob(job.filename)"
+                icon="mdi-play"
+                size="small"
+                variant="text"
+                :color="job.isCurrent ? undefined : 'primary'"
+                :disabled="job.isCurrent"
+                :aria-label="t('jobQueue.print', 'Print')"
+                :title="t('jobQueue.print', 'Print')"
+                @click="printJob(job.filename)"
             />
           </div>
 

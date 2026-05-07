@@ -55,52 +55,6 @@ type MoonrakerObjectsQueryResult = {
   status?: Record<string, unknown>
 }
 
-type MoonrakerHistoryJob = {
-  filename?: string
-  status?: string
-  start_time?: number
-  end_time?: number | null
-}
-
-type MoonrakerHistoryListResult = {
-  jobs?: MoonrakerHistoryJob[]
-}
-
-const HISTORY_CACHE_TTL_MS = 30_000
-let cachedHistoryJobs: MoonrakerHistoryJob[] = []
-let historyCacheTimestamp = 0
-let historyRequest: Promise<MoonrakerHistoryJob[]> | null = null
-
-async function getHistoryJobs(): Promise<MoonrakerHistoryJob[]> {
-  const now = Date.now()
-
-  if (cachedHistoryJobs.length > 0 && now - historyCacheTimestamp < HISTORY_CACHE_TTL_MS) {
-    return cachedHistoryJobs
-  }
-
-  if (historyRequest) return historyRequest
-
-  historyRequest = moonrakerClient
-      .call<MoonrakerHistoryListResult>('server.history.list', {
-        limit: 100,
-        order: 'desc',
-      })
-      .then((result) => {
-        cachedHistoryJobs = Array.isArray(result?.jobs) ? result.jobs : []
-        historyCacheTimestamp = Date.now()
-        return cachedHistoryJobs
-      })
-      .catch((error) => {
-        console.warn('Failed to load Moonraker print history:', error)
-        return []
-      })
-      .finally(() => {
-        historyRequest = null
-      })
-
-  return historyRequest
-}
-
 const props = defineProps<{
   modelValue: boolean
   file: MoonrakerFile | null
@@ -178,109 +132,12 @@ const filamentWeightLabel = computed(() => {
   return `${weight.toFixed(1)}g`
 })
 
-const normalizedFileCandidates = computed(() => {
-  const file = props.file
-  const values = [file?.path, file?.filename, file?.display, displayName.value]
-
-  return values
-      .map((value) => normalizeHistoryFilename(value))
-      .filter((value): value is string => Boolean(value))
-})
-
-const lastPrintStateColor = computed(() => {
-  switch (lastPrintStatus.value) {
-    case 'completed':
-      return 'success'
-    case 'failed':
-    case 'error':
-      return 'error'
-    case 'cancelled':
-    case 'klippy_shutdown':
-      return 'warning'
-    default:
-      return undefined
-  }
-})
-
-const lastPrintStateIcon = computed(() => {
-  switch (lastPrintStateColor.value) {
-    case 'success':
-      return 'mdi-check-circle-outline'
-    case 'error':
-      return 'mdi-close-circle-outline'
-    case 'warning':
-      return 'mdi-alert-outline'
-    default:
-      return 'mdi-history'
-  }
-})
-
-const lastPrintStateLabel = computed(() => {
-  if (!lastPrintStatus.value) return ''
-
-  return lastPrintStatus.value
-      .split('_')
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ')
-})
-
-function normalizeHistoryFilename(value: string | undefined | null): string {
-  if (!value) return ''
-
-  return value
-      .replace(/\\/g, '/')
-      .replace(/^.*\/gcodes\//, '')
-      .replace(/^\/+/, '')
-      .replace(/\.gcode$/i, '.gcode')
-      .trim()
-}
-
-function fileBasename(value: string): string {
-  return value.split('/').filter(Boolean).pop() ?? value
-}
-
-function findMatchingHistoryJobs(jobs: MoonrakerHistoryJob[]): MoonrakerHistoryJob[] {
-  const candidates = normalizedFileCandidates.value
-  if (candidates.length === 0) return []
-
-  const exactMatches = jobs.filter((job) => {
-    const historyFilename = normalizeHistoryFilename(job.filename)
-    return Boolean(historyFilename && candidates.includes(historyFilename))
-  })
-  if (exactMatches.length > 0) return exactMatches
-
-  const basenames = new Set(candidates.map(fileBasename))
-  return jobs.filter((job) => {
-    const historyFilename = normalizeHistoryFilename(job.filename)
-    return Boolean(historyFilename && basenames.has(fileBasename(historyFilename)))
-  })
-}
-
-async function loadLastPrintStatus() {
-  const filePath = getFilePath(props.file)
-
-  if (!filePath) {
-    lastPrintStatus.value = ''
-    lastPrintCount.value = 0
-    return
-  }
-
-  const jobs = await getHistoryJobs()
-  const matchingJobs = findMatchingHistoryJobs(jobs)
-  const latestJob = matchingJobs[0]
-
-  lastPrintStatus.value = typeof latestJob?.status === 'string' ? latestJob.status : ''
-  lastPrintCount.value = matchingJobs.length
-}
-
 const timelapseEnabled = ref(false)
 const saving = ref(false)
 const syncingTimelapse = ref(false)
 const selectedLaneByTool = ref<Record<string, string>>({})
 const dialogThumbnails = ref<MoonrakerThumbnail[]>([])
 const loadingThumbnails = ref(false)
-const lastPrintStatus = ref('')
-const lastPrintCount = ref(0)
 
 function getRawObjects(): Record<string, unknown> {
   return moonraker.value.rawObjects as Record<string, unknown>
@@ -818,7 +675,6 @@ watch(
       await refreshAfcMappingsFromMoonraker()
       if(file !== true)
         await loadDialogThumbnails(file)
-      await loadLastPrintStatus()
       syncSelectedLanesFromAfc()
     },
     { immediate: true },
@@ -829,8 +685,6 @@ watch(
     (open) => {
       if (!open) {
         dialogThumbnails.value = []
-        lastPrintStatus.value = ''
-        lastPrintCount.value = 0
       }
     },
 )
@@ -870,6 +724,36 @@ async function setLaneForTool(tool: string, lane: string) {
     showErrorToast(t('print.dialog.lane_update_failed'))
   } finally {
     saving.value = false
+  }
+}
+
+async function addToPrintQueue() {
+  if (!props.file || saving.value) return
+
+  const filePath = getFilePath(props.file)
+  if (!filePath) {
+    showErrorToast('Failed to add file to print queue')
+    return
+  }
+
+  let queued = false
+
+  try {
+    saving.value = true
+
+    await moonrakerClient.call('server.job_queue.post_job', {
+      filenames: [filePath],
+    })
+
+    queued = true
+  } catch {
+    showErrorToast('Failed to add file to print queue')
+  } finally {
+    saving.value = false
+
+    if (queued) {
+      emit('update:modelValue', false)
+    }
   }
 }
 
@@ -952,16 +836,6 @@ async function startPrint() {
                 <span class="print-dialog-info-bar__meta-item">
                   <v-icon icon="mdi-scale-balance" size="16" />
                   <span>{{ filamentWeightLabel }}</span>
-                </span>
-
-                <span
-                    v-if="lastPrintStatus"
-                    class="print-dialog-info-bar__meta-item print-dialog-info-bar__meta-item--last-state"
-                    :style="lastPrintStateColor ? { color: `rgb(var(--v-theme-${lastPrintStateColor}))` } : undefined"
-                    :title="`Last print: ${lastPrintStateLabel} (${lastPrintCount})`"
-                >
-                  <v-icon :icon="lastPrintStateIcon" :color="lastPrintStateColor" size="16" />
-                  <span>{{ lastPrintCount }}</span>
                 </span>
               </div>
             </div>
@@ -1049,6 +923,15 @@ async function startPrint() {
             </div>
 
             <div class="print-dialog-actions">
+              <v-btn
+                  variant="text"
+                  :disabled="saving"
+                  aria-label="Add to print queue"
+                  @click="addToPrintQueue"
+              >
+                <v-icon icon="mdi-playlist-plus" />
+              </v-btn>
+
               <v-btn variant="text" :disabled="saving" @click="closeDialog">
                 {{ t('print.dialog.cancel') }}
               </v-btn>
@@ -1132,10 +1015,6 @@ async function startPrint() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.print-dialog-info-bar__meta-item--last-state {
-  font-variant-numeric: tabular-nums;
 }
 
 .print-dialog-right {

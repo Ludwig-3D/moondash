@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useAppStore } from '@/stores/app'
 import ShortcutBar from '../components/ShortcutBar.vue'
 import NotificationPanel from '../components/panels/NotificationPanel.vue'
 import CurrentPrintPanel from '../components/panels/CurrentPrintPanel.vue'
 import JobQueuePanel from '../components/panels/JobQueuePanel.vue'
 
+const appStore = useAppStore()
+const { moonraker } = storeToRefs(appStore)
+
 const hasNotifications = ref(false)
 const hasJobQueue = ref(false)
+
+const isPrinting = computed(() => moonraker.value.printStats?.state === 'printing')
+const showJobQueuePanel = computed(() => hasJobQueue.value && !hasNotifications.value && !isPrinting.value)
 </script>
 
 <template>
@@ -21,13 +29,13 @@ const hasJobQueue = ref(false)
       </v-col>
 
       <v-col
-          v-if="hasNotifications || hasJobQueue"
+          v-show="hasNotifications || showJobQueuePanel"
           cols="auto"
           class="home-layout__panel"
       >
         <NotificationPanel @active-change="hasNotifications = $event" />
         <JobQueuePanel
-            v-show="!hasNotifications"
+            v-show="showJobQueuePanel"
             @active-change="hasJobQueue = $event"
         />
       </v-col>

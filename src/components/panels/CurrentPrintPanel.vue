@@ -382,6 +382,18 @@ async function reprint() {
   }
 }
 
+async function clearDisplayMessage() {
+  if (loading.value) return
+  try {
+    loading.value = true
+    await moonrakerClient.call('printer.gcode.script', {
+      script: 'M117',
+    })
+  } finally {
+    loading.value = false
+  }
+}
+
 async function clearFile() {
   if (loading.value) return
   try {
@@ -486,19 +498,30 @@ watch(
               variant="tonal"
               rounded="lg"
           >
-            <div
-                ref="displayMessageWrapRef"
-                class="current-print-panel__display-message-wrap"
-                :title="displayMessage"
-            >
+            <div class="current-print-panel__display-alert-inner">
               <div
-                  ref="displayMessageTextRef"
-                  class="current-print-panel__display-message"
-                  :class="{ 'current-print-panel__marquee': isDisplayMessageOverflowing }"
+                  ref="displayMessageWrapRef"
+                  class="current-print-panel__display-message-wrap"
+                  :title="displayMessage"
               >
-                <span>{{ displayMessage }}</span>
-                <span v-if="isDisplayMessageOverflowing" aria-hidden="true">{{ displayMessage }}</span>
+                <div
+                    ref="displayMessageTextRef"
+                    class="current-print-panel__display-message"
+                    :class="{ 'current-print-panel__marquee': isDisplayMessageOverflowing }"
+                >
+                  <span>{{ displayMessage }}</span>
+                  <span v-if="isDisplayMessageOverflowing">{{ displayMessage }}</span>
+                </div>
               </div>
+
+              <v-btn
+                  class="current-print-panel__display-clear"
+                  icon="mdi-close"
+                  size="x-small"
+                  variant="text"
+                  :disabled="loading"
+                  @click.stop="clearDisplayMessage"
+              />
             </div>
           </v-alert>
         </div>
@@ -606,18 +629,29 @@ watch(
             variant="tonal"
             rounded="lg"
         >
-          <div
-              ref="displayMessageWrapRef"
-              class="current-print-panel__display-message-wrap"
-              :title="displayMessage"
-          >
+          <div class="current-print-panel__display-alert-inner">
             <div
-                ref="displayMessageTextRef"
-                class="current-print-panel__display-message current-print-panel__display-message--idle"
-                :class="{ 'current-print-panel__marquee-single': isDisplayMessageOverflowing }"
+                ref="displayMessageWrapRef"
+                class="current-print-panel__display-message-wrap"
+                :title="displayMessage"
             >
-              <span>{{ displayMessage }}</span>
+              <div
+                  ref="displayMessageTextRef"
+                  class="current-print-panel__display-message current-print-panel__display-message--idle"
+                  :class="{ 'current-print-panel__marquee-single': isDisplayMessageOverflowing }"
+              >
+                <span>{{ displayMessage }}</span>
+              </div>
             </div>
+
+            <v-btn
+                class="current-print-panel__display-clear"
+                icon="mdi-close"
+                size="x-small"
+                variant="text"
+                :disabled="loading"
+                @click.stop="clearDisplayMessage"
+            />
           </div>
         </v-alert>
         <img
@@ -697,10 +731,22 @@ watch(
   overflow: hidden;
 }
 
+.current-print-panel__display-alert-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .current-print-panel__display-message-wrap {
   width: 100%;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.current-print-panel__display-clear {
+  flex: 0 0 auto;
 }
 
 .current-print-panel__display-message {

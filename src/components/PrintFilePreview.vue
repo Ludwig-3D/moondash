@@ -1,4 +1,53 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { moonraker as moonrakerClient } from '@/plugins/moonraker'
+
+
+type MoonrakerHistoryJob = {
+  filename?: string
+  status?: string
+  start_time?: number
+  end_time?: number | null
+}
+
+type MoonrakerHistoryListResult = {
+  jobs?: MoonrakerHistoryJob[]
+}
+
+const HISTORY_CACHE_TTL_MS = 30_000
+let cachedHistoryJobs: MoonrakerHistoryJob[] = []
+let historyCacheTimestamp = 0
+let historyRequest: Promise<MoonrakerHistoryJob[]> | null = null
+
+async function getHistoryJobs(): Promise<MoonrakerHistoryJob[]> {
+  const now = Date.now()
+  if (cachedHistoryJobs.length > 0 && now - historyCacheTimestamp < HISTORY_CACHE_TTL_MS) {
+    return cachedHistoryJobs
+  }
+
+  if (historyRequest) return historyRequest
+
+  historyRequest = moonrakerClient
+      .call<MoonrakerHistoryListResult>('server.history.list', {
+        limit: 100,
+        order: 'desc',
+      })
+      .then((result) => {
+        cachedHistoryJobs = Array.isArray(result?.jobs) ? result.jobs : []
+        historyCacheTimestamp = Date.now()
+        return cachedHistoryJobs
+      })
+      .catch((error) => {
+        console.warn('Failed to load Moonraker print history:', error)
+        return []
+      })
+      .finally(() => {
+        historyRequest = null
+      })
+
+  return historyRequest
+}
+
 type MoonrakerFile = {
   path?: string
   filename?: string
@@ -48,10 +97,108 @@ function formatPrintTime(seconds: number | undefined): string {
   return parts.join('') || '0m'
 }
 
-function formatWeight(weight: number | undefined): string {
-  if (typeof weight !== 'number' || !Number.isFinite(weight)) return ''
-  return `${weight.toFixed(1)}g`
+const lastPrintStatus = ref<string>('')
+const lastPrintCount = ref(0)
+let disposed = false
+
+const normalizedFileCandidates = computed(() => {
+  const values = [props.file.path, props.file.filename, props.file.display, props.title]
+  return values
+      .map((value) => normalizeHistoryFilename(value))
+      .filter((value): value is string => Boolean(value))
+})
+
+const lastPrintStateColor = computed(() => {
+  switch (lastPrintStatus.value) {
+    case 'completed':
+      return 'success'
+    case 'failed':
+    case 'error':
+      return 'error'
+    case 'cancelled':
+    case 'klippy_shutdown':
+      return 'warning'
+    default:
+      return undefined
+  }
+})
+
+const lastPrintStateIcon = computed(() => {
+  switch (lastPrintStateColor.value) {
+    case 'success':
+      return 'mdi-check-circle-outline'
+    case 'error':
+      return 'mdi-close-circle-outline'
+    case 'warning':
+      return 'mdi-alert-outline'
+    default:
+      return 'mdi-history'
+  }
+})
+
+const lastPrintStateLabel = computed(() => {
+  if (!lastPrintStatus.value) return ''
+  return lastPrintStatus.value
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+})
+
+function normalizeHistoryFilename(value: string | undefined | null): string {
+  if (!value) return ''
+
+  return value
+      .replace(/\\/g, '/')
+      .replace(/^.*\/gcodes\//, '')
+      .replace(/^\/+/, '')
+      .trim()
 }
+
+function fileBasename(value: string): string {
+  return value.split('/').filter(Boolean).pop() ?? value
+}
+
+function findMatchingHistoryJobs(jobs: MoonrakerHistoryJob[]): MoonrakerHistoryJob[] {
+  const candidates = normalizedFileCandidates.value
+  if (candidates.length === 0) return []
+
+  const exactMatches = jobs.filter((job) => {
+    const historyFilename = normalizeHistoryFilename(job.filename)
+    return Boolean(historyFilename && candidates.includes(historyFilename))
+  })
+  if (exactMatches.length > 0) return exactMatches
+
+  const basenames = new Set(candidates.map(fileBasename))
+  return jobs.filter((job) => {
+    const historyFilename = normalizeHistoryFilename(job.filename)
+    return Boolean(historyFilename && basenames.has(fileBasename(historyFilename)))
+  })
+}
+
+async function loadLastPrintStatus() {
+  const jobs = await getHistoryJobs()
+  if (disposed) return
+
+  const matchingJobs = findMatchingHistoryJobs(jobs)
+  const latestJob = matchingJobs[0]
+  lastPrintStatus.value = typeof latestJob?.status === 'string' ? latestJob.status : ''
+  lastPrintCount.value = matchingJobs.length
+}
+
+onMounted(() => {
+  void loadLastPrintStatus()
+})
+
+onBeforeUnmount(() => {
+  disposed = true
+})
+
+watch(
+    () => [props.file.path, props.file.filename, props.file.display, props.title],
+    () => {
+      void loadLastPrintStatus()
+    },
+)
 
 function selectFile() {
   if (props.disabled) return
@@ -96,18 +243,22 @@ function selectFile() {
       <div class="print-file-card__meta">
         <span
             v-if="formatPrintTime(metadata?.estimated_time)"
-            class="print-file-card__meta-item"
+            class="print-file-card__meta-item print-file-card__meta-item--time"
         >
           <v-icon icon="mdi-clock-outline" size="14" />
           <span>{{ formatPrintTime(metadata?.estimated_time) }}</span>
         </span>
 
+        <span v-else />
+
         <span
-            v-if="formatWeight(metadata?.filament_weight_total ?? metadata?.filament_weight ?? metadata?.filament?.weight_total ?? metadata?.filament?.weight)"
-            class="print-file-card__meta-item"
+            v-if="lastPrintStatus"
+            class="print-file-card__meta-item print-file-card__meta-item--last-state"
+            :style="lastPrintStateColor ? { color: `rgb(var(--v-theme-${lastPrintStateColor}))` } : undefined"
+            :title="`Last print: ${lastPrintStateLabel} (${lastPrintCount})`"
         >
-          <v-icon icon="mdi-scale-balance" size="14" />
-          <span>{{ formatWeight(metadata?.filament_weight_total ?? metadata?.filament_weight ?? metadata?.filament?.weight_total ?? metadata?.filament?.weight) }}</span>
+          <v-icon :icon="lastPrintStateIcon" :color="lastPrintStateColor" size="16" />
+          <span>{{ lastPrintCount }}</span>
         </span>
       </div>
     </v-card-text>
@@ -186,7 +337,7 @@ function selectFile() {
   font-size: 0.9rem;
   opacity: 0.75;
   display: flex;
-  flex-wrap: wrap;
+  justify-content: space-between;
   gap: 10px;
   align-items: center;
   padding: 8px 10px;
@@ -197,5 +348,20 @@ function selectFile() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
+}
+
+.print-file-card__meta-item--time {
+  margin-right: auto;
+}
+
+.print-file-card__meta-item--last-state {
+  gap: 3px;
+  margin-left: auto;
+}
+
+.print-file-card__meta-item--last-state span {
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 </style>

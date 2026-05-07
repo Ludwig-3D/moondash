@@ -598,6 +598,42 @@ async function loadDialogThumbnails(file: MoonrakerFile | null) {
   }
 }
 
+function normalizeMoonrakerFilePath(path: string): string {
+  return path
+      .trim()
+      .replace(/^\/+/, '')
+      .replace(/^gcodes\//, '')
+      .replace(/^\.\//, '')
+}
+
+function encodeMoonrakerFilePath(path: string): string {
+  return normalizeMoonrakerFilePath(path)
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')
+}
+
+function resolveThumbnailPath(filePath: string, thumbnailPath: string): string {
+  const normalizedFilePath = normalizeMoonrakerFilePath(filePath)
+  const normalizedThumbPath = normalizeMoonrakerFilePath(thumbnailPath)
+  const fileDir = normalizedFilePath.includes('/')
+      ? normalizedFilePath.slice(0, normalizedFilePath.lastIndexOf('/'))
+      : ''
+
+  if (!fileDir) return normalizedThumbPath
+
+  // Moonraker may return either a path relative to the gcode root, or a path
+  // relative to the selected file's folder. Do not prepend the folder twice.
+  if (
+      normalizedThumbPath.startsWith(`${fileDir}/`) ||
+      normalizedThumbPath.startsWith(`.thumbs/${fileDir}/`)
+  ) {
+    return normalizedThumbPath
+  }
+
+  return `${fileDir}/${normalizedThumbPath}`
+}
+
 const thumbnailUrl = computed(() => {
   const filePath = getFilePath(props.file)
   if (!filePath) return null
@@ -622,17 +658,9 @@ const thumbnailUrl = computed(() => {
     const parsed = new URL(wsUrl)
     const protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:'
     const base = `${protocol}//${parsed.host}`
+    const fullThumbPath = resolveThumbnailPath(filePath, thumbnailPath)
 
-    const fileDir = filePath.includes('/')
-        ? filePath.slice(0, filePath.lastIndexOf('/'))
-        : ''
-
-    const normalizedThumbPath = thumbnailPath.replace(/^\.?\//, '')
-    const fullThumbPath = fileDir
-        ? `${fileDir}/${normalizedThumbPath}`
-        : normalizedThumbPath
-
-    return `${base}/server/files/gcodes/${encodeURI(fullThumbPath)}`
+    return `${base}/server/files/gcodes/${encodeMoonrakerFilePath(fullThumbPath)}`
   } catch {
     return null
   }

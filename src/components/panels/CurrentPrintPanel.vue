@@ -245,6 +245,42 @@ async function loadCurrentFileAssets() {
   }
 }
 
+function normalizeMoonrakerFilePath(path: string): string {
+  return path
+      .trim()
+      .replace(/^\/+/, '')
+      .replace(/^gcodes\//, '')
+      .replace(/^\.\//, '')
+}
+
+function encodeMoonrakerFilePath(path: string): string {
+  return normalizeMoonrakerFilePath(path)
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/')
+}
+
+function resolveThumbnailPath(filePath: string, thumbnailPath: string): string {
+  const normalizedFilePath = normalizeMoonrakerFilePath(filePath)
+  const normalizedThumbPath = normalizeMoonrakerFilePath(thumbnailPath)
+  const fileDir = normalizedFilePath.includes('/')
+      ? normalizedFilePath.slice(0, normalizedFilePath.lastIndexOf('/'))
+      : ''
+
+  if (!fileDir) return normalizedThumbPath
+
+  // Moonraker may return either a path relative to the gcode root, or a path
+  // relative to the selected file's folder. Do not prepend the folder twice.
+  if (
+      normalizedThumbPath.startsWith(`${fileDir}/`) ||
+      normalizedThumbPath.startsWith(`.thumbs/${fileDir}/`)
+  ) {
+    return normalizedThumbPath
+  }
+
+  return `${fileDir}/${normalizedThumbPath}`
+}
+
 const previewUrl = computed(() => {
   if (!printFilename.value || !httpBase.value || !currentFileThumbnails.value.length) return null
 
@@ -257,16 +293,9 @@ const previewUrl = computed(() => {
   const thumb = sorted.find((item) => item.thumbnail_path)
   if (!thumb?.thumbnail_path) return null
 
-  const fileDir = printFilename.value.includes('/')
-      ? printFilename.value.slice(0, printFilename.value.lastIndexOf('/'))
-      : ''
+  const fullThumbPath = resolveThumbnailPath(printFilename.value, thumb.thumbnail_path)
 
-  const normalizedThumbPath = thumb.thumbnail_path.replace(/^\.?\//, '')
-  const fullThumbPath = fileDir
-      ? `${fileDir}/${normalizedThumbPath}`
-      : normalizedThumbPath
-
-  return `${httpBase.value}/server/files/gcodes/${encodeURI(fullThumbPath)}`
+  return `${httpBase.value}/server/files/gcodes/${encodeMoonrakerFilePath(fullThumbPath)}`
 })
 
 async function pausePrint() {

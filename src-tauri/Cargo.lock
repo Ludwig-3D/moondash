@@ -2334,7 +2334,7 @@ dependencies = [
 
 [[package]]
 name = "moondash"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "base64 0.22.1",
  "evdev",

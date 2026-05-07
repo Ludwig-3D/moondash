@@ -20,6 +20,7 @@ declare module 'vue' {
     ExtruderPanel: typeof import('./components/panels/ExtruderPanel.vue')['default']
     FanDialog: typeof import('./components/dialogs/FanDialog.vue')['default']
     IdleOverlay: typeof import('./components/IdleOverlay.vue')['default']
+    JobQueuePanel: typeof import('./components/panels/JobQueuePanel.vue')['default']
     KeyboardOverlay: typeof import('./components/KeyboardOverlay.vue')['default']
     KlipperAlert: typeof import('./components/notifications/KlipperAlert.vue')['default']
     LaneDialogAFC: typeof import('./components/afc/LaneDialogAFC.vue')['default']

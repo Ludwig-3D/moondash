@@ -1,22 +1,35 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import ShortcutBar from '../components/ShortcutBar.vue'
 import NotificationPanel from '../components/panels/NotificationPanel.vue'
-import CurrentPrintPanel from "../components/panels/CurrentPrintPanel.vue";
+import CurrentPrintPanel from '../components/panels/CurrentPrintPanel.vue'
+import JobQueuePanel from '../components/panels/JobQueuePanel.vue'
+
+const hasNotifications = ref(false)
+const hasJobQueue = ref(false)
 </script>
 
 <template>
   <v-main>
     <v-row class="home-layout" no-gutters no-wrap>
       <v-col class="pt-2 pb-2 pr-2">
-        <CurrentPrintPanel/>
+        <CurrentPrintPanel />
       </v-col>
 
       <v-col cols="auto" class="home-layout__sidebar pr-2">
         <ShortcutBar />
       </v-col>
 
-      <v-col cols="auto" class="home-layout__panel">
-        <NotificationPanel />
+      <v-col
+          v-if="hasNotifications || hasJobQueue"
+          cols="auto"
+          class="home-layout__panel"
+      >
+        <NotificationPanel @active-change="hasNotifications = $event" />
+        <JobQueuePanel
+            v-show="!hasNotifications"
+            @active-change="hasJobQueue = $event"
+        />
       </v-col>
     </v-row>
   </v-main>

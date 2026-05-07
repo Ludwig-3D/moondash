@@ -11,6 +11,10 @@ import UpdateAlert from '@/components/notifications/UpdateAlert.vue'
 
 const { t } = useI18n()
 
+const emit = defineEmits<{
+  (e: 'active-change', value: boolean): void
+}>()
+
 const appStore = useAppStore()
 const { moonraker, websocket, moonrakerReady } = storeToRefs(appStore)
 
@@ -214,6 +218,7 @@ const hasAlerts = computed(() => {
       hasUpdates.value
 })
 
+watch(hasAlerts, (value) => emit('active-change', value), { immediate: true })
 watch(moonrakerReady, loadUpdateStatus, { immediate: true })
 
 onMounted(loadUpdateStatus)

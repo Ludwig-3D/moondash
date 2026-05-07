@@ -114,7 +114,7 @@ async function sleepDisplay() {
   await invoke('sleep_displays_until_input')
 }
 
-async function copyToClipboard() {
+function getActiveTabDump() {
   const valueByTab: Record<string, string> = {
     other: frozenOther.value,
     moonraker: frozenMoonraker.value,
@@ -122,7 +122,23 @@ async function copyToClipboard() {
     full: frozenFull.value,
   }
 
-  await navigator.clipboard.writeText(valueByTab[activeTab.value] ?? '')
+  return valueByTab[activeTab.value] ?? ''
+}
+
+async function copyToClipboard() {
+  await navigator.clipboard.writeText(getActiveTabDump())
+}
+
+function saveActiveTabDump() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const blob = new Blob([getActiveTabDump()], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = `dump_${timestamp}.json`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 </script>
 
@@ -167,6 +183,14 @@ async function copyToClipboard() {
               @click="copyToClipboard"
           >
             Copy
+          </v-btn>
+
+          <v-btn
+              variant="tonal"
+              size="small"
+              @click="saveActiveTabDump"
+          >
+            Save
           </v-btn>
         </div>
       </div>

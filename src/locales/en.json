@@ -247,5 +247,9 @@
         "close": "Close"
       }
     }
+  },
+  "job_queue": {
+    "title": "Job queue",
+    "print": "Print"
   }
 }

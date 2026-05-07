@@ -291,7 +291,7 @@ onBeforeUnmount(() => {
 <template>
   <v-card v-if="active" class="job-query-panel" rounded="lg">
     <div class="job-query-panel__header">
-      <div class="job-query-panel__title">{{ t('jobQueue.title', 'Job queue') }}</div>
+      <div class="job-query-panel__title">{{ t('job_queue.title') }}</div>
       <v-progress-circular v-if="loading" indeterminate size="18" width="2" />
     </div>
 
@@ -321,8 +321,8 @@ onBeforeUnmount(() => {
                 variant="text"
                 :color="job.isCurrent ? undefined : 'primary'"
                 :disabled="job.isCurrent"
-                :aria-label="t('jobQueue.print', 'Print')"
-                :title="t('jobQueue.print', 'Print')"
+                :aria-label="t('job_queue.print')"
+                :title="t('job_queue.print')"
                 @click="printJob(job.filename)"
             />
           </div>

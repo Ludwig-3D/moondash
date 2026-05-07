@@ -247,5 +247,9 @@
         "close": "Schließen"
       }
     }
+  },
+  "job_queue": {
+    "title": "Druckwarteschlange",
+    "print": "Drucken"
   }
 }

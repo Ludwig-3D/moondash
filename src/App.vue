@@ -28,6 +28,7 @@ type AfcLaneDialogData = {
 
 type AfcLaneState = AfcLaneDialogData & {
   hasFilament: boolean
+  hasConfiguredColor: boolean
 }
 
 
@@ -60,6 +61,20 @@ function normalizeAfcColor(color: unknown): string {
   return '#434343'
 }
 
+
+function afcLaneHasConfiguredColor(lane: Record<string, unknown>): boolean {
+  if (typeof lane.color !== 'string') return false
+
+  const value = lane.color.trim()
+
+  if (!value) return false
+
+  return (
+      /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(value) ||
+      /^[0-9a-f]{3}([0-9a-f]{3})?$/i.test(value)
+  )
+}
+
 function afcLaneHasFilament(lane: Record<string, unknown>): boolean {
   return Boolean(
       lane.load ||
@@ -81,8 +96,21 @@ function getAfcLaneWeight(lane: Record<string, unknown>): number | null {
       : null
 }
 
-function afcLaneHasFilamentType(lane: AfcLaneState): boolean {
-  return Boolean(lane.material.trim())
+
+
+function afcLaneFilamentMetadataIsLoaded(lane: AfcLaneState): boolean {
+  return Boolean(
+      lane.hasFilament &&
+      lane.material.trim() &&
+      lane.weight !== null
+  )
+}
+
+function isPrintActive(): boolean {
+  const state = appStore.moonraker.printStats.state
+  const normalizedState = typeof state === 'string' ? state.toLowerCase() : ''
+
+  return ['printing', 'paused'].includes(normalizedState)
 }
 
 async function unsleepDisplay() {
@@ -141,14 +169,15 @@ const afcLaneStates = computed<AfcLaneState[]>(() => {
   return [...laneNames].map((laneName) => {
     const laneObject = objects[`AFC_stepper ${laneName}`] ?? {}
     const hasFilament = afcLaneHasFilament(laneObject)
-
+    const hasConfiguredColor = afcLaneHasConfiguredColor(laneObject)
     return {
       id: laneName,
       label: laneName,
-      color: hasFilament ? normalizeAfcColor(laneObject.color) : '#434343',
+      color: hasFilament && hasConfiguredColor ? normalizeAfcColor(laneObject.color) : '#434343',
       material: getAfcLaneMaterial(laneObject),
       weight: getAfcLaneWeight(laneObject),
       hasFilament,
+      hasConfiguredColor,
     }
   })
 })
@@ -173,7 +202,7 @@ watch(
         const wasLoaded = previousAfcLaneFilamentState.value?.[lane.id]
         const isNewlyLoaded = wasLoaded === false && lane.hasFilament
 
-        if (isNewlyLoaded) {
+        if (isNewlyLoaded && !isPrintActive()) {
           pendingAfcLaneDialogIds.value.add(lane.id)
         }
 
@@ -186,7 +215,9 @@ watch(
         return (
             pendingAfcLaneDialogIds.value.has(lane.id) &&
             lane.hasFilament &&
-            afcLaneHasFilamentType(lane)
+            !lane.hasConfiguredColor &&
+            afcLaneFilamentMetadataIsLoaded(lane) &&
+            !isPrintActive()
         )
       })
 

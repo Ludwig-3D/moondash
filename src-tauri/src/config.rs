@@ -149,7 +149,8 @@ pub fn default_config() -> Value {
             "zoom": 1.0,
             "darkmode": true,
             "primary": "",
-            "secondary": ""
+            "secondary": "",
+            "advanced_states": false
         },
         "dev": {
             "debug": false
@@ -303,6 +304,12 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
         if let Some(value) = styling_patch.get("darkmode") {
             if value.is_boolean() {
                 styling_obj.insert("darkmode".to_string(), value.clone());
+            }
+        }
+
+        if let Some(value) = styling_patch.get("advanced_states") {
+            if value.is_boolean() {
+                styling_obj.insert("advanced_states".to_string(), value.clone());
             }
         }
 

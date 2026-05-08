@@ -185,7 +185,8 @@
         "15_minutes": "15 Minuten",
         "30_minutes": "30 Minuten",
         "1_hour": "1 Stunde"
-      }
+      },
+      "advanced_states": "Erweiterte Druckdetails"
     },
     "shortcuts": {
       "dialog": {
@@ -250,5 +251,12 @@
   },
   "job_queue": {
     "title": "Druckwarteschlange"
+  },
+  "advanced_details": {
+    "speed": "Geschwindigkeit",
+    "flow": "Fluss",
+    "position": "Position",
+    "filament_length": "Filament Länge",
+    "filament_weight": "Filament Gewicht"
   }
 }

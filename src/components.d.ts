@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AdvancedDetailsPanel: typeof import('./components/panels/AdvancedDetailsPanel.vue')['default']
     AfcAlert: typeof import('./components/notifications/AfcAlert.vue')['default']
     BedMeshToolPanel: typeof import('./components/panels/BedMeshToolPanel.vue')['default']
     ColorPickerDialog: typeof import('./components/dialogs/ColorPickerDialog.vue')['default']

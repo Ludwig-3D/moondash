@@ -16,6 +16,7 @@ const localSecondary = ref('')
 const localLanguage = ref<string | null>(null)
 const localUseIdleTimeout = ref(true)
 const localIdleTimeout = ref(360)
+const localAdvancedStates = ref(false)
 
 const primaryPickerOpen = ref(false)
 const secondaryPickerOpen = ref(false)
@@ -60,6 +61,7 @@ watch(
       appStore.getLanguage,
       appStore.getUseIdleTimeout,
       appStore.getIdleTimeout,
+      appStore.getAdvancedStates,
     ],
     () => {
       suppressAutoSave.value = true
@@ -70,6 +72,7 @@ watch(
       localLanguage.value = appStore.getLanguage
       localUseIdleTimeout.value = appStore.getUseIdleTimeout
       localIdleTimeout.value = appStore.getIdleTimeout ?? 360
+      localAdvancedStates.value = appStore.getAdvancedStates ?? false
 
       queueMicrotask(() => {
         suppressAutoSave.value = false
@@ -107,6 +110,7 @@ async function saveConfig() {
         darkmode: localDarkmode.value,
         primary: normalizePrimaryColorInput(localPrimary.value),
         secondary: normalizeSecondaryColorInput(localSecondary.value),
+        advanced_states: localAdvancedStates.value,
       },
       system: {
         language: localLanguage.value,
@@ -138,6 +142,7 @@ watch(localSecondary, scheduleSave)
 watch(localLanguage, scheduleSave)
 watch(localUseIdleTimeout, scheduleSave)
 watch(localIdleTimeout, scheduleSave)
+watch(localAdvancedStates, scheduleSave)
 </script>
 
 <template>
@@ -175,6 +180,20 @@ watch(localIdleTimeout, scheduleSave)
               :style="{ backgroundColor: currentSecondaryPreview }"
               :disabled="saving"
               @click="secondaryPickerOpen = true"
+          />
+        </div>
+
+        <div class="config-editor-label">
+          {{ t('settings.config.advanced_states') }}
+        </div>
+        <div>
+          <v-switch
+              v-model="localAdvancedStates"
+              color="primary"
+              hide-details
+              inset
+              density="compact"
+              :disabled="saving"
           />
         </div>
 

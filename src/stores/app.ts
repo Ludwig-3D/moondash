@@ -12,6 +12,7 @@ type StylingConfig = {
   darkmode?: boolean
   primary?: string | null
   secondary?: string | null
+  advanced_states?: boolean
 }
 
 type DevConfig = {
@@ -253,6 +254,7 @@ export const useAppStore = defineStore('app', {
     isSleeping: false as boolean,
     primaryColor: null as string | null,
     secondaryColor: null as string | null,
+    advancedStates: false as boolean,
     shortcutButtons: [] as ShortcutButtonConfig[],
 
     websocket: {
@@ -360,6 +362,7 @@ export const useAppStore = defineStore('app', {
     getIsSleeping: (state) => state.isSleeping,
     getPrimaryColor: (state) => state.primaryColor,
     getSecondaryColor: (state) => state.secondaryColor,
+    getAdvancedStates: (state) => state.advancedStates,
     getShortcutButtons: (state) => state.shortcutButtons,
 
     getWebsocket: (state) => state.websocket,
@@ -458,6 +461,10 @@ export const useAppStore = defineStore('app', {
       this.useIdleTimeout = value
     },
 
+    setAdvancedStates(value: boolean) {
+      this.advancedStates = value
+    },
+
     setIsSleeping(value: boolean) {
       this.isSleeping = value
     },
@@ -499,6 +506,14 @@ export const useAppStore = defineStore('app', {
         } else {
           this.secondaryColor = null
         }
+
+        if (typeof config.styling.advanced_states === 'boolean') {
+          this.setAdvancedStates(config.styling.advanced_states)
+        } else {
+          this.setAdvancedStates(false)
+        }
+      } else {
+        this.setAdvancedStates(false)
       }
 
       if (config.websocket?.ip) {
@@ -568,6 +583,7 @@ export const useAppStore = defineStore('app', {
         darkmode?: boolean
         primary?: string | null
         secondary?: string | null
+        advanced_states?: boolean
       }
       system?: {
         language?: string | null

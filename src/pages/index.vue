@@ -6,15 +6,26 @@ import ShortcutBar from '../components/ShortcutBar.vue'
 import NotificationPanel from '../components/panels/NotificationPanel.vue'
 import CurrentPrintPanel from '../components/panels/CurrentPrintPanel.vue'
 import JobQueuePanel from '../components/panels/JobQueuePanel.vue'
+import AdvancedDetailsPanel from '../components/panels/AdvancedDetailsPanel.vue'
 
 const appStore = useAppStore()
-const { moonraker } = storeToRefs(appStore)
+const { moonraker, advancedStates } = storeToRefs(appStore)
 
 const hasNotifications = ref(false)
 const hasJobQueue = ref(false)
 
+const advancedStatesEnabled = computed(() => advancedStates.value === true)
+
 const isPrinting = computed(() => moonraker.value.printStats?.state === 'printing')
+const isPaused = computed(() => moonraker.value.printStats?.state === 'paused')
+const isPrintRunningOrPaused = computed(() => isPrinting.value || isPaused.value)
 const showJobQueuePanel = computed(() => hasJobQueue.value && !hasNotifications.value && !isPrinting.value)
+const showAdvancedDetailsPanel = computed(() => (
+    advancedStatesEnabled.value &&
+    !hasNotifications.value &&
+    !showJobQueuePanel.value &&
+    isPrintRunningOrPaused.value
+))
 </script>
 
 <template>
@@ -29,7 +40,7 @@ const showJobQueuePanel = computed(() => hasJobQueue.value && !hasNotifications.
       </v-col>
 
       <v-col
-          v-show="hasNotifications || showJobQueuePanel"
+          v-show="hasNotifications || showJobQueuePanel || showAdvancedDetailsPanel"
           cols="auto"
           class="home-layout__panel"
       >
@@ -38,6 +49,8 @@ const showJobQueuePanel = computed(() => hasJobQueue.value && !hasNotifications.
             v-show="showJobQueuePanel"
             @active-change="hasJobQueue = $event"
         />
+
+        <AdvancedDetailsPanel v-show="showAdvancedDetailsPanel" />
       </v-col>
     </v-row>
   </v-main>

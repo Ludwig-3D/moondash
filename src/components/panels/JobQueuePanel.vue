@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
@@ -48,6 +48,7 @@ type PanelJob = {
   isCurrent: boolean
   metadata: JobMetadata | null
   thumbnailUrl: string | null
+  count: number
 }
 
 const queuedJobs = ref<QueueJob[]>([])
@@ -61,7 +62,6 @@ const currentFilename = computed(() => {
   const filename = moonraker.value.printStats?.filename
   return typeof filename === 'string' && filename.trim() ? filename.trim() : ''
 })
-
 
 const active = computed(() => queuedJobs.value.length > 0)
 
@@ -157,6 +157,15 @@ function displayName(filename: string): string {
   return name.replace(/\.gcode$/i, '')
 }
 
+function queuedCountForFilename(filename: string): number {
+  const normalized = normalizeMoonrakerFilePath(filename)
+
+  return queuedJobs.value.filter((job) => {
+    const queuedFilename = typeof job.filename === 'string' ? job.filename.trim() : ''
+    return queuedFilename && normalizeMoonrakerFilePath(queuedFilename) === normalized
+  }).length
+}
+
 const panelJobs = computed<PanelJob[]>(() => {
   const seen = new Set<string>()
   const jobs: PanelJob[] = []
@@ -169,6 +178,7 @@ const panelJobs = computed<PanelJob[]>(() => {
       isCurrent: true,
       metadata: metadataByFilename.value[currentFilename.value] ?? null,
       thumbnailUrl: thumbnailsByFilename.value[currentFilename.value] ?? null,
+      count: 0,
     })
   }
 
@@ -186,6 +196,7 @@ const panelJobs = computed<PanelJob[]>(() => {
       isCurrent: false,
       metadata: metadataByFilename.value[filename] ?? null,
       thumbnailUrl: thumbnailsByFilename.value[filename] ?? null,
+      count: queuedCountForFilename(filename),
     })
   }
 
@@ -285,9 +296,81 @@ async function deleteJob(job: PanelJob) {
   await refreshPanel()
 }
 
+const filenameWrapRefs = new Map<string, HTMLElement>()
+const filenameTextRefs = new Map<string, HTMLElement>()
+const overflowingFilenames = ref<Record<string, boolean>>({})
+let filenameResizeObserver: ResizeObserver | null = null
+
+function setFilenameWrapRef(key: string, el: HTMLElement | null) {
+  if (el) {
+    filenameWrapRefs.set(key, el)
+  } else {
+    filenameWrapRefs.delete(key)
+  }
+}
+
+function setFilenameTextRef(key: string, el: HTMLElement | null) {
+  if (el) {
+    filenameTextRefs.set(key, el)
+  } else {
+    filenameTextRefs.delete(key)
+  }
+}
+
+function isFilenameOverflowing(key: string): boolean {
+  return overflowingFilenames.value[key] === true
+}
+
+async function updateFilenameOverflow() {
+  await nextTick()
+
+  const next: Record<string, boolean> = {}
+
+  for (const job of panelJobs.value) {
+    const wrap = filenameWrapRefs.get(job.key)
+    const text = filenameTextRefs.get(job.key)
+
+    if (!wrap || !text) {
+      next[job.key] = false
+      continue
+    }
+
+    const firstItem = text.firstElementChild as HTMLElement | null
+    const contentWidth = firstItem
+        ? Math.ceil(firstItem.getBoundingClientRect().width)
+        : Math.ceil(text.getBoundingClientRect().width)
+
+    const visibleWidth = Math.floor(wrap.getBoundingClientRect().width)
+    next[job.key] = contentWidth > visibleWidth + 1
+  }
+
+  overflowingFilenames.value = next
+}
+
+function observeFilenameElements() {
+  filenameResizeObserver?.disconnect()
+
+  for (const el of filenameWrapRefs.values()) {
+    filenameResizeObserver?.observe(el)
+  }
+
+  for (const el of filenameTextRefs.values()) {
+    filenameResizeObserver?.observe(el)
+  }
+}
+
 onMounted(() => {
   refreshPanel()
   refreshTimer = window.setInterval(refreshPanel, 5000)
+
+  filenameResizeObserver = new ResizeObserver(() => {
+    void updateFilenameOverflow()
+  })
+
+  void nextTick(() => {
+    observeFilenameElements()
+    void updateFilenameOverflow()
+  })
 })
 
 onBeforeUnmount(() => {
@@ -295,83 +378,128 @@ onBeforeUnmount(() => {
     window.clearInterval(refreshTimer)
     refreshTimer = null
   }
+
+  filenameResizeObserver?.disconnect()
+  filenameResizeObserver = null
 })
+
+watch(
+    panelJobs,
+    async () => {
+      await nextTick()
+      observeFilenameElements()
+      await updateFilenameOverflow()
+    },
+    { flush: 'post' },
+)
 </script>
 
 <template>
-  <v-card v-if="active" class="job-query-panel mt-2 mr-2" rounded="lg">
+  <v-card v-if="active" class="job-query-panel mt-2 mr-2">
     <div class="job-query-panel__header">
       <div class="job-query-panel__title">{{ t('job_queue.title') }}</div>
       <v-progress-circular v-if="loading" indeterminate size="18" width="2" />
     </div>
 
     <div class="job-query-panel__list">
-      <div
+      <v-card
           v-for="job in panelJobs"
           :key="job.key"
-          class="job-query-panel__item"
-          :class="{ 'job-query-panel__item--current': job.isCurrent }"
+          class="job-query-panel__card"
+          :class="{ 'job-query-panel__card--current': job.isCurrent }"
+          rounded="lg"
+          elevation="0"
       >
-        <div
-            class="job-query-panel__preview"
-            :style="{ backgroundImage: job.thumbnailUrl ? `url(${job.thumbnailUrl})` : 'none' }"
-        >
-          <v-icon v-if="!job.thumbnailUrl" icon="mdi-printer-3d" size="30" />
-        </div>
-
-        <div class="job-query-panel__content">
-          <div class="job-query-panel__top-row">
-            <div class="job-query-panel__filename">
-              {{ displayName(job.filename) }}
+        <v-card-text class="pa-0">
+          <div class="job-query-panel__card-layout">
+            <div
+                class="job-query-panel__thumb"
+                :style="{
+                backgroundImage: job.thumbnailUrl ? `url(${job.thumbnailUrl})` : 'none',
+              }"
+            >
+              <div v-if="!job.thumbnailUrl" class="job-query-panel__thumb-placeholder">
+                <v-icon icon="mdi-printer-3d" size="42" />
+              </div>
             </div>
 
-            <div class="job-query-panel__actions">
-              <v-btn
-                  icon="mdi-play"
-                  size="small"
-                  variant="text"
-                  :color="job.isCurrent ? undefined : 'primary'"
-                  :disabled="job.isCurrent"
-                  @click="printJob(job.filename)"
-              />
+            <div class="job-query-panel__right pa-0 pt-2">
+              <div class="job-query-panel__info px-2">
+                <div
+                    :ref="(el) => setFilenameWrapRef(job.key, el as HTMLElement | null)"
+                    class="job-query-panel__filename-wrap"
+                    :title="displayName(job.filename)"
+                >
+                  <div
+                      :ref="(el) => setFilenameTextRef(job.key, el as HTMLElement | null)"
+                      class="job-query-panel__filename"
+                      :class="{ 'job-query-panel__marquee': isFilenameOverflowing(job.key) }"
+                  >
+                    <span>{{ displayName(job.filename) }}</span>
+                    <span v-if="isFilenameOverflowing(job.key)" aria-hidden="true">
+                      {{ displayName(job.filename) }}
+                    </span>
+                  </div>
+                </div>
 
-              <v-btn
-                  icon="mdi-delete-outline"
-                  size="small"
-                  variant="text"
-                  color="error"
-                  :disabled="job.isCurrent"
-                  @click="deleteJob(job)"
-              />
+                <div class="job-query-panel__meta">
+                  <span class="job-query-panel__meta-item">
+                    <v-icon icon="mdi-clock-outline" size="16" />
+                    <span>{{ formatDuration(job.metadata?.estimated_time) }}</span>
+                  </span>
+
+                  <span class="job-query-panel__meta-item">
+                    <v-icon icon="mdi-scale-balance" size="16" />
+                    <span>{{ formatWeight(job.metadata) }}</span>
+                  </span>
+
+                  <span v-if="!job.isCurrent && job.count > 1" class="job-query-panel__meta-item">
+                    <v-icon icon="mdi-printer" size="18" />
+                    <span>×{{ job.count }}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div class="job-query-panel__actions">
+                <v-btn
+                    class="job-query-panel__actions-btn"
+                    size="small"
+                    variant="text"
+                    :color="job.isCurrent ? undefined : 'primary'"
+                    :disabled="job.isCurrent"
+                    @click="printJob(job.filename)"
+                >
+                  <v-icon icon="mdi-play" />
+                </v-btn>
+
+                <v-btn
+                    class="job-query-panel__actions-btn"
+                    size="small"
+                    variant="text"
+                    color="error"
+                    :disabled="job.isCurrent"
+                    @click="deleteJob(job)"
+                >
+                  <v-icon icon="mdi-delete-outline" />
+                </v-btn>
+              </div>
             </div>
           </div>
-
-          <div class="job-query-panel__stats">
-            <span>
-              <v-icon icon="mdi-scale-balance" size="15" />
-              {{ formatWeight(job.metadata) }}
-            </span>
-            <span>
-              <v-icon icon="mdi-clock-outline" size="15" />
-              {{ formatDuration(job.metadata?.estimated_time) }}
-            </span>
-          </div>
-        </div>
-      </div>
+        </v-card-text>
+      </v-card>
     </div>
   </v-card>
 </template>
 
 <style scoped>
 .job-query-panel {
-  width: 360px;
-  max-width: 360px;
+  width: 40vw;
+  max-width: 40vw !important;
   height: 100%;
   max-height: calc(100vh - 16px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: rgba(var(--v-theme-surface), 1);
 }
 
 .job-query-panel__header {
@@ -397,83 +525,140 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
-.job-query-panel__item {
-  display: flex;
-  gap: 10px;
-  padding: 8px;
-  border-radius: 14px;
+.job-query-panel__card {
+  flex: 0 0 auto;
+  overflow: hidden;
   background: rgba(var(--v-theme-on-surface), 0.06);
-  min-width: 0;
+  height: 96px;
 }
 
-.job-query-panel__item--current {
+.job-query-panel__card--current {
   background: rgba(var(--v-theme-primary), 0.16);
   border: 1px solid rgba(var(--v-theme-primary), 0.55);
 }
 
-.job-query-panel__preview {
-  width: 64px;
-  height: 64px;
-  flex: 0 0 64px;
-  border-radius: 12px;
+.job-query-panel__card-layout {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.job-query-panel__thumb {
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  opacity: 0.95;
   background-color: rgba(var(--v-theme-on-surface), 0.08);
 }
 
-.job-query-panel__content {
-  flex: 1 1 auto;
-  min-width: 0;
+.job-query-panel__thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+  width: 100%;
+  height: 100%;
+}
+
+.job-query-panel__right {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  min-width: 0;
+  min-height: 96px;
   gap: 8px;
 }
 
-.job-query-panel__top-row {
+.job-query-panel__info {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
   min-width: 0;
+  gap: 8px;
+}
+
+.job-query-panel__filename-wrap {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.job-query-panel__filename {
+  display: inline-flex;
+  align-items: center;
+  min-width: 100%;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.job-query-panel__filename span {
+  flex: 0 0 auto;
+  padding-right: 40px;
+}
+
+.job-query-panel__marquee {
+  animation: job-query-panel-marquee 14s linear infinite;
+}
+
+.job-query-panel__filename-wrap:hover .job-query-panel__marquee {
+  animation-play-state: paused;
+}
+
+@keyframes job-query-panel-marquee {
+  0% {
+    transform: translateX(0);
+  }
+
+  8% {
+    transform: translateX(0);
+  }
+
+  92% {
+    transform: translateX(-50%);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job-query-panel__marquee {
+    animation: none;
+  }
+}
+
+.job-query-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  opacity: 0.85;
+  font-size: 0.84rem;
+}
+
+.job-query-panel__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .job-query-panel__actions {
   display: flex;
   align-items: center;
-  gap: 2px;
-  flex: 0 0 auto;
-}
-
-.job-query-panel__filename {
-  min-width: 0;
-  font-weight: 700;
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.job-query-panel__stats {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  opacity: 0.82;
-  font-size: 0.85rem;
-}
-
-.job-query-panel__stats span {
-  display: inline-flex;
-  align-items: center;
+  justify-content: flex-end;
   gap: 4px;
+  width: 100%;
+}
+
+.job-query-panel__actions-btn {
+  flex: 1;
 }
 </style>

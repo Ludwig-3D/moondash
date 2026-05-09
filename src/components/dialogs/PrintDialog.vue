@@ -76,10 +76,7 @@ function showErrorToast(message: string) {
   }
 
   if (typeof store.showToast === 'function') {
-    store.showToast({
-      message,
-      color: 'error',
-    })
+    store.showToast({ message, color: 'error' })
     return
   }
 
@@ -92,6 +89,23 @@ const dialogOpen = computed({
     if (saving.value) return
     emit('update:modelValue', value)
   },
+})
+
+const printerIsPrintingOrPaused = computed(() => {
+  const printState = moonraker.value.printStats.state?.toLowerCase() ?? ''
+  return printState === 'printing' || printState === 'paused'
+})
+
+const printButtonDisabled = computed(() => saving.value || printerIsPrintingOrPaused.value)
+
+const primaryActionText = computed(() => {
+  return printerIsPrintingOrPaused.value
+      ? t('print.dialog.add_to_print_queue')
+      : t('print.dialog.print')
+})
+
+const primaryActionDisabled = computed(() => {
+  return printerIsPrintingOrPaused.value ? saving.value : printButtonDisabled.value
 })
 
 const displayName = computed(() => {
@@ -170,22 +184,12 @@ function getLegacyTimelapseMacroState(source?: Record<string, unknown>): Record<
 function extractTimelapseEnabled(source?: Record<string, unknown>): boolean {
   const macro = getLegacyTimelapseMacroState(source)
 
-  if (macro && typeof macro.enable !== 'undefined') {
-    return Boolean(macro.enable)
-  }
-
-  if (macro && typeof macro.enabled !== 'undefined') {
-    return Boolean(macro.enabled)
-  }
-
-  if (macro && typeof macro.variable_enable !== 'undefined') {
-    return Boolean(macro.variable_enable)
-  }
+  if (macro && typeof macro.enable !== 'undefined') return Boolean(macro.enable)
+  if (macro && typeof macro.enabled !== 'undefined') return Boolean(macro.enabled)
+  if (macro && typeof macro.variable_enable !== 'undefined') return Boolean(macro.variable_enable)
 
   const settings = getTimelapseSettingsState(source)
-  if (settings && typeof settings.enabled !== 'undefined') {
-    return Boolean(settings.enabled)
-  }
+  if (settings && typeof settings.enabled !== 'undefined') return Boolean(settings.enabled)
 
   return false
 }
@@ -410,23 +414,24 @@ function normalizeColor(color: unknown): string {
 
 function parseColorToRgb(color: string): { r: number; g: number; b: number } | null {
   const value = color.trim().toLowerCase()
-
   if (!value.startsWith('#')) return null
 
   const hex = value.slice(1)
 
   if (hex.length === 3) {
-    const r = parseInt(hex[0] + hex[0], 16)
-    const g = parseInt(hex[1] + hex[1], 16)
-    const b = parseInt(hex[2] + hex[2], 16)
-    return { r, g, b }
+    return {
+      r: parseInt(hex[0] + hex[0], 16),
+      g: parseInt(hex[1] + hex[1], 16),
+      b: parseInt(hex[2] + hex[2], 16),
+    }
   }
 
   if (hex.length === 6) {
-    const r = parseInt(hex.slice(0, 2), 16)
-    const g = parseInt(hex.slice(2, 4), 16)
-    const b = parseInt(hex.slice(4, 6), 16)
-    return { r, g, b }
+    return {
+      r: parseInt(hex.slice(0, 2), 16),
+      g: parseInt(hex.slice(2, 4), 16),
+      b: parseInt(hex.slice(4, 6), 16),
+    }
   }
 
   return null
@@ -622,8 +627,6 @@ function resolveThumbnailPath(filePath: string, thumbnailPath: string): string {
 
   if (!fileDir) return normalizedThumbPath
 
-  // Moonraker may return either a path relative to the gcode root, or a path
-  // relative to the selected file's folder. Do not prepend the folder twice.
   if (
       normalizedThumbPath.startsWith(`${fileDir}/`) ||
       normalizedThumbPath.startsWith(`.thumbs/${fileDir}/`)
@@ -673,8 +676,7 @@ watch(
 
       await refreshTimelapseStateFromMoonraker()
       await refreshAfcMappingsFromMoonraker()
-      if(file !== true)
-        await loadDialogThumbnails(file)
+      await loadDialogThumbnails(file)
       syncSelectedLanesFromAfc()
     },
     { immediate: true },
@@ -683,9 +685,7 @@ watch(
 watch(
     () => props.modelValue,
     (open) => {
-      if (!open) {
-        dialogThumbnails.value = []
-      }
+      if (!open) dialogThumbnails.value = []
     },
 )
 
@@ -732,7 +732,7 @@ async function addToPrintQueue() {
 
   const filePath = getFilePath(props.file)
   if (!filePath) {
-    showErrorToast('Failed to add file to print queue')
+    showErrorToast(t('print.dialog.add_to_print_queue_failed'))
     return
   }
 
@@ -747,7 +747,7 @@ async function addToPrintQueue() {
 
     queued = true
   } catch {
-    showErrorToast('Failed to add file to print queue')
+    showErrorToast(t('print.dialog.add_to_print_queue_failed'))
   } finally {
     saving.value = false
 
@@ -757,8 +757,17 @@ async function addToPrintQueue() {
   }
 }
 
+async function handlePrimaryAction() {
+  if (printerIsPrintingOrPaused.value) {
+    await addToPrintQueue()
+    return
+  }
+
+  await startPrint()
+}
+
 async function startPrint() {
-  if (!props.file || saving.value) return
+  if (!props.file || printButtonDisabled.value) return
 
   const filePath = getFilePath(props.file)
   if (!filePath) {
@@ -865,10 +874,10 @@ async function startPrint() {
                         density="compact"
                         class="tool-strip__select"
                         :menu-props="{
-                          contentClass: 'tool-strip__menu',
-                          maxHeight: 320,
-                          zIndex: 9999
-                        }"
+                        contentClass: 'tool-strip__menu',
+                        maxHeight: 320,
+                        zIndex: 9999,
+                      }"
                         :disabled="saving || !laneSelectItems.length"
                         @update:model-value="(value) => setLaneForTool(tool, typeof value === 'string' ? value : '')"
                     >
@@ -878,9 +887,9 @@ async function startPrint() {
                             :title="item.title"
                             class="tool-strip__dropdown-item"
                             :style="{
-                              backgroundColor: laneDisplayColor(String(item.value)),
-                              color: getReadableTextColor(laneDisplayColor(String(item.value))),
-                            }"
+                            backgroundColor: laneDisplayColor(String(item.value)),
+                            color: getReadableTextColor(laneDisplayColor(String(item.value))),
+                          }"
                         />
                       </template>
                     </v-select>
@@ -924,9 +933,9 @@ async function startPrint() {
 
             <div class="print-dialog-actions">
               <v-btn
+                  v-if="!printerIsPrintingOrPaused"
                   variant="text"
                   :disabled="saving"
-                  aria-label="Add to print queue"
                   @click="addToPrintQueue"
               >
                 <v-icon icon="mdi-playlist-plus" />
@@ -935,8 +944,14 @@ async function startPrint() {
               <v-btn variant="text" :disabled="saving" @click="closeDialog">
                 {{ t('print.dialog.cancel') }}
               </v-btn>
-              <v-btn variant="text" color="primary" :disabled="saving" @click="startPrint">
-                {{ t('print.dialog.print') }}
+
+              <v-btn
+                  variant="text"
+                  color="primary"
+                  :disabled="primaryActionDisabled"
+                  @click="handlePrimaryAction"
+              >
+                {{ primaryActionText }}
               </v-btn>
             </div>
           </div>

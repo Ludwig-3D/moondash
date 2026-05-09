@@ -201,7 +201,6 @@ watch(
 )
 
 function selectFile() {
-  if (props.disabled) return
   emit('select', props.file)
 }
 </script>

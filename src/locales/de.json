@@ -92,7 +92,8 @@
       "print": "Drucken",
       "lane_update_failed": "Aktualisierung der Spurzuordnung fehlgeschlagen.",
       "print_start_failed": "Druck konnte nicht gestartet werden.",
-      "timelapse_update_failed": "Zeitraffer konnte nicht aktualisiert werden."
+      "timelapse_update_failed": "Zeitraffer konnte nicht aktualisiert werden.",
+      "add_to_print_queue": "Anreihen"
     }
   },
   "notifications": {
@@ -186,7 +187,7 @@
         "30_minutes": "30 Minuten",
         "1_hour": "1 Stunde"
       },
-      "advanced_states": "Erweiterte Druckdetails"
+      "advanced_states": "Statistiken für Nerds"
     },
     "shortcuts": {
       "dialog": {

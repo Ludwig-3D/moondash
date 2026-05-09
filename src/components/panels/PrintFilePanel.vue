@@ -75,29 +75,6 @@ const printDialogOpen = ref(false)
 const selectedFile = ref<MoonrakerFile | null>(null)
 const selectedFileMetadata = ref<MoonrakerGcodeMetadata | null>(null)
 
-const printerIsReadyForSelection = computed(() => {
-  if (!moonrakerReady.value) return false
-
-  const printState = moonraker.value.printStats.state?.toLowerCase() ?? ''
-  const webhookState = moonraker.value.webhooks.state?.toLowerCase() ?? ''
-
-  const busyPrintStates = new Set([
-    'printing',
-    'paused',
-    'pausing',
-    'resuming',
-    'cancelling',
-    'error',
-  ])
-
-  const readyWebhookStates = new Set(['ready'])
-
-  if (!readyWebhookStates.has(webhookState)) return false
-  if (busyPrintStates.has(printState)) return false
-
-  return printState === '' || printState === 'standby' || printState === 'complete'
-})
-
 const moonrakerHttpBase = computed(() => {
   const wsUrl = moonrakerClient.getStatus().url
   if (!wsUrl) return ''
@@ -246,8 +223,6 @@ function getBestThumbnailUrl(file: MoonrakerFile): string | null {
 }
 
 function openPrintDialog(file: MoonrakerFile) {
-  if (!printerIsReadyForSelection.value) return
-
   const filePath = getFilePath(file)
 
   selectedFile.value = file
@@ -497,7 +472,6 @@ onMounted(async () => {
           :thumbnail-url="getBestThumbnailUrl(entry.file)"
           :metadata="getMetadata(entry.file)"
           :loading="loadingPage"
-          :disabled="!printerIsReadyForSelection"
           @select="openPrintDialog"
       />
     </div>

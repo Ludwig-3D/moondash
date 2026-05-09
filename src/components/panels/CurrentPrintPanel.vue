@@ -21,6 +21,19 @@ type MoonrakerFileMetadata = {
   first_layer_height?: number
 }
 
+type QueueJob = {
+  job_id?: string | number
+  filename?: string
+  time_added?: number
+  time_in_queue?: number
+  [key: string]: unknown
+}
+
+type JobQueueStatus = {
+  queued_jobs?: QueueJob[]
+  queue_state?: string
+}
+
 const { t } = useI18n()
 const appStore = useAppStore()
 const { moonraker } = storeToRefs(appStore)
@@ -29,6 +42,7 @@ const loading = ref(false)
 const skipDialogOpen = ref(false)
 const currentFileThumbnails = ref<MoonrakerThumbnail[]>([])
 const currentFileMetadata = ref<MoonrakerFileMetadata | null>(null)
+const queuedJobs = ref<QueueJob[]>([])
 const filenameWrapRef = ref<HTMLElement | null>(null)
 const filenameTextRef = ref<HTMLElement | null>(null)
 const displayMessageWrapRef = ref<HTMLElement | null>(null)
@@ -37,6 +51,7 @@ const isFilenameOverflowing = ref(false)
 const isDisplayMessageOverflowing = ref(false)
 let filenameResizeObserver: ResizeObserver | null = null
 let displayMessageResizeObserver: ResizeObserver | null = null
+let jobQueueRefreshTimer: number | null = null
 
 const printState = computed(() => moonraker.value.printStats.state?.toLowerCase() ?? '')
 const printFilename = computed(() => moonraker.value.printStats.filename ?? '')
@@ -55,6 +70,7 @@ const isFinished = computed(() => (
     printState.value === 'cancelled'
 ))
 const isActivePrint = computed(() => isPrinting.value || isPaused.value || isFinished.value)
+const hasPrintQueue = computed(() => queuedJobs.value.length > 0)
 
 const progressRatio = computed(() => {
   const displayProgress = moonraker.value.displayStatus.progress
@@ -308,6 +324,15 @@ const previewUrl = computed(() => {
   return `${httpBase.value}/server/files/gcodes/${encodeMoonrakerFilePath(fullThumbPath)}`
 })
 
+async function refreshJobQueue() {
+  try {
+    const result = await moonrakerClient.call<JobQueueStatus>('server.job_queue.status')
+    queuedJobs.value = Array.isArray(result?.queued_jobs) ? result.queued_jobs : []
+  } catch {
+    queuedJobs.value = []
+  }
+}
+
 
 async function updateOverflowState(
     wrapRef: { value: HTMLElement | null },
@@ -423,6 +448,9 @@ watch(
 )
 
 onMounted(() => {
+  void refreshJobQueue()
+  jobQueueRefreshTimer = window.setInterval(refreshJobQueue, 5000)
+
   filenameResizeObserver = new ResizeObserver(() => {
     void updateFilenameOverflow()
   })
@@ -445,6 +473,11 @@ onBeforeUnmount(() => {
   filenameResizeObserver = null
   displayMessageResizeObserver?.disconnect()
   displayMessageResizeObserver = null
+
+  if (jobQueueRefreshTimer !== null) {
+    window.clearInterval(jobQueueRefreshTimer)
+    jobQueueRefreshTimer = null
+  }
 })
 
 watch(
@@ -592,6 +625,7 @@ watch(
 
             <template v-else>
               <v-btn
+                  v-if="!hasPrintQueue"
                   class="current-print-panel__action current-print-panel__action--middle"
                   variant="tonal"
                   :disabled="loading"
@@ -603,6 +637,7 @@ watch(
 
               <v-btn
                   class="current-print-panel__action current-print-panel__action--last"
+                  :class="{ 'current-print-panel__action--first': hasPrintQueue }"
                   color="primary"
                   variant="flat"
                   :disabled="loading"

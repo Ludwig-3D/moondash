@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
-import { useAppStore } from '@/stores/app'
 import PrintDialog from '@/components/dialogs/PrintDialog.vue'
 import KeyboardOverlay from '@/components/KeyboardOverlay.vue'
 import PrintFilePreview from '@/components/PrintFilePreview.vue'
 
 const { t } = useI18n()
-const appStore = useAppStore()
-const { moonraker, moonrakerReady } = storeToRefs(appStore)
 
 const FILES_PER_REQUEST = 12
 

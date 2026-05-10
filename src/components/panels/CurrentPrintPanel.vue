@@ -106,7 +106,7 @@ const currentLayer = computed(() => {
   const info = moonraker.value.printStats.info as Record<string, unknown> | undefined
 
   let total =
-      parseFiniteNumber(currentFileMetadata.value?.layer_count)
+      parseFiniteNumber(info?.total_layer)
 
   if (total === null) {
     const objectHeight = parseFiniteNumber(currentFileMetadata.value?.object_height)
@@ -127,10 +127,7 @@ const currentLayer = computed(() => {
   }
 
   const reportedCurrent =
-      parseFiniteNumber(info?.current_layer) ??
-      parseFiniteNumber(info?.currentLayer) ??
-      parseFiniteNumber(info?.layer) ??
-      parseFiniteNumber(info?.current_layer_number)
+      parseFiniteNumber(info?.current_layer)
 
   const z = parseFiniteNumber(moonraker.value.toolhead.position?.[2])
   const layerHeight = parseFiniteNumber(currentFileMetadata.value?.layer_height)
@@ -153,7 +150,7 @@ const currentLayer = computed(() => {
     zCurrent = Math.ceil(z / layerHeight)
   }
 
-  let current = zCurrent ?? reportedCurrent
+  let current = reportedCurrent ?? zCurrent
 
   if (current !== null && total !== null && total > 0) {
     current = Math.min(current, total)

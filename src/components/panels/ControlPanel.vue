@@ -142,6 +142,10 @@ async function runQgl() {
 
   await runGcode('qgl', 'QUAD_GANTRY_LEVEL')
 }
+
+async function disableSteppers() {
+  await runGcode('disable-steppers', 'M84')
+}
 </script>
 
 <template>
@@ -212,6 +216,14 @@ async function runQgl() {
               @click="setMoveDistance(distance)"
           >
             {{ distance }}
+          </v-btn>
+          <v-btn
+              class="distance-btn"
+              :disabled="isPrinterBusy"
+              rounded="0"
+              @click="disableSteppers"
+          >
+            <v-icon icon="mdi-engine-off" />
           </v-btn>
         </div>
       </div>

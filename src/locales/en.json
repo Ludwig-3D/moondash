@@ -252,6 +252,7 @@
       "update_all": "Update All",
       "update": "Update",
       "dirty": "Dirty",
+      "packages": "Packages",
       "dialog": {
         "close": "Close"
       }

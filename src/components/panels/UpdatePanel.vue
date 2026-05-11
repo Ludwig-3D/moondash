@@ -129,16 +129,7 @@ function hasUpdate(service: MoonrakerUpdateService): boolean {
 }
 
 function getServiceMessages(service: ServiceEntry): string[] {
-  const packages = Array.isArray(service.service.package_list)
-      ? service.service.package_list.map((pkg) => `${t('settings.updates.package')}: ${pkg}`)
-      : []
-
-  return [
-    ...service.warnings,
-    ...service.anomalies,
-    service.lastError,
-    ...packages,
-  ].filter((message): message is string => Boolean(message))
+  return [`${t('settings.updates.packages')}: ${service.service.package_list?.join(", ")}`]
 }
 
 function hasServiceMessages(service: ServiceEntry): boolean {
@@ -277,7 +268,7 @@ onMounted(async () => {
           {{ service.name }}
         </v-list-item-title>
 
-        <v-list-item-subtitle>
+        <v-list-item-subtitle v-if="service.service.configured_type !== 'system'">
           <div class="update-panel__versions">
             <span>{{ service.currentVersion }}</span>
             <template v-if="service.updateAvailable">
@@ -287,12 +278,11 @@ onMounted(async () => {
           </div>
         </v-list-item-subtitle>
 
-        <div
-            v-if="service.service.configured_type === 'system' && service.service.package_count"
-            class="update-panel__packages"
-        >
-          {{ t('settings.updates.package_count', { count: service.service.package_count }) }}
-        </div>
+        <v-list-item-subtitle v-else>
+          <div class="update-panel__versions">
+            {{ t('settings.updates.package_count', { count: service.service.package_count }) }}
+          </div>
+        </v-list-item-subtitle>
 
         <template #append>
           <div class="update-panel__actions">
@@ -352,6 +342,9 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.v-list-item-subtitle {
+  padding-bottom: 1px;
+}
 .update-panel {
   height: 100%;
   display: flex;
@@ -395,12 +388,6 @@ onMounted(async () => {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.update-panel__packages {
-  margin-top: 6px;
-  font-size: 0.85em;
-  opacity: 0.75;
 }
 
 .update-panel__actions {

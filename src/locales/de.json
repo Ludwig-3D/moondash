@@ -252,6 +252,7 @@
       "update_all": "Alles Updaten",
       "update": "Updaten",
       "dirty": "Dreckig",
+      "packages": "Pakete",
       "dialog": {
         "close": "Schließen"
       }

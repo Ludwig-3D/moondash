@@ -72,12 +72,9 @@ class MoonrakerConnection {
 
     private subscriptionObjects: Record<string, string[] | null> = {
         webhooks: ['state', 'state_message'],
-        print_stats: null,
-        virtual_sdcard: null,
-        toolhead: ['position'],
+        toolhead: ['position', 'homed_axes', 'axis_minimum', 'axis_maximum', 'max_velocity', 'max_accel', 'minimum_cruise_ratio', 'square_corner_velocity'],
         gcode_move: ['speed', 'speed_factor'],
-        extruder: ['temperature', 'target', 'power'],
-        heater_bed: ['temperature', 'target', 'power'],
+        configfile: ['config', 'settings', 'warnings'],
     }
 
     getStatus(): MoonrakerStatus {
@@ -426,7 +423,6 @@ class MoonrakerConnection {
     async registerAllKnownObjects() {
         const objects: Record<string, string[] | null> = {
             ...this.subscriptionObjects,
-            configfile: ['config', 'settings', 'warnings'],
         }
 
         try {

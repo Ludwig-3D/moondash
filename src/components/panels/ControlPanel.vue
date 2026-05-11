@@ -84,7 +84,7 @@ async function runGcode(action: string, script: string) {
     runningAction.value = action
     await moonrakerClient.call('printer.gcode.script', {
       script,
-    })
+    }, 900_000)
   } catch (error) {
     console.error(`Failed action ${action}`, error)
   } finally {

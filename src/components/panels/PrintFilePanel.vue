@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import PrintDialog from '@/components/dialogs/PrintDialog.vue'
-import KeyboardOverlay from '@/components/KeyboardOverlay.vue'
+import KeyboardOverlay from '../overlays/KeyboardOverlay.vue'
 import PrintFilePreview from '@/components/PrintFilePreview.vue'
 
 const { t } = useI18n()

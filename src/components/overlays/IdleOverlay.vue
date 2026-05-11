@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { useAppStore } from '../stores/app'
+import { useAppStore } from '@/stores/app.ts'
 import {useI18n} from "vue-i18n";
 
 const { t } = useI18n()
@@ -43,7 +43,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div
-      class="idle-overlay d-flex flex-column align-center justify-center text-center"
+      class="overlay-container d-flex flex-column align-center justify-center text-center"
       v-if="appStore.isSleeping"
   >
     <v-icon
@@ -59,13 +59,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.idle-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+.overlay-container {
   background: rgba(var(--v-theme-background), 0.8);
-  z-index: 9999;
 }
 </style>

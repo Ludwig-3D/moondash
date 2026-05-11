@@ -37,6 +37,8 @@ cat > "$HOME/.config/labwc/autostart" <<EOF
 swayidle -w \
   timeout 2 'wtype -M alt -M logo -k h -m logo -m alt' &
 
+exec sh -c 'sleep 0.25; wtype -M alt -M logo -k h -m logo -m alt' &
+
 exec /usr/bin/moondash --app-config "$MCCONFIGFILE"
 EOF
 

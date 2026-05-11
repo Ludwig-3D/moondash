@@ -9,8 +9,9 @@ import { moonraker } from './plugins/moonraker'
 import { resolveLocale } from './plugins/i18n'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
-import IdleOverlay from '@/components/IdleOverlay.vue'
+import IdleOverlay from './components/overlays/IdleOverlay.vue'
 import LaneDialogAFC from '@/components/afc/LaneDialogAFC.vue'
+import BootOverlay from "@/components/overlays/BootOverlay.vue";
 
 const appStore = useAppStore()
 const { locale } = useI18n({ useScope: 'global' })
@@ -297,6 +298,8 @@ watch(
 )
 
 onMounted(async () => {
+  await getCurrentWindow().show()
+
   try {
     await appStore.startConfigListener()
     await appStore.startThemeListener()
@@ -309,8 +312,6 @@ onMounted(async () => {
   } catch (err) {
     console.error('config/moonraker init failed:', err)
   }
-
-  await getCurrentWindow().show()
 })
 
 onBeforeUnmount(() => {
@@ -328,6 +329,7 @@ onBeforeUnmount(() => {
       :style="{ zoom: String(appStore.getZoom) }"
   >
     <v-layout>
+      <BootOverlay v-if="!appStore.isWebsocketConnected"/>
       <IdleOverlay />
       <Navigation />
       <router-view />

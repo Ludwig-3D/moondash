@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ShortcutButtonConfig } from '@/stores/app'
-import KeyboardOverlay from '@/components/KeyboardOverlay.vue'
+import KeyboardOverlay from '../overlays/KeyboardOverlay.vue'
 
 type ActiveType = '' | 'output_pin' | 'fan_generic' | 'fan' | 'temperature_fan' | 'led'
 

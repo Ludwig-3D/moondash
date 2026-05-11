@@ -259,5 +259,8 @@
     "position": "Position",
     "filament_length": "Filament Länge",
     "filament_weight": "Filament Gewicht"
+  },
+  "boot": {
+    "startup": "System fährt hoch..."
   }
 }

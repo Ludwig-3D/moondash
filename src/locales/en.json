@@ -187,7 +187,14 @@
         "30_minutes": "30 minutes",
         "1_hour": "1 hour"
       },
-      "advanced_states": "Stats for Nerds"
+      "advanced_states": "Stats for Nerds",
+      "display_profile": "Display Profile",
+      "display_profile_options": {
+        "automatic": "Automatic",
+        "small": "Small",
+        "normal": "Normal",
+        "highres": "Highres"
+      }
     },
     "shortcuts": {
       "dialog": {

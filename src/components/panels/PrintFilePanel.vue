@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import PrintDialog from '@/components/dialogs/PrintDialog.vue'
 import KeyboardOverlay from '../overlays/KeyboardOverlay.vue'
 import PrintFilePreview from '@/components/PrintFilePreview.vue'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 const { t } = useI18n()
 
-const FILES_PER_REQUEST = 12
-
 type SortMode = 'modified-desc' | 'modified-asc' | 'name-asc' | 'name-desc'
+type DisplayProfileName = 'small' | 'normal' | 'highres'
 
 type MoonrakerFile = {
   path?: string
@@ -54,12 +55,33 @@ type FileEntry = {
 
 type BrowserEntry = FolderEntry | FileEntry
 
+type AppConfig = {
+  system?: {
+    display_profile?: string | null
+  }
+  styling?: {
+    printfiles_grid_row?: number | string | null
+    printfiles_grid_columns?: number | string | null
+  }
+}
+
+const DISPLAY_PROFILES: Record<DisplayProfileName, { rows: number; columns: number }> = {
+  small: { rows: 2, columns: 3 },
+  normal: { rows: 3, columns: 4 },
+  highres: { rows: 4, columns: 6 },
+}
+
+
 const allFiles = ref<MoonrakerFile[]>([])
 const currentFolder = ref('')
 const currentPage = ref(0)
 const sortMode = ref<SortMode>('modified-desc')
 const nameFilter = ref('')
 const keyboardOpen = ref(false)
+const appConfig = ref<AppConfig>({})
+const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 0)
+const viewportHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 0)
+let unlistenConfigLoaded: UnlistenFn | null = null
 
 const loadingFiles = ref(false)
 const loadingPage = ref(false)
@@ -70,6 +92,52 @@ const fileMetadata = ref<Record<string, MoonrakerGcodeMetadata>>({})
 const printDialogOpen = ref(false)
 const selectedFile = ref<MoonrakerFile | null>(null)
 const selectedFileMetadata = ref<MoonrakerGcodeMetadata | null>(null)
+
+
+const automaticDisplayProfile = computed<DisplayProfileName>(() => {
+  const width = viewportWidth.value
+  const height = viewportHeight.value
+
+  if (width >= 1920 && height >= 1080) return 'highres'
+  if (width < 800 || height < 480) return 'small'
+  return 'normal'
+})
+
+const configuredDisplayProfile = computed<DisplayProfileName | null>(() => {
+  const profile = appConfig.value.system?.display_profile?.trim().toLowerCase()
+  if (profile === 'small' || profile === 'normal' || profile === 'highres') return profile
+  return null
+})
+
+const activeDisplayProfile = computed<DisplayProfileName>(() => {
+  return configuredDisplayProfile.value ?? automaticDisplayProfile.value
+})
+
+function positiveInteger(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null
+
+  const parsed = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+
+  return Math.floor(parsed)
+}
+
+const gridRows = computed(() => {
+  return positiveInteger(appConfig.value.styling?.printfiles_grid_row)
+      ?? DISPLAY_PROFILES[activeDisplayProfile.value].rows
+})
+
+const gridColumns = computed(() => {
+  return positiveInteger(appConfig.value.styling?.printfiles_grid_columns)
+      ?? DISPLAY_PROFILES[activeDisplayProfile.value].columns
+})
+
+const filesPerRequest = computed(() => gridRows.value * gridColumns.value)
+
+const gridStyle = computed(() => ({
+  '--print-grid-columns': String(gridColumns.value),
+  '--print-grid-rows': String(gridRows.value),
+}))
 
 const moonrakerHttpBase = computed(() => {
   const wsUrl = moonrakerClient.getStatus().url
@@ -145,8 +213,8 @@ const browserEntries = computed<BrowserEntry[]>(() => {
 })
 
 const pageEntries = computed(() => {
-  const start = currentPage.value * FILES_PER_REQUEST
-  return browserEntries.value.slice(start, start + FILES_PER_REQUEST)
+  const start = currentPage.value * filesPerRequest.value
+  return browserEntries.value.slice(start, start + filesPerRequest.value)
 })
 
 const pageFolders = computed(() => pageEntries.value.filter((entry): entry is FolderEntry => entry.type === 'folder'))
@@ -154,7 +222,7 @@ const pageFiles = computed(() => pageEntries.value.filter((entry): entry is File
 const canGoUp = computed(() => currentPage.value > 0)
 
 const canGoDown = computed(() => {
-  const nextStart = (currentPage.value + 1) * FILES_PER_REQUEST
+  const nextStart = (currentPage.value + 1) * filesPerRequest.value
   return nextStart < browserEntries.value.length
 })
 
@@ -253,6 +321,21 @@ async function goRootFolder() {
   await loadCurrentPageThumbnails()
 }
 
+
+function updateViewportSize() {
+  viewportWidth.value = window.innerWidth
+  viewportHeight.value = window.innerHeight
+}
+
+async function loadConfig() {
+  try {
+    appConfig.value = await invoke<AppConfig>('get_config')
+  } catch (error) {
+    console.error('Failed to load app config', error)
+    appConfig.value = {}
+  }
+}
+
 async function loadFiles() {
   try {
     loadingFiles.value = true
@@ -337,15 +420,32 @@ watch(currentPage, async () => {
   await loadCurrentPageThumbnails()
 })
 
+watch(filesPerRequest, async () => {
+  currentPage.value = 0
+  await loadCurrentPageThumbnails()
+})
+
 watch([currentFolder, sortMode, nameFilter], async () => {
   currentPage.value = 0
   await loadCurrentPageThumbnails()
 })
 
 onMounted(async () => {
+  window.addEventListener('resize', updateViewportSize)
+
+  unlistenConfigLoaded = await listen<AppConfig>('config-loaded', (event) => {
+    appConfig.value = event.payload ?? {}
+  })
+
+  await loadConfig()
   currentPage.value = 0
   await loadFiles()
   await loadCurrentPageThumbnails()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateViewportSize)
+  unlistenConfigLoaded?.()
 })
 </script>
 
@@ -446,7 +546,11 @@ onMounted(async () => {
       </v-alert>
     </div>
 
-    <div v-else class="print-file-panel__grid">
+    <div
+        v-else
+        class="print-file-panel__grid"
+        :style="gridStyle"
+    >
       <v-card
           v-for="entry in pageFolders"
           :key="`folder:${entry.path}`"
@@ -537,17 +641,13 @@ onMounted(async () => {
 }
 
 .print-file-panel__grid {
-  --print-card-height: 25.5vh;
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: var(--print-card-height);
+  grid-template-columns: repeat(var(--print-grid-columns), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--print-grid-rows), minmax(0, 1fr));
   gap: 16px;
+  min-height: 0;
   overflow: auto;
-}
-
-.print-file-panel--subfolder .print-file-panel__grid {
-  --print-card-height: 22vh;
 }
 
 .print-folder-card {

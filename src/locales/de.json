@@ -187,7 +187,14 @@
         "30_minutes": "30 Minuten",
         "1_hour": "1 Stunde"
       },
-      "advanced_states": "Statistiken für Nerds"
+      "advanced_states": "Statistiken für Nerds",
+      "display_profile": "Bildschirm Profil",
+      "display_profile_options": {
+        "automatic": "Automatisch",
+        "small": "Klein",
+        "normal": "Normal",
+        "highres": "Highres"
+      }
     },
     "shortcuts": {
       "dialog": {

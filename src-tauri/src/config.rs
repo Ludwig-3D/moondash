@@ -150,7 +150,9 @@ pub fn default_config() -> Value {
             "darkmode": true,
             "primary": "",
             "secondary": "",
-            "advanced_states": false
+            "advanced_states": false,
+            "printfiles_grid_row": null,
+            "printfiles_grid_columns": null
         },
         "dev": {
             "debug": false
@@ -313,6 +315,14 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
             }
         }
 
+        for key in ["printfiles_grid_row", "printfiles_grid_columns"] {
+            if let Some(value) = styling_patch.get(key) {
+                if value.is_number() || value.is_null() {
+                    styling_obj.insert(key.to_string(), value.clone());
+                }
+            }
+        }
+
         if let Some(value) = styling_patch.get("primary") {
             styling_obj.insert("primary".to_string(), normalize_nullable_string(value));
         }
@@ -351,6 +361,10 @@ fn apply_editable_config(target: &mut Value, patch: &Value) {
             if value.is_boolean() {
                 system_obj.insert("use_idle_timeout".to_string(), value.clone());
             }
+        }
+
+        if let Some(value) = system_patch.get("display_profile") {
+            system_obj.insert("display_profile".to_string(), normalize_nullable_string(value));
         }
     }
 

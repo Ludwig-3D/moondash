@@ -14,6 +14,7 @@ const localDarkmode = ref(true)
 const localPrimary = ref('')
 const localSecondary = ref('')
 const localLanguage = ref<string | null>(null)
+const localDisplayProfile = ref<string | null>(null)
 const localUseIdleTimeout = ref(true)
 const localIdleTimeout = ref(360)
 const localAdvancedStates = ref(false)
@@ -28,6 +29,13 @@ const languageItems = [
   { title: 'English', value: 'en' },
   { title: 'Deutsch', value: 'de' },
 ]
+
+const displayProfileItems = computed(() => [
+  { title: t('settings.config.display_profile_options.automatic'), value: null },
+  { title: t('settings.config.display_profile_options.small'), value: 'small' },
+  { title: t('settings.config.display_profile_options.normal'), value: 'normal' },
+  { title: t('settings.config.display_profile_options.highres'), value: 'highres' },
+])
 
 const idleTimeoutItems = computed(() => [
   { title: t('settings.config.idle_timeout_options.1_minute'), value: 60 },
@@ -59,6 +67,7 @@ watch(
       appStore.getPrimaryColor,
       appStore.getSecondaryColor,
       appStore.getLanguage,
+      appStore.getDisplayProfile,
       appStore.getUseIdleTimeout,
       appStore.getIdleTimeout,
       appStore.getAdvancedStates,
@@ -70,6 +79,7 @@ watch(
       localPrimary.value = appStore.getPrimaryColor ?? ''
       localSecondary.value = appStore.getSecondaryColor ?? ''
       localLanguage.value = appStore.getLanguage
+      localDisplayProfile.value = appStore.getDisplayProfile ?? null
       localUseIdleTimeout.value = appStore.getUseIdleTimeout
       localIdleTimeout.value = appStore.getIdleTimeout ?? 360
       localAdvancedStates.value = appStore.getAdvancedStates ?? false
@@ -114,6 +124,7 @@ async function saveConfig() {
       },
       system: {
         language: localLanguage.value,
+        display_profile: localDisplayProfile.value,
         use_idle_timeout: localUseIdleTimeout.value,
         idle_timeout: localIdleTimeout.value,
       },
@@ -140,6 +151,7 @@ watch(localDarkmode, scheduleSave)
 watch(localPrimary, scheduleSave)
 watch(localSecondary, scheduleSave)
 watch(localLanguage, scheduleSave)
+watch(localDisplayProfile, scheduleSave)
 watch(localUseIdleTimeout, scheduleSave)
 watch(localIdleTimeout, scheduleSave)
 watch(localAdvancedStates, scheduleSave)
@@ -204,6 +216,24 @@ watch(localAdvancedStates, scheduleSave)
           <v-select
               v-model="localLanguage"
               :items="languageItems"
+              item-title="title"
+              item-value="value"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+              :disabled="saving"
+          />
+        </div>
+
+
+
+        <div class="config-editor-label">
+          {{ t('settings.config.display_profile') }}
+        </div>
+        <div>
+          <v-select
+              v-model="localDisplayProfile"
+              :items="displayProfileItems"
               item-title="title"
               item-value="value"
               variant="outlined"
@@ -288,6 +318,8 @@ watch(localAdvancedStates, scheduleSave)
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 18px 20px;
   align-items: center;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
 }
 
 .config-editor-label {

@@ -1,185 +1,222 @@
-import { defineStore } from 'pinia'
-import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { defineStore } from "pinia";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 type ThemePayload = {
-  css?: string
-  logo?: string
-}
+  css?: string;
+  logo?: string;
+};
 
 type StylingConfig = {
-  zoom?: number
-  darkmode?: boolean
-  primary?: string | null
-  secondary?: string | null
-  advanced_states?: boolean
-}
+  zoom?: number;
+  darkmode?: boolean;
+  primary?: string | null;
+  secondary?: string | null;
+  advanced_states?: boolean;
+  printfiles_grid_row?: number | null;
+  printfiles_grid_columns?: number | null;
+};
 
 type DevConfig = {
-  debug?: boolean
-}
+  debug?: boolean;
+};
+
+type DisplayProfileName = "small" | "normal" | "highres";
 
 type SystemConfig = {
-  language?: string | null
-  idle_timeout?: number
-  idle_unlock?: number
-  use_idle_timeout?: boolean
-}
+  language?: string | null;
+  display_profile?: DisplayProfileName | string | null;
+  idle_timeout?: number;
+  idle_unlock?: number;
+  use_idle_timeout?: boolean;
+};
 
 export type ShortcutButtonConfig = {
-  name: string
-  position?: number
-  macro_inactive: string
-  macro_active?: string
-  icon: string
-  active_config?: string
-  active_type?: string
-  active_threshold?: number
-}
+  name: string;
+  position?: number;
+  macro_inactive: string;
+  macro_active?: string;
+  icon: string;
+  active_config?: string;
+  active_type?: string;
+  active_threshold?: number;
+};
 
 type AppConfig = {
   websocket?: {
-    ip?: string
-  }
-  styling?: StylingConfig
-  dev?: DevConfig
-  system?: SystemConfig
-  shortcutbuttons?: ShortcutButtonConfig[]
-}
+    ip?: string;
+  };
+  styling?: StylingConfig;
+  dev?: DevConfig;
+  system?: SystemConfig;
+  shortcutbuttons?: ShortcutButtonConfig[];
+};
 
 type MoonrakerHeater = {
-  temperature: number | null
-  target: number | null
-  power: number | null
-}
+  temperature: number | null;
+  target: number | null;
+  power: number | null;
+};
 
 type MoonrakerToolhead = {
-  position: number[]
-}
+  position: number[];
+};
 
 type MoonrakerWebhooks = {
-  state: string | null
-  stateMessage: string | null
-}
+  state: string | null;
+  stateMessage: string | null;
+};
 
 type MoonrakerPrintStats = {
-  state: string | null
-  filename: string | null
-  message: string | null
-  printDuration: number | null
-  totalDuration: number | null
-  filamentUsed: number | null
-  info: Record<string, unknown>
-}
+  state: string | null;
+  filename: string | null;
+  message: string | null;
+  printDuration: number | null;
+  totalDuration: number | null;
+  filamentUsed: number | null;
+  info: Record<string, unknown>;
+};
 
 type MoonrakerVirtualSdcard = {
-  progress: number | null
-  filePosition: number | null
-  isActive: boolean | null
-}
+  progress: number | null;
+  filePosition: number | null;
+  isActive: boolean | null;
+};
 
 type MoonrakerProcStats = {
-  moonrakerCpuUsage: number | null
-  systemCpuUsage: number | null
-  cpuTemp: number | null
-  memory: number | null
-  network: Record<string, unknown>
-  systemUptime: number | null
-}
+  moonrakerCpuUsage: number | null;
+  systemCpuUsage: number | null;
+  cpuTemp: number | null;
+  memory: number | null;
+  network: Record<string, unknown>;
+  systemUptime: number | null;
+};
 
 type MoonrakerThrottleState = {
-  bits: number | null
-  flags: string[]
-}
+  bits: number | null;
+  flags: string[];
+};
 
 type MoonrakerDisplayStatus = {
-  message: string | null
-  progress: number | null
-}
+  message: string | null;
+  progress: number | null;
+};
 
 type MoonrakerHistoryState = {
-  lastAction: string | null
-  payload: unknown
-}
+  lastAction: string | null;
+  payload: unknown;
+};
 
 type MoonrakerGcodeMove = {
-  speed: number | null
-  speedFactor: number | null
-}
+  speed: number | null;
+  speedFactor: number | null;
+};
 
 type MoonrakerAfcState = {
-  available: boolean
-  objects: Record<string, unknown>
-}
+  available: boolean;
+  objects: Record<string, unknown>;
+};
 
 type MoonrakerDynamicHeater = {
-  key: string
-  label: string
-  temperature: number | null
-  target: number | null
-  power: number | null
-}
+  key: string;
+  label: string;
+  temperature: number | null;
+  target: number | null;
+  power: number | null;
+};
 
 type MoonrakerDynamicFan = {
-  key: string
-  label: string
-  speed: number | null
-  rpm: number | null
-  temperature: number | null
-  target: number | null
-  isTemperatureFan: boolean
-}
+  key: string;
+  label: string;
+  speed: number | null;
+  rpm: number | null;
+  temperature: number | null;
+  target: number | null;
+  isTemperatureFan: boolean;
+};
 
 type FilesState = {
-  items: unknown[]
-  lastUpdated: number | null
-}
+  items: unknown[];
+  lastUpdated: number | null;
+};
 
 function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 function asNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function asString(value: unknown): string | null {
-  return typeof value === 'string' ? value : null
+  return typeof value === "string" ? value : null;
 }
 
 function asBoolean(value: unknown): boolean | null {
-  return typeof value === 'boolean' ? value : null
+  return typeof value === "boolean" ? value : null;
+}
+
+function asPositiveInteger(value: unknown): number | null {
+  const parsed =
+      typeof value === "number"
+          ? value
+          : typeof value === "string"
+              ? Number(value)
+              : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
+}
+
+function asDisplayProfile(value: unknown): DisplayProfileName | null {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.trim().toLowerCase();
+  if (
+      normalized === "small" ||
+      normalized === "normal" ||
+      normalized === "highres"
+  ) {
+    return normalized;
+  }
+
+  return null;
 }
 
 function prettifyMoonrakerObjectName(key: string): string {
-  const lower = key.toLowerCase()
+  const lower = key.toLowerCase();
 
-  if (lower === 'extruder') return 'extruder'
-  if (lower === 'heater_bed') return 'heater_bed'
-  if (lower === 'fan') return 'fan'
+  if (lower === "extruder") return "extruder";
+  if (lower === "heater_bed") return "heater_bed";
+  if (lower === "fan") return "fan";
 
   return key
-      .replace(/^heater_generic\s+/i, '')
-      .replace(/^fan_generic\s+/i, '')
-      .replace(/^controller_fan\s+/i, '')
-      .replace(/^heater_fan\s+/i, '')
-      .replace(/^temperature_fan\s+/i, '')
-      .replace(/^temperature_sensor\s+/i, '')
-      .replace(/^_+|_+$/g, '')
-      .replace(/_/g, ' ')
+      .replace(/^heater_generic\s+/i, "")
+      .replace(/^fan_generic\s+/i, "")
+      .replace(/^controller_fan\s+/i, "")
+      .replace(/^heater_fan\s+/i, "")
+      .replace(/^temperature_fan\s+/i, "")
+      .replace(/^temperature_sensor\s+/i, "")
+      .replace(/^_+|_+$/g, "")
+      .replace(/_/g, " ");
 }
 
-function sortShortcutButtons(items: ShortcutButtonConfig[]): ShortcutButtonConfig[] {
+function sortShortcutButtons(
+    items: ShortcutButtonConfig[],
+): ShortcutButtonConfig[] {
   return [...items].sort((a, b) => {
-    const aPos = typeof a.position === 'number' ? a.position : Number.MAX_SAFE_INTEGER
-    const bPos = typeof b.position === 'number' ? b.position : Number.MAX_SAFE_INTEGER
+    const aPos =
+        typeof a.position === "number" ? a.position : Number.MAX_SAFE_INTEGER;
+    const bPos =
+        typeof b.position === "number" ? b.position : Number.MAX_SAFE_INTEGER;
 
-    if (aPos !== bPos) return aPos - bPos
-    return a.name.localeCompare(b.name)
-  })
+    if (aPos !== bPos) return aPos - bPos;
+    return a.name.localeCompare(b.name);
+  });
 }
 
-function normalizeShortcutButtons(items: ShortcutButtonConfig[]): ShortcutButtonConfig[] {
+function normalizeShortcutButtons(
+    items: ShortcutButtonConfig[],
+): ShortcutButtonConfig[] {
   return sortShortcutButtons(items).map((item, index) => ({
     ...item,
     name: item.name.trim(),
@@ -189,65 +226,69 @@ function normalizeShortcutButtons(items: ShortcutButtonConfig[]): ShortcutButton
     active_config: item.active_config?.trim() || undefined,
     active_type: item.active_type?.trim() || undefined,
     active_threshold:
-        typeof item.active_threshold === 'number' && Number.isFinite(item.active_threshold)
+        typeof item.active_threshold === "number" &&
+        Number.isFinite(item.active_threshold)
             ? item.active_threshold
             : undefined,
     position: index,
-  }))
+  }));
 }
 
-function parseShortcutButtonsFromConfig(config: Record<string, unknown>): ShortcutButtonConfig[] {
-  const result: ShortcutButtonConfig[] = []
+function parseShortcutButtonsFromConfig(
+    config: Record<string, unknown>,
+): ShortcutButtonConfig[] {
+  const result: ShortcutButtonConfig[] = [];
 
   for (const [key, value] of Object.entries(config)) {
-    if (!key.toLowerCase().startsWith('shortcutbutton ')) continue
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    if (!key.toLowerCase().startsWith("shortcutbutton ")) continue;
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
 
-    const record = value as Record<string, unknown>
-    const name = key.substring('shortcutbutton '.length).trim()
-    if (!name) continue
+    const record = value as Record<string, unknown>;
+    const name = key.substring("shortcutbutton ".length).trim();
+    if (!name) continue;
 
-    const macroInactive = asString(record.macro_inactive)
-    const icon = asString(record.icon)
+    const macroInactive = asString(record.macro_inactive);
+    const icon = asString(record.icon);
 
-    if (!macroInactive || !icon) continue
+    if (!macroInactive || !icon) continue;
 
     const button: ShortcutButtonConfig = {
       name,
       macro_inactive: macroInactive,
       icon,
-    }
+    };
 
-    const position = asNumber(record.position)
-    if (typeof position === 'number') button.position = position
+    const position = asNumber(record.position);
+    if (typeof position === "number") button.position = position;
 
-    const macroActive = asString(record.macro_active)
-    if (macroActive) button.macro_active = macroActive
+    const macroActive = asString(record.macro_active);
+    if (macroActive) button.macro_active = macroActive;
 
-    const activeConfig = asString(record.active_config)
-    if (activeConfig) button.active_config = activeConfig
+    const activeConfig = asString(record.active_config);
+    if (activeConfig) button.active_config = activeConfig;
 
-    const activeType = asString(record.active_type)
-    if (activeType) button.active_type = activeType
+    const activeType = asString(record.active_type);
+    if (activeType) button.active_type = activeType;
 
-    const threshold = asNumber(record.active_threshold)
-    if (typeof threshold === 'number') button.active_threshold = threshold
+    const threshold = asNumber(record.active_threshold);
+    if (typeof threshold === "number") button.active_threshold = threshold;
 
-    result.push(button)
+    result.push(button);
   }
 
-  return normalizeShortcutButtons(result)
+  return normalizeShortcutButtons(result);
 }
 
-export const useAppStore = defineStore('app', {
+export const useAppStore = defineStore("app", {
   state: () => ({
-    themeCss: '' as string,
-    themeLogo: '' as string,
+    themeCss: "" as string,
+    themeLogo: "" as string,
     themeListener: null as UnlistenFn | null,
     darkmode: true as boolean,
     zoom: 1.0 as number,
     debug: false as boolean,
     language: null as string | null,
+    displayProfile: null as DisplayProfileName | null,
     idleTimeout: 360 as number,
     idleUnlock: 500 as number,
     useIdleTimeout: true as boolean,
@@ -255,10 +296,12 @@ export const useAppStore = defineStore('app', {
     primaryColor: null as string | null,
     secondaryColor: null as string | null,
     advancedStates: false as boolean,
+    printFilesGridRow: null as number | null,
+    printFilesGridColumns: null as number | null,
     shortcutButtons: [] as ShortcutButtonConfig[],
 
     websocket: {
-      ip: '127.0.0.1:7125',
+      ip: "127.0.0.1:7125",
       connected: false,
     },
 
@@ -356,6 +399,7 @@ export const useAppStore = defineStore('app', {
     getZoom: (state) => state.zoom,
     isDebugEnabled: (state) => state.debug,
     getLanguage: (state) => state.language,
+    getDisplayProfile: (state) => state.displayProfile,
     getIdleTimeout: (state) => state.idleTimeout,
     getIdleUnlock: (state) => state.idleUnlock,
     getUseIdleTimeout: (state) => state.useIdleTimeout,
@@ -363,6 +407,8 @@ export const useAppStore = defineStore('app', {
     getPrimaryColor: (state) => state.primaryColor,
     getSecondaryColor: (state) => state.secondaryColor,
     getAdvancedStates: (state) => state.advancedStates,
+    getPrintFilesGridRow: (state) => state.printFilesGridRow,
+    getPrintFilesGridColumns: (state) => state.printFilesGridColumns,
     getShortcutButtons: (state) => state.shortcutButtons,
 
     getWebsocket: (state) => state.websocket,
@@ -402,328 +448,370 @@ export const useAppStore = defineStore('app', {
 
   actions: {
     applyTheme(payload: ThemePayload) {
-      this.themeCss = typeof payload.css === 'string' ? payload.css : ''
-      this.themeLogo = typeof payload.logo === 'string' ? payload.logo : ''
+      this.themeCss = typeof payload.css === "string" ? payload.css : "";
+      this.themeLogo = typeof payload.logo === "string" ? payload.logo : "";
     },
 
     async loadThemeAssets() {
-      if (!isTauriRuntime()) return null
+      if (!isTauriRuntime()) return null;
 
-      const theme = await invoke<ThemePayload>('get_theme_assets')
-      this.applyTheme(theme)
-      return theme
+      const theme = await invoke<ThemePayload>("get_theme_assets");
+      this.applyTheme(theme);
+      return theme;
     },
 
     async startThemeListener() {
-      if (this.themeListener || !isTauriRuntime()) return
+      if (this.themeListener || !isTauriRuntime()) return;
 
-      this.themeListener = await listen<ThemePayload>('theme-loaded', (event) => {
-        this.applyTheme(event.payload)
-      })
+      this.themeListener = await listen<ThemePayload>(
+          "theme-loaded",
+          (event) => {
+            this.applyTheme(event.payload);
+          },
+      );
     },
 
     stopThemeListener() {
       if (this.themeListener) {
-        this.themeListener()
-        this.themeListener = null
+        this.themeListener();
+        this.themeListener = null;
       }
     },
 
     setDarkmode(value: boolean) {
-      this.darkmode = value
+      this.darkmode = value;
     },
 
     setZoom(value: number) {
-      this.zoom = value
+      this.zoom = value;
     },
 
     setDebug(value: boolean) {
-      this.debug = value
+      this.debug = value;
     },
 
     setLanguage(value: string | null) {
-      this.language = value
+      this.language = value;
+    },
+
+    setDisplayProfile(value: string | null) {
+      this.displayProfile = asDisplayProfile(value);
     },
 
     setIdleTimeout(value: number) {
       if (Number.isFinite(value) && value > 0) {
-        this.idleTimeout = value
+        this.idleTimeout = value;
       }
     },
 
     setIdleUnlock(value: number) {
       if (Number.isFinite(value) && value >= 0) {
-        this.idleUnlock = value
+        this.idleUnlock = value;
       }
     },
 
     setUseIdleTimeout(value: boolean) {
-      this.useIdleTimeout = value
+      this.useIdleTimeout = value;
     },
 
     setAdvancedStates(value: boolean) {
-      this.advancedStates = value
+      this.advancedStates = value;
+    },
+
+    setPrintFilesGridRow(value: unknown) {
+      this.printFilesGridRow = asPositiveInteger(value);
+    },
+
+    setPrintFilesGridColumns(value: unknown) {
+      this.printFilesGridColumns = asPositiveInteger(value);
     },
 
     setIsSleeping(value: boolean) {
-      this.isSleeping = value
+      this.isSleeping = value;
     },
 
     setWebsocketIp(ip: string) {
-      this.websocket.ip = ip
+      this.websocket.ip = ip;
     },
 
     setWebsocketConnected(value: boolean) {
-      this.websocket.connected = value
+      this.websocket.connected = value;
     },
 
     setMoonrakerReady(value: boolean) {
-      this.moonrakerReady = value
+      this.moonrakerReady = value;
     },
 
     setShortcutButtons(value: ShortcutButtonConfig[]) {
-      this.shortcutButtons = Array.isArray(value) ? normalizeShortcutButtons(value) : []
+      this.shortcutButtons = Array.isArray(value)
+          ? normalizeShortcutButtons(value)
+          : [];
     },
 
     applyConfig(config: AppConfig) {
       if (config.styling) {
-        if (typeof config.styling.darkmode === 'boolean') {
-          this.setDarkmode(config.styling.darkmode)
+        if (typeof config.styling.darkmode === "boolean") {
+          this.setDarkmode(config.styling.darkmode);
         }
 
-        if (typeof config.styling.zoom === 'number') {
-          this.setZoom(config.styling.zoom)
+        if (typeof config.styling.zoom === "number") {
+          this.setZoom(config.styling.zoom);
         }
 
-        if (typeof config.styling.primary === 'string' && config.styling.primary.trim()) {
-          this.primaryColor = config.styling.primary.trim()
+        if (
+            typeof config.styling.primary === "string" &&
+            config.styling.primary.trim()
+        ) {
+          this.primaryColor = config.styling.primary.trim();
         } else {
-          this.primaryColor = null
+          this.primaryColor = null;
         }
 
-        if (typeof config.styling.secondary === 'string' && config.styling.secondary.trim()) {
-          this.secondaryColor = config.styling.secondary.trim()
+        if (
+            typeof config.styling.secondary === "string" &&
+            config.styling.secondary.trim()
+        ) {
+          this.secondaryColor = config.styling.secondary.trim();
         } else {
-          this.secondaryColor = null
+          this.secondaryColor = null;
         }
 
-        if (typeof config.styling.advanced_states === 'boolean') {
-          this.setAdvancedStates(config.styling.advanced_states)
+        if (typeof config.styling.advanced_states === "boolean") {
+          this.setAdvancedStates(config.styling.advanced_states);
         } else {
-          this.setAdvancedStates(false)
+          this.setAdvancedStates(false);
         }
+
+        this.setPrintFilesGridRow(config.styling.printfiles_grid_row);
+        this.setPrintFilesGridColumns(config.styling.printfiles_grid_columns);
       } else {
-        this.setAdvancedStates(false)
+        this.setAdvancedStates(false);
+        this.setPrintFilesGridRow(null);
+        this.setPrintFilesGridColumns(null);
       }
 
       if (config.websocket?.ip) {
-        this.setWebsocketIp(config.websocket.ip)
+        this.setWebsocketIp(config.websocket.ip);
       }
 
-      if (typeof config.dev?.debug === 'boolean') {
-        this.setDebug(config.dev.debug)
+      if (typeof config.dev?.debug === "boolean") {
+        this.setDebug(config.dev.debug);
       }
 
-      if (typeof config.system?.language === 'string') {
-        this.setLanguage(config.system.language)
+      if (typeof config.system?.language === "string") {
+        this.setLanguage(config.system.language);
       } else if (config.system?.language === null) {
-        this.setLanguage(null)
+        this.setLanguage(null);
       }
 
-      if (typeof config.system?.idle_timeout === 'number') {
-        this.setIdleTimeout(config.system.idle_timeout)
+      if (typeof config.system?.display_profile === "string") {
+        this.setDisplayProfile(config.system.display_profile);
+      } else if (config.system?.display_profile === null || !config.system) {
+        this.setDisplayProfile(null);
       }
 
-      if (typeof config.system?.idle_unlock === 'number') {
-        this.setIdleUnlock(config.system.idle_unlock)
+      if (typeof config.system?.idle_timeout === "number") {
+        this.setIdleTimeout(config.system.idle_timeout);
       }
 
-      if (typeof config.system?.use_idle_timeout === 'boolean') {
-        this.setUseIdleTimeout(config.system.use_idle_timeout)
+      if (typeof config.system?.idle_unlock === "number") {
+        this.setIdleUnlock(config.system.idle_unlock);
+      }
+
+      if (typeof config.system?.use_idle_timeout === "boolean") {
+        this.setUseIdleTimeout(config.system.use_idle_timeout);
       }
 
       if (config.shortcutbuttons && Array.isArray(config.shortcutbuttons)) {
         this.setShortcutButtons(
-            config.shortcutbuttons.filter(
-                (item): item is ShortcutButtonConfig =>
-                    Boolean(
-                        item &&
-                        typeof item.name === 'string' &&
-                        item.name.trim() &&
-                        typeof item.macro_inactive === 'string' &&
-                        typeof item.icon === 'string',
-                    ),
+            config.shortcutbuttons.filter((item): item is ShortcutButtonConfig =>
+                Boolean(
+                    item &&
+                    typeof item.name === "string" &&
+                    item.name.trim() &&
+                    typeof item.macro_inactive === "string" &&
+                    typeof item.icon === "string",
+                ),
             ),
-        )
-      } else if (typeof config === 'object' && config !== null) {
-        this.setShortcutButtons(parseShortcutButtonsFromConfig(config as Record<string, unknown>))
+        );
+      } else if (typeof config === "object" && config !== null) {
+        this.setShortcutButtons(
+            parseShortcutButtonsFromConfig(config as Record<string, unknown>),
+        );
       } else {
-        this.setShortcutButtons([])
+        this.setShortcutButtons([]);
       }
     },
 
     async loadConfig() {
-      if (!isTauriRuntime()) return null
-      const config = await invoke<AppConfig>('get_config')
-      this.applyConfig(config)
-      return config
+      if (!isTauriRuntime()) return null;
+      const config = await invoke<AppConfig>("get_config");
+      this.applyConfig(config);
+      return config;
     },
 
     async reloadConfigFromFile(path: string) {
-      if (!isTauriRuntime()) return null
-      const config = await invoke<AppConfig>('load_config_file', {
+      if (!isTauriRuntime()) return null;
+      const config = await invoke<AppConfig>("load_config_file", {
         configPath: path,
-      })
-      this.applyConfig(config)
-      return config
+      });
+      this.applyConfig(config);
+      return config;
     },
 
     async saveEditableConfig(payload: {
       styling?: {
-        darkmode?: boolean
-        primary?: string | null
-        secondary?: string | null
-        advanced_states?: boolean
-      }
+        darkmode?: boolean;
+        primary?: string | null;
+        secondary?: string | null;
+        advanced_states?: boolean;
+        printfiles_grid_row?: number | null;
+        printfiles_grid_columns?: number | null;
+      };
       system?: {
-        language?: string | null
-        idle_timeout?: number
-        idle_unlock?: number
-        use_idle_timeout?: boolean
-      }
-      shortcutbuttons?: ShortcutButtonConfig[]
+        language?: string | null;
+        display_profile?: DisplayProfileName | string | null;
+        idle_timeout?: number;
+        idle_unlock?: number;
+        use_idle_timeout?: boolean;
+      };
+      shortcutbuttons?: ShortcutButtonConfig[];
     }) {
-      if (!isTauriRuntime()) return null
+      if (!isTauriRuntime()) return null;
 
       const normalizedPayload = {
         ...payload,
         shortcutbuttons: payload.shortcutbuttons
             ? normalizeShortcutButtons(payload.shortcutbuttons)
             : undefined,
-      }
+      };
 
-      const config = await invoke<AppConfig>('save_editable_config', {
+      const config = await invoke<AppConfig>("save_editable_config", {
         editableConfig: normalizedPayload,
-      })
+      });
 
-      this.applyConfig(config)
-      return config
+      this.applyConfig(config);
+      return config;
     },
 
     async saveShortcutButtons(shortcutbuttons: ShortcutButtonConfig[]) {
-      if (!isTauriRuntime()) return null
+      if (!isTauriRuntime()) return null;
 
-      const normalizedButtons = normalizeShortcutButtons(shortcutbuttons)
+      const normalizedButtons = normalizeShortcutButtons(shortcutbuttons);
 
-      this.setShortcutButtons(normalizedButtons)
+      this.setShortcutButtons(normalizedButtons);
 
-      const config = await invoke<AppConfig>('save_editable_config', {
+      const config = await invoke<AppConfig>("save_editable_config", {
         editableConfig: {
           shortcutbuttons: normalizedButtons,
         },
-      })
+      });
 
-      this.applyConfig(config)
-      return config
+      this.applyConfig(config);
+      return config;
     },
 
     async startConfigListener() {
-      if (this.configListener || !isTauriRuntime()) return
+      if (this.configListener || !isTauriRuntime()) return;
 
-      this.configListener = await listen<AppConfig>('config-loaded', (event) => {
-        this.applyConfig(event.payload)
-      })
+      this.configListener = await listen<AppConfig>(
+          "config-loaded",
+          (event) => {
+            this.applyConfig(event.payload);
+          },
+      );
     },
 
     stopConfigListener() {
       if (this.configListener) {
-        this.configListener()
-        this.configListener = null
+        this.configListener();
+        this.configListener = null;
       }
     },
 
     applyMoonrakerAfcUpdate(status: Record<string, any>) {
-      let foundAfc = false
+      let foundAfc = false;
 
       for (const [key, value] of Object.entries(status)) {
-        const lower = key.toLowerCase()
+        const lower = key.toLowerCase();
 
         if (
-            lower === 'afc' ||
-            lower.startsWith('afc ') ||
-            lower.startsWith('afc_') ||
-            lower.includes(' afc ') ||
-            lower.includes('filament_switch_sensor afc')
+            lower === "afc" ||
+            lower.startsWith("afc ") ||
+            lower.startsWith("afc_") ||
+            lower.includes(" afc ") ||
+            lower.includes("filament_switch_sensor afc")
         ) {
-          const existing = this.moonraker.afc.objects[key]
+          const existing = this.moonraker.afc.objects[key];
 
           if (
               existing &&
-              typeof existing === 'object' &&
+              typeof existing === "object" &&
               !Array.isArray(existing) &&
               value &&
-              typeof value === 'object' &&
+              typeof value === "object" &&
               !Array.isArray(value)
           ) {
             this.moonraker.afc.objects[key] = {
               ...(existing as Record<string, unknown>),
               ...(value as Record<string, unknown>),
-            }
+            };
           } else {
-            this.moonraker.afc.objects[key] = value
+            this.moonraker.afc.objects[key] = value;
           }
 
-          foundAfc = true
+          foundAfc = true;
         }
       }
 
       if (foundAfc) {
-        this.moonraker.afc.available = true
+        this.moonraker.afc.available = true;
       }
     },
 
     applyRawMoonrakerObjects(status: Record<string, any>) {
       for (const [key, value] of Object.entries(status)) {
-        const existing = this.moonraker.rawObjects[key]
+        const existing = this.moonraker.rawObjects[key];
 
         if (
             existing &&
-            typeof existing === 'object' &&
+            typeof existing === "object" &&
             !Array.isArray(existing) &&
             value &&
-            typeof value === 'object' &&
+            typeof value === "object" &&
             !Array.isArray(value)
         ) {
           this.moonraker.rawObjects[key] = {
             ...(existing as Record<string, unknown>),
             ...(value as Record<string, unknown>),
-          }
+          };
         } else {
-          this.moonraker.rawObjects[key] = value
+          this.moonraker.rawObjects[key] = value;
         }
       }
     },
 
     applyDynamicMoonrakerDevices() {
-      const heaterMap = new Map<string, MoonrakerDynamicHeater>()
-      const fanMap = new Map<string, MoonrakerDynamicFan>()
+      const heaterMap = new Map<string, MoonrakerDynamicHeater>();
+      const fanMap = new Map<string, MoonrakerDynamicFan>();
 
       for (const [key, value] of Object.entries(this.moonraker.rawObjects)) {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          continue;
 
-        const lower = key.toLowerCase()
-        const record = value as Record<string, unknown>
+        const lower = key.toLowerCase();
+        const record = value as Record<string, unknown>;
 
-        if (lower === 'extruder' || lower === 'heater_bed') continue
-        if (lower.startsWith('afc')) continue
+        if (lower === "extruder" || lower === "heater_bed") continue;
+        if (lower.startsWith("afc")) continue;
 
-        const isTemperatureFan = lower.startsWith('temperature_fan ')
+        const isTemperatureFan = lower.startsWith("temperature_fan ");
         const isFan =
-            lower === 'fan' ||
-            lower.startsWith('fan_generic ') ||
-            lower.startsWith('controller_fan ') ||
-            lower.startsWith('heater_fan ') ||
-            isTemperatureFan
+            lower === "fan" ||
+            lower.startsWith("fan_generic ") ||
+            lower.startsWith("controller_fan ") ||
+            lower.startsWith("heater_fan ") ||
+            isTemperatureFan;
 
         if (isFan) {
           fanMap.set(key, {
@@ -734,13 +822,13 @@ export const useAppStore = defineStore('app', {
             temperature: asNumber(record.temperature),
             target: asNumber(record.target),
             isTemperatureFan,
-          })
-          continue
+          });
+          continue;
         }
 
         const isHeater =
-            lower.startsWith('heater_generic ') ||
-            ('temperature' in record && 'target' in record)
+            lower.startsWith("heater_generic ") ||
+            ("temperature" in record && "target" in record);
 
         if (isHeater) {
           heaterMap.set(key, {
@@ -749,223 +837,284 @@ export const useAppStore = defineStore('app', {
             temperature: asNumber(record.temperature),
             target: asNumber(record.target),
             power: asNumber(record.power),
-          })
+          });
         }
       }
 
-      this.moonraker.dynamicHeaters = Array.from(heaterMap.values())
-      this.moonraker.dynamicFans = Array.from(fanMap.values())
+      this.moonraker.dynamicHeaters = Array.from(heaterMap.values());
+      this.moonraker.dynamicFans = Array.from(fanMap.values());
     },
 
     applyMoonrakerStatusUpdate(status: Record<string, any>) {
-      this.applyRawMoonrakerObjects(status)
+      this.applyRawMoonrakerObjects(status);
 
       if (status.webhooks) {
-        if ('state' in status.webhooks) {
-          this.moonraker.webhooks.state = asString(status.webhooks.state)
+        if ("state" in status.webhooks) {
+          this.moonraker.webhooks.state = asString(status.webhooks.state);
         }
 
-        if ('state_message' in status.webhooks) {
-          this.moonraker.webhooks.stateMessage = asString(status.webhooks.state_message)
+        if ("state_message" in status.webhooks) {
+          this.moonraker.webhooks.stateMessage = asString(
+              status.webhooks.state_message,
+          );
         }
       }
 
       if (status.extruder) {
-        if ('temperature' in status.extruder) {
-          this.moonraker.extruder.temperature = asNumber(status.extruder.temperature)
+        if ("temperature" in status.extruder) {
+          this.moonraker.extruder.temperature = asNumber(
+              status.extruder.temperature,
+          );
         }
-        if ('target' in status.extruder) {
-          this.moonraker.extruder.target = asNumber(status.extruder.target)
+        if ("target" in status.extruder) {
+          this.moonraker.extruder.target = asNumber(status.extruder.target);
         }
-        if ('power' in status.extruder) {
-          this.moonraker.extruder.power = asNumber(status.extruder.power)
+        if ("power" in status.extruder) {
+          this.moonraker.extruder.power = asNumber(status.extruder.power);
         }
       }
 
       if (status.heater_bed || status.heaterBed) {
-        const bed = status.heater_bed ?? status.heaterBed
+        const bed = status.heater_bed ?? status.heaterBed;
 
-        if ('temperature' in bed) {
-          this.moonraker.heaterBed.temperature = asNumber(bed.temperature)
+        if ("temperature" in bed) {
+          this.moonraker.heaterBed.temperature = asNumber(bed.temperature);
         }
-        if ('target' in bed) {
-          this.moonraker.heaterBed.target = asNumber(bed.target)
+        if ("target" in bed) {
+          this.moonraker.heaterBed.target = asNumber(bed.target);
         }
-        if ('power' in bed) {
-          this.moonraker.heaterBed.power = asNumber(bed.power)
+        if ("power" in bed) {
+          this.moonraker.heaterBed.power = asNumber(bed.power);
         }
       }
 
-      if (status.toolhead?.position && Array.isArray(status.toolhead.position)) {
-        this.moonraker.toolhead.position = status.toolhead.position
+      if (
+          status.toolhead?.position &&
+          Array.isArray(status.toolhead.position)
+      ) {
+        this.moonraker.toolhead.position = status.toolhead.position;
       }
 
       if (status.gcode_move || status.gcodeMove) {
-        const gcodeMove = status.gcode_move ?? status.gcodeMove
+        const gcodeMove = status.gcode_move ?? status.gcodeMove;
 
-        if ('speed' in gcodeMove) {
-          this.moonraker.gcodeMove.speed = asNumber(gcodeMove.speed)
+        if ("speed" in gcodeMove) {
+          this.moonraker.gcodeMove.speed = asNumber(gcodeMove.speed);
         }
-        if ('speed_factor' in gcodeMove) {
-          this.moonraker.gcodeMove.speedFactor = asNumber(gcodeMove.speed_factor)
-        } else if ('speedFactor' in gcodeMove) {
-          this.moonraker.gcodeMove.speedFactor = asNumber(gcodeMove.speedFactor)
+        if ("speed_factor" in gcodeMove) {
+          this.moonraker.gcodeMove.speedFactor = asNumber(
+              gcodeMove.speed_factor,
+          );
+        } else if ("speedFactor" in gcodeMove) {
+          this.moonraker.gcodeMove.speedFactor = asNumber(
+              gcodeMove.speedFactor,
+          );
         }
       }
 
       if (status.print_stats || status.printStats) {
-        const printStats = status.print_stats ?? status.printStats
+        const printStats = status.print_stats ?? status.printStats;
 
-        if ('state' in printStats) this.moonraker.printStats.state = asString(printStats.state)
-        if ('filename' in printStats) this.moonraker.printStats.filename = asString(printStats.filename)
-        if ('message' in printStats) this.moonraker.printStats.message = asString(printStats.message)
+        if ("state" in printStats)
+          this.moonraker.printStats.state = asString(printStats.state);
+        if ("filename" in printStats)
+          this.moonraker.printStats.filename = asString(printStats.filename);
+        if ("message" in printStats)
+          this.moonraker.printStats.message = asString(printStats.message);
 
-        if ('print_duration' in printStats) {
-          this.moonraker.printStats.printDuration = asNumber(printStats.print_duration)
-        } else if ('printDuration' in printStats) {
-          this.moonraker.printStats.printDuration = asNumber(printStats.printDuration)
+        if ("print_duration" in printStats) {
+          this.moonraker.printStats.printDuration = asNumber(
+              printStats.print_duration,
+          );
+        } else if ("printDuration" in printStats) {
+          this.moonraker.printStats.printDuration = asNumber(
+              printStats.printDuration,
+          );
         }
 
-        if ('total_duration' in printStats) {
-          this.moonraker.printStats.totalDuration = asNumber(printStats.total_duration)
-        } else if ('totalDuration' in printStats) {
-          this.moonraker.printStats.totalDuration = asNumber(printStats.totalDuration)
+        if ("total_duration" in printStats) {
+          this.moonraker.printStats.totalDuration = asNumber(
+              printStats.total_duration,
+          );
+        } else if ("totalDuration" in printStats) {
+          this.moonraker.printStats.totalDuration = asNumber(
+              printStats.totalDuration,
+          );
         }
 
-        if ('filament_used' in printStats) {
-          this.moonraker.printStats.filamentUsed = asNumber(printStats.filament_used)
-        } else if ('filamentUsed' in printStats) {
-          this.moonraker.printStats.filamentUsed = asNumber(printStats.filamentUsed)
+        if ("filament_used" in printStats) {
+          this.moonraker.printStats.filamentUsed = asNumber(
+              printStats.filament_used,
+          );
+        } else if ("filamentUsed" in printStats) {
+          this.moonraker.printStats.filamentUsed = asNumber(
+              printStats.filamentUsed,
+          );
         }
 
-        if ('info' in printStats && printStats.info && typeof printStats.info === 'object') {
-          this.moonraker.printStats.info = printStats.info
+        if (
+            "info" in printStats &&
+            printStats.info &&
+            typeof printStats.info === "object"
+        ) {
+          this.moonraker.printStats.info = printStats.info;
         }
       }
 
       if (status.virtual_sdcard || status.virtualSdcard) {
-        const virtualSdcard = status.virtual_sdcard ?? status.virtualSdcard
+        const virtualSdcard = status.virtual_sdcard ?? status.virtualSdcard;
 
-        if ('progress' in virtualSdcard) {
-          this.moonraker.virtualSdcard.progress = asNumber(virtualSdcard.progress)
+        if ("progress" in virtualSdcard) {
+          this.moonraker.virtualSdcard.progress = asNumber(
+              virtualSdcard.progress,
+          );
         }
-        if ('file_position' in virtualSdcard) {
-          this.moonraker.virtualSdcard.filePosition = asNumber(virtualSdcard.file_position)
-        } else if ('filePosition' in virtualSdcard) {
-          this.moonraker.virtualSdcard.filePosition = asNumber(virtualSdcard.filePosition)
+        if ("file_position" in virtualSdcard) {
+          this.moonraker.virtualSdcard.filePosition = asNumber(
+              virtualSdcard.file_position,
+          );
+        } else if ("filePosition" in virtualSdcard) {
+          this.moonraker.virtualSdcard.filePosition = asNumber(
+              virtualSdcard.filePosition,
+          );
         }
-        if ('is_active' in virtualSdcard) {
-          this.moonraker.virtualSdcard.isActive = asBoolean(virtualSdcard.is_active)
-        } else if ('isActive' in virtualSdcard) {
-          this.moonraker.virtualSdcard.isActive = asBoolean(virtualSdcard.isActive)
+        if ("is_active" in virtualSdcard) {
+          this.moonraker.virtualSdcard.isActive = asBoolean(
+              virtualSdcard.is_active,
+          );
+        } else if ("isActive" in virtualSdcard) {
+          this.moonraker.virtualSdcard.isActive = asBoolean(
+              virtualSdcard.isActive,
+          );
         }
       }
 
       if (status.display_status || status.displayStatus) {
-        const displayStatus = status.display_status ?? status.displayStatus
+        const displayStatus = status.display_status ?? status.displayStatus;
 
-        if ('message' in displayStatus) {
-          this.moonraker.displayStatus.message = asString(displayStatus.message)
+        if ("message" in displayStatus) {
+          this.moonraker.displayStatus.message = asString(
+              displayStatus.message,
+          );
         }
-        if ('progress' in displayStatus) {
-          this.moonraker.displayStatus.progress = asNumber(displayStatus.progress)
+        if ("progress" in displayStatus) {
+          this.moonraker.displayStatus.progress = asNumber(
+              displayStatus.progress,
+          );
         }
       }
 
-      this.applyMoonrakerAfcUpdate(status)
-      this.applyDynamicMoonrakerDevices()
+      this.applyMoonrakerAfcUpdate(status);
+      this.applyDynamicMoonrakerDevices();
     },
 
     applyMoonrakerSubscriptionPayload(payload: any) {
-      const status = payload?.status ?? payload?.result?.status ?? payload
-      if (status && typeof status === 'object') {
-        this.applyMoonrakerStatusUpdate(status)
+      const status = payload?.status ?? payload?.result?.status ?? payload;
+      if (status && typeof status === "object") {
+        this.applyMoonrakerStatusUpdate(status);
       }
     },
 
     applyMoonrakerProcStats(payload: any) {
-      if (!payload || typeof payload !== 'object') return
+      if (!payload || typeof payload !== "object") return;
 
       if (
-          'moonraker_stats' in payload &&
+          "moonraker_stats" in payload &&
           payload.moonraker_stats &&
-          typeof payload.moonraker_stats === 'object'
+          typeof payload.moonraker_stats === "object"
       ) {
-        const stats = payload.moonraker_stats as Record<string, unknown>
+        const stats = payload.moonraker_stats as Record<string, unknown>;
 
-        if ('cpu_usage' in stats) this.moonraker.procStats.moonrakerCpuUsage = asNumber(stats.cpu_usage)
-        if ('memory' in stats) this.moonraker.procStats.memory = asNumber(stats.memory)
+        if ("cpu_usage" in stats)
+          this.moonraker.procStats.moonrakerCpuUsage = asNumber(
+              stats.cpu_usage,
+          );
+        if ("memory" in stats)
+          this.moonraker.procStats.memory = asNumber(stats.memory);
       }
 
-      if ('cpu_temp' in payload) this.moonraker.procStats.cpuTemp = asNumber(payload.cpu_temp)
-      if ('system_cpu_usage' in payload) this.moonraker.procStats.systemCpuUsage = asNumber(payload.system_cpu_usage)
-      if ('system_uptime' in payload) this.moonraker.procStats.systemUptime = asNumber(payload.system_uptime)
+      if ("cpu_temp" in payload)
+        this.moonraker.procStats.cpuTemp = asNumber(payload.cpu_temp);
+      if ("system_cpu_usage" in payload)
+        this.moonraker.procStats.systemCpuUsage = asNumber(
+            payload.system_cpu_usage,
+        );
+      if ("system_uptime" in payload)
+        this.moonraker.procStats.systemUptime = asNumber(payload.system_uptime);
 
-      if ('network' in payload && payload.network && typeof payload.network === 'object') {
-        this.moonraker.procStats.network = payload.network
+      if (
+          "network" in payload &&
+          payload.network &&
+          typeof payload.network === "object"
+      ) {
+        this.moonraker.procStats.network = payload.network;
       }
     },
 
     applyMoonrakerHistoryUpdate(payload: unknown) {
       this.moonraker.history = {
-        lastAction: 'history_update',
+        lastAction: "history_update",
         payload,
-      }
+      };
     },
 
     applyMoonrakerThrottle(payload: any) {
-      if (!payload || typeof payload !== 'object') return
+      if (!payload || typeof payload !== "object") return;
 
-      if ('bits' in payload) {
-        this.moonraker.throttle.bits = asNumber(payload.bits)
+      if ("bits" in payload) {
+        this.moonraker.throttle.bits = asNumber(payload.bits);
       }
 
-      if ('flags' in payload && Array.isArray(payload.flags)) {
+      if ("flags" in payload && Array.isArray(payload.flags)) {
         this.moonraker.throttle.flags = payload.flags.filter(
-            (x: unknown): x is string => typeof x === 'string',
-        )
+            (x: unknown): x is string => typeof x === "string",
+        );
       }
     },
 
     setFiles(payload: unknown) {
       if (Array.isArray(payload)) {
-        this.files.items = payload
-      } else if (payload && typeof payload === 'object' && Array.isArray((payload as any).files)) {
-        this.files.items = (payload as any).files
+        this.files.items = payload;
+      } else if (
+          payload &&
+          typeof payload === "object" &&
+          Array.isArray((payload as any).files)
+      ) {
+        this.files.items = (payload as any).files;
       } else {
-        this.files.items = []
+        this.files.items = [];
       }
 
-      this.files.lastUpdated = Date.now()
+      this.files.lastUpdated = Date.now();
     },
 
     resetConnectionState() {
-      this.setWebsocketConnected(false)
-      this.setMoonrakerReady(false)
+      this.setWebsocketConnected(false);
+      this.setMoonrakerReady(false);
     },
 
     resetMoonrakerData() {
-      this.moonraker.webhooks.state = null
-      this.moonraker.webhooks.stateMessage = null
+      this.moonraker.webhooks.state = null;
+      this.moonraker.webhooks.stateMessage = null;
 
       this.moonraker.extruder = {
         temperature: null,
         target: null,
         power: null,
-      }
+      };
 
       this.moonraker.heaterBed = {
         temperature: null,
         target: null,
         power: null,
-      }
+      };
 
-      this.moonraker.toolhead.position = []
+      this.moonraker.toolhead.position = [];
 
       this.moonraker.gcodeMove = {
         speed: null,
         speedFactor: null,
-      }
+      };
 
       this.moonraker.printStats = {
         state: null,
@@ -975,13 +1124,13 @@ export const useAppStore = defineStore('app', {
         totalDuration: null,
         filamentUsed: null,
         info: {},
-      }
+      };
 
       this.moonraker.virtualSdcard = {
         progress: null,
         filePosition: null,
         isActive: null,
-      }
+      };
 
       this.moonraker.procStats = {
         moonrakerCpuUsage: null,
@@ -990,38 +1139,38 @@ export const useAppStore = defineStore('app', {
         memory: null,
         network: {},
         systemUptime: null,
-      }
+      };
 
       this.moonraker.throttle = {
         bits: null,
         flags: [],
-      }
+      };
 
       this.moonraker.displayStatus = {
         message: null,
         progress: null,
-      }
+      };
 
       this.moonraker.history = {
         lastAction: null,
         payload: null,
-      }
+      };
 
       this.moonraker.afc = {
         available: false,
         objects: {},
-      }
+      };
 
-      this.moonraker.dynamicHeaters = []
-      this.moonraker.dynamicFans = []
-      this.moonraker.rawObjects = {}
+      this.moonraker.dynamicHeaters = [];
+      this.moonraker.dynamicFans = [];
+      this.moonraker.rawObjects = {};
     },
 
     resetFiles() {
       this.files = {
         items: [],
         lastUpdated: null,
-      }
+      };
     },
   },
-})
+});

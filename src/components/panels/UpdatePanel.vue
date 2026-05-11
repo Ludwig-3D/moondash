@@ -129,7 +129,14 @@ function hasUpdate(service: MoonrakerUpdateService): boolean {
 }
 
 function getServiceMessages(service: ServiceEntry): string[] {
-  return [`${t('settings.updates.packages')}: ${service.service.package_list?.join(", ")}`]
+  if(service.service.package_list && service.service.package_list.length > 0)
+    return [`${t('settings.updates.packages')}: ${service.service.package_list?.join(", ")}`]
+
+  return [
+    ...service.warnings,
+    ...service.anomalies,
+    service.lastError,
+  ].filter((message): message is string => Boolean(message))
 }
 
 function hasServiceMessages(service: ServiceEntry): boolean {

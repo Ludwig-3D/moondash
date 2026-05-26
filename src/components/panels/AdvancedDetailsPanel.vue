@@ -173,6 +173,34 @@ const printSpeed = computed(() => {
   return `${numberFormat.value.format(speed)} mm/s`
 })
 
+const activeVelocity = computed(() => {
+  const rawObjects = getRawObjects()
+  const toolhead = rawObjects.toolhead as Record<string, unknown> | undefined
+
+  const velocity = parseFiniteNumber(toolhead?.max_velocity)
+
+  if (velocity === null) return null
+
+  return `${numberFormat.value.format(velocity)} mm/s`
+})
+
+const activeAcceleration = computed(() => {
+  const toolhead = getToolhead()
+  const motionReport = getMotionReport()
+  const rawObjects = getRawObjects()
+  const rawToolhead = rawObjects.toolhead as Record<string, unknown> | undefined
+
+  const accel =
+      parseFiniteNumber(motionReport.live_accel)
+      ?? parseFiniteNumber(motionReport.live_acceleration)
+      ?? parseFiniteNumber(toolhead.max_accel)
+      ?? parseFiniteNumber(rawToolhead?.max_accel)
+
+  if (accel === null) return null
+
+  return `${numberFormat.value.format(accel)} mm/s²`
+})
+
 const printFlow = computed(() => {
   if (currentFlow.value === null) return null
   return `${numberFormat.value.format(currentFlow.value)} mm³/s`
@@ -209,28 +237,13 @@ const filamentLength = computed(() => {
   return `${filamentNumberFormat.value.format(length)} mm`
 })
 
-const filamentWeight = computed(() => {
-  const printStats = getPrintStats()
-  const length = parseFiniteNumber(printStats.filamentUsed ?? printStats.filament_used)
-  const diameter = getFilamentDiameter()
-  const density = getCurrentFilamentDensity()
-
-  if (length === null || diameter === null || density === null) return null
-
-  const radius = diameter / 2
-  const volumeMm3 = Math.PI * radius * radius * length
-  const volumeCm3 = volumeMm3 / 1000
-  const weightGrams = volumeCm3 * density
-
-  return `${filamentNumberFormat.value.format(weightGrams)} g`
-})
-
 const advancedMetrics = computed<AdvancedMetric[]>(() => [
   { label: t('advanced_details.speed'), value: printSpeed.value },
   { label: t('advanced_details.flow'), value: printFlow.value },
   { label: t('advanced_details.position'), value: printPosition.value },
+  { label: t('advanced_details.velocity'), value: activeVelocity.value },
+  { label: t('advanced_details.acceleration'), value: activeAcceleration.value },
   { label: t('advanced_details.filament_length'), value: filamentLength.value },
-  { label: t('advanced_details.filament_weight'), value: filamentWeight.value },
 ].filter((metric): metric is AdvancedMetric & { value: string } => metric.value !== null))
 </script>
 

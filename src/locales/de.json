@@ -266,7 +266,8 @@
     "flow": "Fluss",
     "position": "Position",
     "filament_length": "Filament Länge",
-    "filament_weight": "Filament Gewicht"
+    "velocity": "Geschwindigkeit",
+    "acceleration": "Beschleunigung"
   },
   "boot": {
     "startup": "System fährt hoch..."

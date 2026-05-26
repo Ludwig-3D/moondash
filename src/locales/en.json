@@ -266,7 +266,8 @@
     "flow": "Flow",
     "position": "Position",
     "filament_length": "Filament Length",
-    "filament_weight": "Filament Weight"
+    "velocity": "Velocity",
+    "acceleration": "Acceleration"
   },
   "boot": {
     "startup": "System booting up..."

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import { useAppStore } from '@/stores/app'
 import router from '../../router'
+import SwitchLaneDialogAFC from "@/components/afc/SwitchLaneDialogAFC.vue";
 
 const { t } = useI18n()
 const appStore = useAppStore()

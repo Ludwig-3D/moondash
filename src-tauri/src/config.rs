@@ -97,7 +97,7 @@ pub fn bump_idle_generation(app: &AppHandle) {
     if let Some(state) = app.try_state::<IdleWatcherGeneration>() {
         if let Ok(mut guard) = state.0.lock() {
             *guard += 1;
-            eprintln!("idle watcher generation bumped to {}", *guard);
+            eprintln!("[config] idle watcher generation bumped to {}", *guard);
         }
     }
 }
@@ -198,7 +198,7 @@ pub fn ensure_config_watcher(
     let mut guard = match watched_path_state.0.lock() {
         Ok(g) => g,
         Err(_) => {
-            eprintln!("failed to lock watched path state");
+            eprintln!("[config] failed to lock watched path state");
             return;
         }
     };
@@ -219,13 +219,13 @@ fn start_config_watcher(app: AppHandle, config_path: String) {
         let mut watcher = match notify::recommended_watcher(tx) {
             Ok(w) => w,
             Err(err) => {
-                eprintln!("failed to create config watcher: {}", err);
+                eprintln!("[config] failed to create config watcher: {}", err);
                 return;
             }
         };
 
         if let Err(err) = watcher.watch(&path, RecursiveMode::NonRecursive) {
-            eprintln!("failed to watch config file '{}': {}", config_path, err);
+            eprintln!("[config] failed to watch config file '{}': {}", config_path, err);
             return;
         }
 
@@ -269,15 +269,15 @@ fn start_config_watcher(app: AppHandle, config_path: String) {
                             crate::theme::emit_theme_assets(&app, &config_path);
                         }
                         Err(err) => {
-                            eprintln!("failed to reload config after file change: {}", err);
+                            eprintln!("[config] failed to reload config after file change: {}", err);
                         }
                     }
                 }
                 Ok(Err(err)) => {
-                    eprintln!("config watcher event error: {}", err);
+                    eprintln!("[config] watcher event error: {}", err);
                 }
                 Err(err) => {
-                    eprintln!("config watcher channel error: {}", err);
+                    eprintln!("[config] watcher channel error: {}", err);
                     break;
                 }
             }

@@ -3,6 +3,7 @@ mod input_idle;
 mod network;
 mod theme;
 mod wayland_power;
+mod version;
 
 use serde_json::json;
 use std::{thread, time::Duration};
@@ -28,21 +29,16 @@ fn frontend_log(level: String, message: String) {
 }
 
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
 fn turn_off_displays() -> Result<(), String> {
-    eprintln!("turn_off_displays command called");
+    eprintln!("[display power] turn off command called");
 
     match wayland_power::turn_off_displays() {
         Ok(()) => {
-            eprintln!("turn_off_displays succeeded");
+            eprintln!("[display power] turn off succeeded");
             Ok(())
         }
         Err(err) => {
-            eprintln!("turn_off_displays failed: {err}");
+            eprintln!("[display power] turn off failed: {err}");
             Err(err)
         }
     }
@@ -50,18 +46,18 @@ fn turn_off_displays() -> Result<(), String> {
 
 #[tauri::command]
 fn turn_on_displays(app: AppHandle) -> Result<(), String> {
-    eprintln!("turn_on_displays command called");
+    eprintln!("[display power] turn on command called");
 
     input_idle::reset_idle_timer();
 
     match wayland_power::turn_on_displays() {
         Ok(()) => {
-            eprintln!("turn_on_displays succeeded");
+            eprintln!("[display power] turn on succeeded");
             emit_awake_after_delay(&app);
             Ok(())
         }
         Err(err) => {
-            eprintln!("turn_on_displays failed: {err}");
+            eprintln!("[display power] turn on failed: {err}");
             Err(err)
         }
     }
@@ -69,42 +65,42 @@ fn turn_on_displays(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn sleep_displays_until_input(app: AppHandle) -> Result<(), String> {
-    eprintln!("sleep_displays_until_input command called");
+    eprintln!("[display power] sleep until input command called");
 
     match wayland_power::turn_off_displays() {
         Ok(()) => {
-            eprintln!("displays turned off");
+            eprintln!("[display power] turned off");
             emit_sleeping(&app);
         }
         Err(err) => {
-            eprintln!("failed to turn displays off: {err}");
+            eprintln!("[display power] failed to turn displays off: {err}");
             return Err(err);
         }
     }
 
     thread::spawn(move || {
-        eprintln!("manual sleep: waiting for input activity");
+        eprintln!("[display power] manual sleep, waiting for input activity");
 
         match input_idle::wait_for_input_activity() {
             Ok(()) => {
-                eprintln!("manual sleep: input detected, waking display");
+                eprintln!("[manual sleep] input detected, waking display");
 
                 for attempt in 1..=3 {
                     match wayland_power::turn_on_displays() {
                         Ok(()) => {
-                            eprintln!("manual sleep: display wake succeeded");
+                            eprintln!("[manual sleep] display wake succeeded");
                             emit_awake_after_delay(&app);
                             break;
                         }
                         Err(err) => {
-                            eprintln!("manual sleep: display wake failed attempt {attempt}: {err}");
+                            eprintln!("[manual sleep] display wake failed attempt {attempt}: {err}");
                             thread::sleep(Duration::from_millis(250));
                         }
                     }
                 }
             }
             Err(err) => {
-                eprintln!("manual sleep: input wake watcher failed: {err}");
+                eprintln!("[manual sleep] input wake watcher failed: {err}");
             }
         }
     });
@@ -136,13 +132,13 @@ fn start_idle_display_watcher(app: AppHandle) {
         let generation = config::get_idle_generation(&app);
 
         let Some((enabled, timeout_seconds)) = config::read_idle_config(&app) else {
-            eprintln!("input idle watcher: failed to read config");
+            eprintln!("[input watcher] failed to read config");
             thread::sleep(Duration::from_secs(5));
             continue;
         };
 
         eprintln!(
-            "input idle watcher config: enabled={enabled}, timeout={timeout_seconds}s, generation={generation}"
+            "[input watcher] enabled={enabled}, timeout={timeout_seconds}s, generation={generation}"
         );
 
         if !enabled {
@@ -155,7 +151,7 @@ fn start_idle_display_watcher(app: AppHandle) {
         let rx = match input_idle::start_input_idle_watcher(timeout_seconds) {
             Ok(rx) => rx,
             Err(err) => {
-                eprintln!("input idle watcher failed to start: {err}");
+                eprintln!("[input watcher] failed to start: {err}");
                 thread::sleep(Duration::from_secs(10));
                 continue;
             }
@@ -165,25 +161,25 @@ fn start_idle_display_watcher(app: AppHandle) {
 
         loop {
             if config::get_idle_generation(&app) != generation {
-                eprintln!("input idle watcher restarting because config changed");
+                eprintln!("[input watcher] restarting because config changed");
                 break;
             }
 
             match rx.recv_timeout(Duration::from_millis(500)) {
                 Ok(input_idle::InputIdleEvent::Activity) => {
                     if sleeping {
-                        eprintln!("input activity detected while sleeping, waking displays");
+                        eprintln!("[input watcher] activity detected while sleeping, waking displays");
 
                         for attempt in 1..=3 {
                             match wayland_power::turn_on_displays() {
                                 Ok(()) => {
-                                    eprintln!("automatic wake succeeded");
+                                    eprintln!("[input watcher] automatic wake succeeded");
                                     sleeping = false;
                                     emit_awake_after_delay(&app);
                                     break;
                                 }
                                 Err(err) => {
-                                    eprintln!("automatic wake failed attempt {attempt}: {err}");
+                                    eprintln!("[input watcher] automatic wake failed attempt {attempt}: {err}");
                                     thread::sleep(Duration::from_millis(250));
                                 }
                             }
@@ -192,23 +188,23 @@ fn start_idle_display_watcher(app: AppHandle) {
                 }
                 Ok(input_idle::InputIdleEvent::Idle) => {
                     if !sleeping {
-                        eprintln!("input idle timeout reached, turning displays off");
+                        eprintln!("[input watcher] timeout reached, turning displays off");
 
                         match wayland_power::turn_off_displays() {
                             Ok(()) => {
-                                eprintln!("automatic display sleep succeeded");
+                                eprintln!("[input watcher] automatic display sleep succeeded");
                                 sleeping = true;
                                 emit_sleeping(&app);
                             }
                             Err(err) => {
-                                eprintln!("automatic display sleep failed: {err}");
+                                eprintln!("[input watcher] automatic display sleep failed: {err}");
                             }
                         }
                     }
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 Err(err) => {
-                    eprintln!("input idle watcher channel closed: {err}");
+                    eprintln!("[input watcher] channel closed: {err}");
                     thread::sleep(Duration::from_secs(5));
                     break;
                 }
@@ -219,6 +215,8 @@ fn start_idle_display_watcher(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    eprintln!("[startup] moondash {} starting", version::current_version());
+
     tauri::Builder::default()
         .on_window_event(|_window, event| {
             if let WindowEvent::Resized(_) = event {
@@ -233,7 +231,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             frontend_log,
-            greet,
             config::get_config,
             config::load_config_file,
             config::save_editable_config,
@@ -254,6 +251,9 @@ pub fn run() {
             network::get_primary_ip_address,
         ])
         .setup(|app| {
+            version::check_and_restart_if_updated();
+            version::start_executable_update_watcher();
+
             let matches = app.cli().matches().ok();
 
             let fullscreen = matches
@@ -274,7 +274,7 @@ pub fn run() {
                 let cfg = match config::load_and_merge_config(&path) {
                     Ok(cfg) => cfg,
                     Err(err) => {
-                        eprintln!("config load error: {}", err);
+                        eprintln!("[input watcher] config load error: {}", err);
                         config::default_config()
                     }
                 };
@@ -318,6 +318,8 @@ pub fn run() {
                     }
                 }
             }
+
+            eprintln!("[startup] moondash {} is ready", version::current_version());
 
             Ok(())
         })

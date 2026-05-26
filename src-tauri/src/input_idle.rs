@@ -28,7 +28,7 @@ pub fn start_input_idle_watcher(timeout_seconds: u64) -> Result<Receiver<InputId
     let devices = open_input_devices()?;
 
     thread::spawn(move || {
-        eprintln!("input idle: watching {} input devices", devices.len());
+        eprintln!("[idle watcher] watching {} input devices", devices.len());
 
         for device in devices {
             spawn_device_reader(device, activity_tx.clone());
@@ -63,12 +63,12 @@ pub fn start_input_idle_watcher(timeout_seconds: u64) -> Result<Receiver<InputId
 
 pub fn reset_idle_timer() {
     let Some(lock) = SYNTHETIC_ACTIVITY_TX.get() else {
-        eprintln!("input idle: reset requested before watcher was started");
+        eprintln!("[idle watcher] reset requested before watcher was started");
         return;
     };
 
     let Ok(guard) = lock.lock() else {
-        eprintln!("input idle: reset requested but sender lock is poisoned");
+        eprintln!("[idle watcher] reset requested but sender lock is poisoned");
         return;
     };
 
@@ -91,7 +91,7 @@ pub fn wait_for_input_activity() -> Result<(), String> {
     let devices = open_input_devices()?;
 
     thread::spawn(move || {
-        eprintln!("input wake: watching {} input devices", devices.len());
+        eprintln!("[idle watcher] watching {} input devices", devices.len());
 
         for device in devices {
             spawn_device_reader(device, tx.clone());
@@ -99,7 +99,7 @@ pub fn wait_for_input_activity() -> Result<(), String> {
     });
 
     rx.recv()
-        .map_err(|err| format!("input activity watcher closed: {err}"))
+        .map_err(|err| format!("[idle watcher] closed: {err}"))
 }
 
 fn spawn_device_reader(mut device: Device, tx: Sender<()>) {
@@ -123,7 +123,7 @@ fn open_input_devices() -> Result<Vec<Device>, String> {
     let mut devices = Vec::new();
 
     let entries =
-        fs::read_dir("/dev/input").map_err(|e| format!("failed to read /dev/input: {e}"))?;
+        fs::read_dir("/dev/input").map_err(|e| format!("[idle watcher] failed to read /dev/input: {e}"))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -136,7 +136,7 @@ fn open_input_devices() -> Result<Vec<Device>, String> {
             Ok(device) => {
                 if !should_watch_device(&device) {
                     eprintln!(
-                        "input idle: ignoring {} ({})",
+                        "[idle watcher] ignoring {} ({})",
                         path.display(),
                         device.name().unwrap_or("unknown")
                     );
@@ -144,7 +144,7 @@ fn open_input_devices() -> Result<Vec<Device>, String> {
                 }
 
                 eprintln!(
-                    "input idle: opened {} ({})",
+                    "[idle watcher] opened {} ({})",
                     path.display(),
                     device.name().unwrap_or("unknown")
                 );
@@ -152,13 +152,13 @@ fn open_input_devices() -> Result<Vec<Device>, String> {
                 devices.push(device);
             }
             Err(err) => {
-                eprintln!("input idle: could not open {}: {err}", path.display());
+                eprintln!("[idle watcher] could not open {}: {err}", path.display());
             }
         }
     }
 
     if devices.is_empty() {
-        return Err("no readable /dev/input/event* devices found".to_string());
+        return Err("[idle watcher] no readable /dev/input/event* devices found".to_string());
     }
 
     Ok(devices)

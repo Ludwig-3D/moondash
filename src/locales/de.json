@@ -142,6 +142,7 @@
       "close": "Schließen",
       "connect": "Verbinden",
       "none": "Keine",
+      "webpanel": "Weboberfläche",
       "wifi": {
         "title": "WLAN",
         "hidden": "Versteckte SSID",

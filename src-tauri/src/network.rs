@@ -13,6 +13,14 @@ use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WifiInterface {
+    interface_name: String,
+    connected: bool,
+    ip: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkStatus {
     ethernet_connected: bool,
     wifi_connected: bool,
@@ -36,6 +44,8 @@ pub struct WifiSettings {
     enabled: bool,
     connected_ssid: Option<String>,
     connected_ip: Option<String>,
+    interface_name: Option<String>,
+    interfaces: Vec<WifiInterface>,
     saved_networks: Vec<WifiNetwork>,
     scanned_networks: Vec<WifiNetwork>,
 }
@@ -138,7 +148,12 @@ fn normalize_ssid(ssid: &str) -> String {
 #[cfg(target_os = "linux")]
 fn is_wifi_device(device: &Device) -> bool {
     let kind = format!("{}", device.device_type).to_lowercase();
-    kind.contains("wifi") || kind.contains("wireless")
+    let iface = device.interface.to_lowercase();
+
+    kind.contains("wifi")
+        || kind.contains("wireless")
+        || iface.starts_with("wl")
+        || iface.starts_with("wlan")
 }
 
 #[cfg(target_os = "linux")]
@@ -154,37 +169,110 @@ fn is_active_device(device: &Device) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn active_wifi_interface_name(devices: &[Device]) -> Option<String> {
-    devices
+fn wifi_interfaces_from_devices(devices: &[Device]) -> Vec<WifiInterface> {
+    let mut interfaces: Vec<WifiInterface> = devices
         .iter()
-        .find(|device| {
-            is_wifi_device(device)
-                && is_active_device(device)
-                && !device.interface.trim().is_empty()
+        .filter(|device| is_wifi_device(device))
+        .filter(|device| !device.interface.trim().is_empty())
+        .map(|device| {
+            let interface_name = device.interface.clone();
+
+            WifiInterface {
+                connected: is_active_device(device),
+                ip: ipv4_for_interface(&interface_name),
+                interface_name,
+            }
         })
-        .map(|device| device.interface.clone())
-        .or_else(|| {
-            devices
-                .iter()
-                .find(|device| is_wifi_device(device) && !device.interface.trim().is_empty())
-                .map(|device| device.interface.clone())
+        .collect();
+
+    interfaces.sort_by(|a, b| a.interface_name.cmp(&b.interface_name));
+    interfaces
+}
+
+#[cfg(target_os = "linux")]
+fn ipv4_for_interface_from_get_if_addrs(interface_name: &str) -> Option<String> {
+    eprintln!("[network] resolving ipv4 via get_if_addrs for interface={interface_name}");
+
+    let interfaces = match get_if_addrs() {
+        Ok(interfaces) => interfaces,
+        Err(err) => {
+            eprintln!("[network] get_if_addrs failed: {err}");
+            return None;
+        }
+    };
+
+    for iface in interfaces {
+        eprintln!(
+            "[network] get_if_addrs found interface={} addr={:?}",
+            iface.name,
+            iface.addr
+        );
+
+        if iface.name != interface_name {
+            continue;
+        }
+
+        match iface.addr {
+            IfAddr::V4(v4) if !v4.ip.is_loopback() => {
+                let ip = v4.ip.to_string();
+                eprintln!("[network] get_if_addrs matched {interface_name} ip={ip}");
+                return Some(ip);
+            }
+            _ => {}
+        }
+    }
+
+    eprintln!("[network] get_if_addrs found no ipv4 for interface={interface_name}");
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn ipv4_for_interface_from_nmcli(interface_name: &str) -> Option<String> {
+    eprintln!(
+        "[network] running command: nmcli -g IP4.ADDRESS device show {}",
+        interface_name
+    );
+
+    let output = match Command::new("nmcli")
+        .args(["-g", "IP4.ADDRESS", "device", "show", interface_name])
+        .output()
+    {
+        Ok(output) => output,
+        Err(err) => {
+            eprintln!("[network] nmcli ip lookup failed to run: {err}");
+            return None;
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    eprintln!(
+        "[network] nmcli ip lookup status={} stdout={:?} stderr={:?}",
+        output.status,
+        stdout,
+        stderr
+    );
+
+    if !output.status.success() {
+        return None;
+    }
+
+    stdout
+        .lines()
+        .filter_map(|line| line.trim().split('/').next())
+        .find(|ip| !ip.is_empty())
+        .map(|ip| {
+            let ip = ip.to_string();
+            eprintln!("[network] nmcli matched {interface_name} ip={ip}");
+            ip
         })
 }
 
 #[cfg(target_os = "linux")]
 fn ipv4_for_interface(interface_name: &str) -> Option<String> {
-    let interfaces = get_if_addrs().ok()?;
-
-    interfaces.into_iter().find_map(|iface| {
-        if iface.name != interface_name {
-            return None;
-        }
-
-        match iface.addr {
-            IfAddr::V4(v4) if !v4.ip.is_loopback() => Some(v4.ip.to_string()),
-            _ => None,
-        }
-    })
+    ipv4_for_interface_from_get_if_addrs(interface_name)
+        .or_else(|| ipv4_for_interface_from_nmcli(interface_name))
 }
 
 #[cfg(target_os = "linux")]
@@ -443,10 +531,6 @@ fn run_nmcli_device_toggle(interface_name: &str, enabled: bool) -> Result<(), St
     }
 }
 
-#[cfg(target_os = "linux")]
-fn wired_ipv4_for_interface(interface_name: &str) -> Option<String> {
-    ipv4_for_interface(interface_name)
-}
 
 #[cfg(target_os = "linux")]
 fn read_u64_file(path: impl AsRef<Path>) -> Option<u64> {
@@ -585,19 +669,21 @@ async fn get_wifi_settings_inner() -> Result<WifiSettings, String> {
         let nm = nm().await?;
         let devices = nm.list_devices().await.map_err(|e| e.to_string())?;
 
+        let wifi_interfaces = wifi_interfaces_from_devices(&devices);
+
+        let connected_interface = wifi_interfaces
+            .iter()
+            .find(|iface| iface.connected)
+            .or_else(|| wifi_interfaces.first());
+
+        let interface_name = connected_interface.map(|iface| iface.interface_name.clone());
+
+
+        let connected_ip = connected_interface
+            .and_then(|iface| iface.ip.clone());
+
         let enabled = nm.wifi_enabled().await.map_err(|e| e.to_string())?;
         let connected_ssid = nm.current_ssid().await.map(|ssid| normalize_ssid(&ssid));
-
-        let connected_ip = active_wifi_interface_name(&devices)
-            .as_deref()
-            .and_then(ipv4_for_interface)
-            .or_else(|| {
-                if connected_ssid.is_some() {
-                    primary_ip_from_udp()
-                } else {
-                    None
-                }
-            });
 
         let saved_names = saved_wifi_connection_names(&nm).await?;
 
@@ -636,6 +722,8 @@ async fn get_wifi_settings_inner() -> Result<WifiSettings, String> {
             enabled,
             connected_ssid,
             connected_ip,
+            interface_name,
+            interfaces: wifi_interfaces,
             saved_networks,
             scanned_networks,
         })
@@ -661,7 +749,7 @@ async fn get_wired_settings_inner() -> Result<WiredSettings, String> {
 
                 WiredInterface {
                     connected: is_active_device(&device),
-                    ip: wired_ipv4_for_interface(&interface_name),
+                    ip: ipv4_for_interface(&interface_name),
                     interface_name,
                 }
             })

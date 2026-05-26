@@ -142,6 +142,7 @@
       "close": "Close",
       "connect": "Connect",
       "none": "None",
+      "webpanel": "Web Interface",
       "wifi": {
         "title": "Wi-Fi",
         "hidden": "Hidden SSID",

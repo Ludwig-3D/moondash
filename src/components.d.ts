@@ -15,6 +15,7 @@ declare module 'vue' {
     AfcAlert: typeof import('./components/notifications/AfcAlert.vue')['default']
     BedMeshToolPanel: typeof import('./components/panels/BedMeshToolPanel.vue')['default']
     BootOverlay: typeof import('./components/overlays/BootOverlay.vue')['default']
+    CanbusNetworkPanel: typeof import('./components/panels/network/CanbusNetworkPanel.vue')['default']
     ColorPickerDialog: typeof import('./components/dialogs/ColorPickerDialog.vue')['default']
     ConfigEditorPanel: typeof import('./components/panels/ConfigEditorPanel.vue')['default']
     ControlPanel: typeof import('./components/panels/ControlPanel.vue')['default']
@@ -55,8 +56,11 @@ declare module 'vue' {
     UpdateInfoDialog: typeof import('./components/dialogs/UpdateInfoDialog.vue')['default']
     UpdatePanel: typeof import('./components/panels/UpdatePanel.vue')['default']
     WebcamToolPanel: typeof import('./components/panels/WebcamToolPanel.vue')['default']
+    WebPanelQrPanel: typeof import('./components/panels/network/WebPanelQrPanel.vue')['default']
     WifiNetworkDialog: typeof import('./components/dialogs/WifiNetworkDialog.vue')['default']
+    WifiNetworkPanel: typeof import('./components/panels/network/WifiNetworkPanel.vue')['default']
     WifiSavedDialog: typeof import('./components/dialogs/WifiSavedDialog.vue')['default']
     WifiScanDialog: typeof import('./components/dialogs/WifiScanDialog.vue')['default']
+    WiredNetworkPanel: typeof import('./components/panels/network/WiredNetworkPanel.vue')['default']
   }
 }

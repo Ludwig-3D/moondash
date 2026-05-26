@@ -226,10 +226,6 @@ function formatBitrate(value: number | null | undefined): string {
   return `${size.toFixed(precision)} ${units[unitIndex]}`
 }
 
-function formatCount(value: number | null | undefined): string {
-  return value === null || value === undefined || !Number.isFinite(value) ? '--' : new Intl.NumberFormat().format(value)
-}
-
 function formatCanbusSubtitle(iface: CanbusInterface): string {
   const parts: string[] = []
 
@@ -245,11 +241,6 @@ function formatCanbusSubtitle(iface: CanbusInterface): string {
   } else if (iface.bandwidth !== null && iface.bandwidth !== undefined) {
     parts.push(`${formatBytesPerSecond(iface.bandwidth)} total`)
   }
-
-  const packets: string[] = []
-  if (iface.rxPackets !== null && iface.rxPackets !== undefined) packets.push(`RX packets ${formatCount(iface.rxPackets)}`)
-  if (iface.txPackets !== null && iface.txPackets !== undefined) packets.push(`TX packets ${formatCount(iface.txPackets)}`)
-  if (packets.length) parts.push(packets.join(' / '))
 
   return parts.length ? parts.join(' · ') : '--'
 }

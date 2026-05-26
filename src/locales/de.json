@@ -89,11 +89,13 @@
     "dialog": {
       "timelapse": "Zeitraffer",
       "cancel": "Abbrechen",
+      "close": "Schließen",
       "print": "Drucken",
       "lane_update_failed": "Aktualisierung der Spurzuordnung fehlgeschlagen.",
       "print_start_failed": "Druck konnte nicht gestartet werden.",
       "timelapse_update_failed": "Zeitraffer konnte nicht aktualisiert werden.",
-      "add_to_print_queue": "Anreihen"
+      "add_to_print_queue": "Anreihen",
+      "switch_lane": "Spurauswahl"
     }
   },
   "notifications": {

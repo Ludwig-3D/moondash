@@ -150,6 +150,8 @@ const timelapseEnabled = ref(false)
 const saving = ref(false)
 const syncingTimelapse = ref(false)
 const selectedLaneByTool = ref<Record<string, string>>({})
+const switchLaneDialogOpen = ref(false)
+const selectedSwitchTool = ref<string | null>(null)
 const dialogThumbnails = ref<MoonrakerThumbnail[]>([])
 const loadingThumbnails = ref(false)
 
@@ -491,13 +493,6 @@ function laneOptionsFromAfc(): LaneOption[] {
 
 const laneOptions = computed<LaneOption[]>(() => laneOptionsFromAfc())
 
-const laneSelectItems = computed(() => {
-  return laneOptions.value.map((lane) => ({
-    title: lane.label,
-    value: lane.key,
-  }))
-})
-
 function laneDisplayName(laneKey: string): string {
   if (!laneKey) return ''
   const lane = laneOptions.value.find((entry) => entry.key === laneKey)
@@ -509,6 +504,20 @@ function laneDisplayColor(laneKey: string): string {
   if (!laneKey) return 'transparent'
   const lane = laneOptions.value.find((entry) => entry.key === laneKey)
   return lane?.color ?? '#434343'
+}
+
+function openSwitchLaneDialog(tool: string) {
+  if (saving.value || !laneOptions.value.length) return
+
+  selectedSwitchTool.value = tool
+  switchLaneDialogOpen.value = true
+}
+
+async function handleSwitchLaneSelect(laneKey: string) {
+  if (!selectedSwitchTool.value) return
+
+  await setLaneForTool(selectedSwitchTool.value, laneKey)
+  switchLaneDialogOpen.value = false
 }
 
 function getLaneMacroName(laneKey: string): string {
@@ -865,36 +874,13 @@ async function startPrint() {
                   }"
                 >
                   <div class="tool-strip__select-wrap">
-                    <v-select
-                        icon-color="transparent"
-                        :model-value="selectedLaneByTool[tool] || ''"
-                        :items="laneSelectItems"
-                        item-title="title"
-                        item-value="value"
-                        hide-details
-                        variant="solo"
-                        density="compact"
-                        class="tool-strip__select"
-                        :menu-props="{
-                        contentClass: 'tool-strip__menu',
-                        maxHeight: 320,
-                        zIndex: 9999,
-                      }"
-                        :disabled="saving || !laneSelectItems.length"
-                        @update:model-value="(value) => setLaneForTool(tool, typeof value === 'string' ? value : '')"
+                    <v-btn
+                        variant="plain"
+                        class="tool-strip__lane-button"
+                        :disabled="saving || !laneOptions.length"
+                        @click="openSwitchLaneDialog(tool)"
                     >
-                      <template #item="{ props: itemProps, item }">
-                        <v-list-item
-                            v-bind="itemProps"
-                            :title="item.title"
-                            class="tool-strip__dropdown-item"
-                            :style="{
-                            backgroundColor: laneDisplayColor(String(item.value)),
-                            color: getReadableTextColor(laneDisplayColor(String(item.value))),
-                          }"
-                        />
-                      </template>
-                    </v-select>
+                    </v-btn>
                   </div>
 
                   <div
@@ -961,6 +947,15 @@ async function startPrint() {
       </v-card-text>
     </v-card>
   </v-dialog>
+
+  <SwitchLaneDialogAFC
+      v-model="switchLaneDialogOpen"
+      :tool="selectedSwitchTool"
+      :afc-objects="moonraker.afc.objects"
+      :selected-lane-key="selectedSwitchTool ? selectedLaneByTool[selectedSwitchTool] || '' : ''"
+      :saving="saving"
+      @select="handleSwitchLaneSelect"
+  />
 </template>
 
 <style scoped>
@@ -1084,79 +1079,18 @@ async function startPrint() {
   overflow: hidden;
 }
 
-.tool-strip__select {
-  width: 100%;
-  max-width: 100%;
-  border-radius: 0;
-  background: transparent;
-}
-
-.tool-strip__select :deep(.v-input),
-.tool-strip__select :deep(.v-field),
-.tool-strip__select :deep(.v-field__input),
-.tool-strip__select :deep(.v-select__selection) {
-  max-width: 100%;
-  min-width: 0;
-}
-
-.tool-strip__select :deep(.v-field) {
-  box-shadow: none;
-  border-radius: 0;
-  background: transparent;
-  min-height: 84px;
-  width: 100%;
-  max-width: 100%;
-}
-
-.tool-strip__select :deep(.v-field__input) {
-  min-height: 84px;
+.tool-strip__lane-button {
+  display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 84px;
   width: 100%;
-  max-width: 100%;
+  border-radius: 0;
+  opacity: 1;
 }
 
-.tool-strip__select :deep(.v-select__selection) {
-  display: flex;
-  width: 100%;
-  justify-content: center;
-  max-width: 100%;
-}
-
-.tool-strip__select :deep(.v-select__selection-text) {
-  display: none;
-}
-
-.tool-strip__select :deep(.v-field__overlay) {
-  display: none;
-}
-
-.tool-strip__select :deep(.v-overlay__content .v-list) {
-  background: transparent;
-}
-
-.tool-strip__selection {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  padding: 4px 2px;
-  box-sizing: border-box;
-}
-
-.tool-strip__selection-material {
-  display: none;
-}
-
-.tool-strip__dropdown-item :deep(.v-list-item__overlay) {
-  opacity: 0.08;
-}
-
-.tool-strip__dropdown-item :deep(.v-list-item-title) {
-  font-weight: 600;
+.tool-strip__lane-button :deep(.v-btn__content) {
+  opacity: 1;
 }
 
 .tool-strip__bottom-bar {

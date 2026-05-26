@@ -47,6 +47,7 @@ declare module 'vue' {
     ShortcutButtonsPanel: typeof import('./components/panels/ShortcutButtonsPanel.vue')['default']
     SkipObjectDialog: typeof import('./components/dialogs/SkipObjectDialog.vue')['default']
     SpeedDialog: typeof import('./components/dialogs/SpeedDialog.vue')['default']
+    SwitchLaneDialogAFC: typeof import('./components/afc/SwitchLaneDialogAFC.vue')['default']
     TempDialog: typeof import('./components/dialogs/TempDialog.vue')['default']
     ToolsPanel: typeof import('./components/panels/ToolsPanel.vue')['default']
     TunePanel: typeof import('./components/panels/TunePanel.vue')['default']

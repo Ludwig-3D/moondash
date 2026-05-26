@@ -89,11 +89,13 @@
     "dialog": {
       "timelapse": "Timelapse",
       "cancel": "Cancel",
+      "close": "Close",
       "print": "Print",
       "lane_update_failed": "Failed to update lane mapping.",
       "print_start_failed": "Failed to start print.",
       "timelapse_update_failed": "Failed to update timelapse.",
-      "add_to_print_queue": "Add to queue"
+      "add_to_print_queue": "Add to queue",
+      "switch_lane": "Select Lane"
     }
   },
   "notifications": {

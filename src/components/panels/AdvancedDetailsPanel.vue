@@ -73,49 +73,6 @@ function getFilamentDiameter(): number | null {
   return diameter && diameter > 0 ? diameter : null
 }
 
-function getCurrentAfcMaterial(): string | null {
-  const afcObjects = (moonraker.value as any).afc?.objects ?? {}
-  const currentLoad = afcObjects.AFC?.current_load
-      ?? afcObjects.AFC?.next_lane
-      ?? null
-
-  if (typeof currentLoad !== 'string' || currentLoad.length === 0) return null
-
-  const lane = afcObjects[`AFC_stepper ${currentLoad}`]
-  const material = lane?.material
-
-  return typeof material === 'string' && material.length > 0 ? material : null
-}
-
-function getDensityMap(): Record<string, number> {
-  const rawObjects = getRawObjects()
-  const configfile = rawObjects.configfile ?? (moonraker.value as any).configfile ?? {}
-  const rawDensityValues = configfile.config?.AFC?.common_density_values
-
-  if (typeof rawDensityValues !== 'string') return {}
-
-  return rawDensityValues
-      .split(',')
-      .map((entry) => entry.trim())
-      .reduce<Record<string, number>>((densities, entry) => {
-        const [rawMaterial, rawDensity] = entry.split(':').map((part) => part.trim())
-        const density = parseFiniteNumber(rawDensity)
-
-        if (rawMaterial && density !== null && density > 0) {
-          densities[rawMaterial.toUpperCase()] = density
-        }
-
-        return densities
-      }, {})
-}
-
-function getCurrentFilamentDensity(): number | null {
-  const material = getCurrentAfcMaterial()
-  if (!material) return null
-
-  return getDensityMap()[material.toUpperCase()] ?? null
-}
-
 const lastExtruderSample = ref<{ e: number, time: number } | null>(null)
 const currentFlow = ref<number | null>(null)
 

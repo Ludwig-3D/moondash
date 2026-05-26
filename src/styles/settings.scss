@@ -59,3 +59,9 @@ body,
   height: 100%;
   overflow: hidden;
 }
+
+.v-theme--light {
+  .v-card.v-card--variant-flat {
+    background: rgba(var(--v-theme-on-surface), 0.08) !important;
+  }
+}

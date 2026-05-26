@@ -13,7 +13,7 @@ const appStore = useAppStore()
 const currentView = ref<ToolView>('home')
 const webcamCount = ref(0)
 
-let webcamRefreshTimer: ReturnType<typeof window.setInterval> | null = null
+let webcamRefreshTimer: number | null = null
 
 const hasBedMesh = computed(() => {
   const configfile = appStore.moonraker.rawObjects.configfile as

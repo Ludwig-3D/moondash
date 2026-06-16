@@ -12,12 +12,14 @@ import { invoke } from '@tauri-apps/api/core'
 import IdleOverlay from './components/overlays/IdleOverlay.vue'
 import LaneDialogAFC from '@/components/afc/LaneDialogAFC.vue'
 import BootOverlay from "@/components/overlays/BootOverlay.vue";
+import {useTouchFix} from "@/composables/useTouchFix.ts";
 
 const appStore = useAppStore()
 const { locale } = useI18n({ useScope: 'global' })
 const theme = useTheme()
 const router = useRouter()
 
+useTouchFix()
 
 type AfcLaneDialogData = {
   id: string

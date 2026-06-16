@@ -53,7 +53,7 @@ let filenameResizeObserver: ResizeObserver | null = null
 let displayMessageResizeObserver: ResizeObserver | null = null
 let jobQueueRefreshTimer: number | null = null
 
-const printState = computed(() => moonraker.value.printStats.state?.toLowerCase() ?? '')
+const printState = computed(() => moonraker.value.printStats?.state?.toLowerCase() ?? '')
 const printFilename = computed(() => moonraker.value.printStats.filename ?? '')
 const fileDisplayName = computed(() => printFilename.value.replace(/\.gcode$/i, ''))
 const displayMessage = computed(() => moonraker.value.displayStatus.message?.trim() ?? '')

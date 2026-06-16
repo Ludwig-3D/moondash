@@ -16,15 +16,28 @@ const hasJobQueue = ref(false)
 
 const advancedStatesEnabled = computed(() => advancedStates.value === true)
 
-const isPrinting = computed(() => moonraker.value.printStats?.state === 'printing')
-const isPaused = computed(() => moonraker.value.printStats?.state === 'paused')
-const isPrintRunningOrPaused = computed(() => isPrinting.value || isPaused.value)
+const printState = computed(
+    () => moonraker.value.printStats?.state?.toLowerCase() ?? '',
+)
+
+const isPrinting = computed(() => printState.value === 'printing')
+const isPaused = computed(() => printState.value === 'paused')
+const isFinished = computed(
+    () =>
+        printState.value === 'complete' ||
+        printState.value === 'cancelled',
+)
+
+const isPrintVisible = computed(
+    () => isPrinting.value || isPaused.value || isFinished.value,
+)
+
 const showJobQueuePanel = computed(() => hasJobQueue.value && !hasNotifications.value && !isPrinting.value)
 const showAdvancedDetailsPanel = computed(() => (
     advancedStatesEnabled.value &&
     !hasNotifications.value &&
     !showJobQueuePanel.value &&
-    isPrintRunningOrPaused.value
+    isPrintVisible.value
 ))
 </script>
 

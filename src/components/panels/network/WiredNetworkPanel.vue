@@ -1,45 +1,22 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
+const appStore = useAppStore()
 
-type WiredInterface = {
-  interfaceName: string
-  connected: boolean
-  ip: string | null
-}
-
-type WiredSettings = {
-  interfaces: WiredInterface[]
-}
-
-const wiredSettings = ref<WiredSettings | null>(null)
 const wiredBusy = ref<string | null>(null)
-
-const wiredInterfaces = computed(() => wiredSettings.value?.interfaces ?? [])
-
-async function loadWiredSettings() {
-  wiredSettings.value = await invoke<WiredSettings>('get_wired_settings')
-}
+const wiredInterfaces = computed(() => appStore.getWiredSettings?.interfaces ?? [])
 
 async function toggleWired(interfaceName: string, enabled: boolean) {
   try {
     wiredBusy.value = interfaceName
-
-    await invoke('set_wired_interface_enabled', {
-      interfaceName,
-      enabled,
-    })
-
-    await loadWiredSettings()
+    await appStore.setWiredInterfaceEnabled(interfaceName, enabled)
   } finally {
     wiredBusy.value = null
   }
 }
-
-onMounted(loadWiredSettings)
 </script>
 
 <template>

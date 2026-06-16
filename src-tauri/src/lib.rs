@@ -213,6 +213,28 @@ fn start_idle_display_watcher(app: AppHandle) {
     });
 }
 
+fn start_network_change_watcher(app: AppHandle) {
+    thread::spawn(move || {
+        let mut last_snapshot: Option<String> = None;
+
+        loop {
+            let snapshot = format!(
+                "{:?}|{:?}|{:?}",
+                network::get_primary_ip_address_blocking(),
+                network::get_wifi_settings_blocking(),
+                network::get_wired_settings_blocking(),
+            );
+
+            if last_snapshot.as_ref() != Some(&snapshot) {
+                last_snapshot = Some(snapshot);
+                let _ = app.emit("network-changed", ());
+            }
+
+            thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     eprintln!("[startup] moondash {} starting", version::current_version());
@@ -301,6 +323,7 @@ pub fn run() {
             let _ = app.emit("config-loaded", final_config.clone());
 
             start_idle_display_watcher(app.handle().clone());
+            start_network_change_watcher(app.handle().clone());
 
             if fullscreen {
                 if let Some(window) = app.get_webview_window("main") {

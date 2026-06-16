@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import QRCode from 'qrcode'
+import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
+const appStore = useAppStore()
 
-const primaryIp = ref<string | null>(null)
 const qrDataUrl = ref<string | null>(null)
 const loading = ref(false)
-const error = ref<string | null>(null)
 
-let refreshTimer: number | null = null
+const primaryIp = computed(() => appStore.getPrimaryIp)
+const error = computed(() => appStore.getPrimaryIpError)
 
 const webPanelUrl = computed(() => {
   if (!primaryIp.value) return null
@@ -27,42 +27,24 @@ async function generateQrForIp(nextPrimaryIp: string) {
   })
 }
 
-async function refresh(force = false) {
-  try {
-    loading.value = true
-    error.value = null
+watch(
+    primaryIp,
+    async (nextPrimaryIp) => {
+      if (!nextPrimaryIp) {
+        qrDataUrl.value = null
+        return
+      }
 
-    const nextPrimaryIp = await invoke<string>('get_primary_ip_address')
+      loading.value = true
 
-    if (!force && nextPrimaryIp === primaryIp.value) {
-      return
-    }
-
-    primaryIp.value = nextPrimaryIp
-    await generateQrForIp(nextPrimaryIp)
-  } catch (err) {
-    primaryIp.value = null
-    qrDataUrl.value = null
-    error.value = String(err)
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(() => {
-  void refresh(true)
-
-  refreshTimer = window.setInterval(() => {
-    void refresh(false)
-  }, 1_000)
-})
-
-onBeforeUnmount(() => {
-  if (refreshTimer !== null) {
-    window.clearInterval(refreshTimer)
-    refreshTimer = null
-  }
-})
+      try {
+        await generateQrForIp(nextPrimaryIp)
+      } finally {
+        loading.value = false
+      }
+    },
+    { immediate: true },
+)
 </script>
 
 <template>

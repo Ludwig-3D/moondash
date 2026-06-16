@@ -1,28 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAppStore, type WifiNetwork } from '@/stores/app'
 
 const { t } = useI18n()
+const appStore = useAppStore()
 
-type WifiNetwork = {
-  ssid: string
-  secured: boolean
-  saved: boolean
-  signalPercent: number | null
-}
-
-type WifiSettings = {
-  enabled: boolean
-  connectedSsid: string | null
-  connectedIp: string | null
-  savedNetworks: WifiNetwork[]
-  scannedNetworks: WifiNetwork[]
-}
-
-const wifiSettings = ref<WifiSettings | null>(null)
-
-const loading = ref(false)
 const wifiBusy = ref(false)
 const scanBusy = ref(false)
 const connectBusy = ref(false)
@@ -38,6 +21,7 @@ const wifiPassword = ref('')
 const hiddenSsid = ref('')
 const hiddenPassword = ref('')
 
+const wifiSettings = computed(() => appStore.getWifiSettings)
 const wifiEnabled = computed(() => wifiSettings.value?.enabled ?? false)
 const connectedSsid = computed(() => wifiSettings.value?.connectedSsid ?? null)
 const connectedIp = computed(() => wifiSettings.value?.connectedIp ?? null)
@@ -53,25 +37,11 @@ function signalIcon(signal: number | null): string {
   return 'mdi-wifi-strength-outline'
 }
 
-async function loadWifiSettings() {
-  loading.value = true
-
-  try {
-    wifiSettings.value = await invoke<WifiSettings>('get_wifi_settings')
-  } finally {
-    loading.value = false
-  }
-}
-
 async function toggleWifi(value: boolean | null) {
   wifiBusy.value = true
 
   try {
-    await invoke('set_wifi_enabled', {
-      enabled: Boolean(value),
-    })
-
-    await loadWifiSettings()
+    await appStore.setWifiEnabled(Boolean(value))
   } finally {
     wifiBusy.value = false
   }
@@ -81,19 +51,8 @@ async function scanWifiNetworks() {
   scanBusy.value = true
 
   try {
-    const networks = await invoke<WifiNetwork[]>('scan_wifi_networks')
-
-    wifiSettings.value = {
-      enabled: wifiSettings.value?.enabled ?? true,
-      connectedSsid: wifiSettings.value?.connectedSsid ?? null,
-      connectedIp: wifiSettings.value?.connectedIp ?? null,
-      savedNetworks: wifiSettings.value?.savedNetworks ?? [],
-      scannedNetworks: networks,
-    }
-
+    await appStore.scanWifiNetworks()
     scanDialogOpen.value = true
-
-    await loadWifiSettings()
   } finally {
     scanBusy.value = false
   }
@@ -109,16 +68,11 @@ async function connectNetwork(network: WifiNetwork, password?: string) {
   connectBusy.value = true
 
   try {
-    await invoke('connect_to_wifi', {
-      ssid: network.ssid,
-      password: password || null,
-    })
+    await appStore.connectToWifi(network.ssid, password || null)
 
     scanDialogOpen.value = false
     savedDialogOpen.value = false
     passwordDialogOpen.value = false
-
-    await loadWifiSettings()
   } finally {
     connectBusy.value = false
   }
@@ -133,16 +87,11 @@ async function connectHiddenNetwork() {
   connectBusy.value = true
 
   try {
-    await invoke('connect_hidden_wifi', {
-      ssid: hiddenSsid.value,
-      password: hiddenPassword.value || null,
-    })
+    await appStore.connectHiddenWifi(hiddenSsid.value, hiddenPassword.value || null)
 
     hiddenDialogOpen.value = false
     hiddenSsid.value = ''
     hiddenPassword.value = ''
-
-    await loadWifiSettings()
   } finally {
     connectBusy.value = false
   }
@@ -152,11 +101,7 @@ async function forgetNetwork(network: WifiNetwork) {
   forgetBusy.value = network.ssid
 
   try {
-    await invoke('forget_saved_wifi', {
-      ssid: network.ssid,
-    })
-
-    await loadWifiSettings()
+    await appStore.forgetSavedWifi(network.ssid)
   } finally {
     forgetBusy.value = null
   }
@@ -170,10 +115,6 @@ function selectNetwork(network: WifiNetwork) {
 
   void connectNetwork(network)
 }
-
-onMounted(() => {
-  void loadWifiSettings()
-})
 </script>
 
 <template>

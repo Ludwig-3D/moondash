@@ -191,23 +191,14 @@ fn wifi_interfaces_from_devices(devices: &[Device]) -> Vec<WifiInterface> {
 
 #[cfg(target_os = "linux")]
 fn ipv4_for_interface_from_get_if_addrs(interface_name: &str) -> Option<String> {
-    eprintln!("[network] resolving ipv4 via get_if_addrs for interface={interface_name}");
-
     let interfaces = match get_if_addrs() {
         Ok(interfaces) => interfaces,
-        Err(err) => {
-            eprintln!("[network] get_if_addrs failed: {err}");
+        Err(_err) => {
             return None;
         }
     };
 
     for iface in interfaces {
-        eprintln!(
-            "[network] get_if_addrs found interface={} addr={:?}",
-            iface.name,
-            iface.addr
-        );
-
         if iface.name != interface_name {
             continue;
         }
@@ -215,44 +206,28 @@ fn ipv4_for_interface_from_get_if_addrs(interface_name: &str) -> Option<String> 
         match iface.addr {
             IfAddr::V4(v4) if !v4.ip.is_loopback() => {
                 let ip = v4.ip.to_string();
-                eprintln!("[network] get_if_addrs matched {interface_name} ip={ip}");
                 return Some(ip);
             }
             _ => {}
         }
     }
 
-    eprintln!("[network] get_if_addrs found no ipv4 for interface={interface_name}");
     None
 }
 
 #[cfg(target_os = "linux")]
 fn ipv4_for_interface_from_nmcli(interface_name: &str) -> Option<String> {
-    eprintln!(
-        "[network] running command: nmcli -g IP4.ADDRESS device show {}",
-        interface_name
-    );
-
     let output = match Command::new("nmcli")
         .args(["-g", "IP4.ADDRESS", "device", "show", interface_name])
         .output()
     {
         Ok(output) => output,
-        Err(err) => {
-            eprintln!("[network] nmcli ip lookup failed to run: {err}");
+        Err(_err) => {
             return None;
         }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-
-    eprintln!(
-        "[network] nmcli ip lookup status={} stdout={:?} stderr={:?}",
-        output.status,
-        stdout,
-        stderr
-    );
 
     if !output.status.success() {
         return None;
@@ -264,7 +239,6 @@ fn ipv4_for_interface_from_nmcli(interface_name: &str) -> Option<String> {
         .find(|ip| !ip.is_empty())
         .map(|ip| {
             let ip = ip.to_string();
-            eprintln!("[network] nmcli matched {interface_name} ip={ip}");
             ip
         })
 }
@@ -1175,4 +1149,26 @@ pub async fn get_primary_ip_address() -> Result<String, String> {
     tokio::task::spawn_blocking(get_primary_ip_address_inner)
         .await
         .map_err(|e| e.to_string())?
+}
+
+pub fn get_primary_ip_address_blocking() -> Result<String, String> {
+    get_primary_ip_address_inner()
+}
+
+pub fn get_wifi_settings_blocking() -> Result<WifiSettings, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    runtime.block_on(get_wifi_settings_inner())
+}
+
+pub fn get_wired_settings_blocking() -> Result<WiredSettings, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    runtime.block_on(get_wired_settings_inner())
 }

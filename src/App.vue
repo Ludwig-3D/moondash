@@ -305,6 +305,7 @@ onMounted(async () => {
   try {
     await appStore.startConfigListener()
     await appStore.startThemeListener()
+    await appStore.startNetworkListener()
     await appStore.loadThemeAssets()
     await appStore.loadConfig()
 
@@ -319,6 +320,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   appStore.stopConfigListener()
   appStore.stopThemeListener()
+  appStore.stopNetworkListener()
   appStore.resetConnectionState()
   moonraker.stopAutoConnectFromConfig()
   moonraker.disconnect()

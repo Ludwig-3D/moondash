@@ -52,6 +52,39 @@ type AppConfig = {
   shortcutbuttons?: ShortcutButtonConfig[];
 };
 
+export type WifiNetwork = {
+  ssid: string;
+  secured: boolean;
+  saved: boolean;
+  signalPercent: number | null;
+};
+
+export type WifiInterface = {
+  interfaceName: string;
+  connected: boolean;
+  ip: string | null;
+};
+
+export type WifiSettings = {
+  enabled: boolean;
+  connectedSsid: string | null;
+  connectedIp: string | null;
+  interfaceName?: string | null;
+  interfaces?: WifiInterface[];
+  savedNetworks: WifiNetwork[];
+  scannedNetworks: WifiNetwork[];
+};
+
+export type WiredInterface = {
+  interfaceName: string;
+  connected: boolean;
+  ip: string | null;
+};
+
+export type WiredSettings = {
+  interfaces: WiredInterface[];
+};
+
 type MoonrakerHeater = {
   temperature: number | null;
   target: number | null;
@@ -300,6 +333,14 @@ export const useAppStore = defineStore("app", {
     printFilesGridColumns: null as number | null,
     shortcutButtons: [] as ShortcutButtonConfig[],
 
+    networkListener: null as UnlistenFn | null,
+    networkRefreshBusy: false as boolean,
+    networkRefreshQueued: false as boolean,
+    primaryIp: null as string | null,
+    primaryIpError: null as string | null,
+    wifiSettings: null as WifiSettings | null,
+    wiredSettings: null as WiredSettings | null,
+
     websocket: {
       ip: "127.0.0.1:7125",
       connected: false,
@@ -410,6 +451,11 @@ export const useAppStore = defineStore("app", {
     getPrintFilesGridRow: (state) => state.printFilesGridRow,
     getPrintFilesGridColumns: (state) => state.printFilesGridColumns,
     getShortcutButtons: (state) => state.shortcutButtons,
+    getNetworkRefreshBusy: (state) => state.networkRefreshBusy,
+    getPrimaryIp: (state) => state.primaryIp,
+    getPrimaryIpError: (state) => state.primaryIpError,
+    getWifiSettings: (state) => state.wifiSettings,
+    getWiredSettings: (state) => state.wiredSettings,
 
     getWebsocket: (state) => state.websocket,
     getWebsocketIp: (state) => state.websocket.ip,
@@ -546,6 +592,164 @@ export const useAppStore = defineStore("app", {
       this.shortcutButtons = Array.isArray(value)
           ? normalizeShortcutButtons(value)
           : [];
+    },
+
+    setPrimaryIp(value: string | null) {
+      this.primaryIp = value;
+    },
+
+    setPrimaryIpError(value: string | null) {
+      this.primaryIpError = value;
+    },
+
+    setWifiSettings(value: WifiSettings | null) {
+      this.wifiSettings = value;
+    },
+
+    setWiredSettings(value: WiredSettings | null) {
+      this.wiredSettings = value;
+    },
+
+    async loadPrimaryIpAddress() {
+      if (!isTauriRuntime()) return null;
+
+      try {
+        const ip = await invoke<string>("get_primary_ip_address");
+        this.setPrimaryIp(ip);
+        this.setPrimaryIpError(null);
+        return ip;
+      } catch (err) {
+        this.setPrimaryIp(null);
+        this.setPrimaryIpError(String(err));
+        throw err;
+      }
+    },
+
+    async loadWifiSettings() {
+      if (!isTauriRuntime()) return null;
+
+      const settings = await invoke<WifiSettings>("get_wifi_settings");
+      this.setWifiSettings(settings);
+      return settings;
+    },
+
+    async loadWiredSettings() {
+      if (!isTauriRuntime()) return null;
+
+      const settings = await invoke<WiredSettings>("get_wired_settings");
+      this.setWiredSettings(settings);
+      return settings;
+    },
+
+    async refreshNetworkState() {
+      if (!isTauriRuntime()) return;
+
+      if (this.networkRefreshBusy) {
+        this.networkRefreshQueued = true;
+        return;
+      }
+
+      this.networkRefreshBusy = true;
+
+      try {
+        await Promise.allSettled([
+          this.loadPrimaryIpAddress(),
+          this.loadWifiSettings(),
+          this.loadWiredSettings(),
+        ]);
+      } finally {
+        this.networkRefreshBusy = false;
+
+        if (this.networkRefreshQueued) {
+          this.networkRefreshQueued = false;
+          void this.refreshNetworkState();
+        }
+      }
+    },
+
+    async startNetworkListener() {
+      if (this.networkListener || !isTauriRuntime()) return;
+
+      await this.refreshNetworkState();
+
+      this.networkListener = await listen("network-changed", () => {
+        void this.refreshNetworkState();
+      });
+    },
+
+    stopNetworkListener() {
+      if (this.networkListener) {
+        this.networkListener();
+        this.networkListener = null;
+      }
+    },
+
+    async setWifiEnabled(enabled: boolean) {
+      if (!isTauriRuntime()) return;
+
+      await invoke("set_wifi_enabled", { enabled });
+      await this.loadWifiSettings();
+      await this.loadPrimaryIpAddress().catch(() => null);
+    },
+
+    async scanWifiNetworks() {
+      if (!isTauriRuntime()) return [] as WifiNetwork[];
+
+      const networks = await invoke<WifiNetwork[]>("scan_wifi_networks");
+
+      this.setWifiSettings({
+        enabled: this.wifiSettings?.enabled ?? true,
+        connectedSsid: this.wifiSettings?.connectedSsid ?? null,
+        connectedIp: this.wifiSettings?.connectedIp ?? null,
+        interfaceName: this.wifiSettings?.interfaceName ?? null,
+        interfaces: this.wifiSettings?.interfaces ?? [],
+        savedNetworks: this.wifiSettings?.savedNetworks ?? [],
+        scannedNetworks: networks,
+      });
+
+      await this.loadWifiSettings();
+      return networks;
+    },
+
+    async connectToWifi(ssid: string, password?: string | null) {
+      if (!isTauriRuntime()) return;
+
+      await invoke("connect_to_wifi", {
+        ssid,
+        password: password || null,
+      });
+
+      await this.refreshNetworkState();
+    },
+
+    async connectHiddenWifi(ssid: string, password?: string | null) {
+      if (!isTauriRuntime()) return;
+
+      await invoke("connect_hidden_wifi", {
+        ssid,
+        password: password || null,
+      });
+
+      await this.refreshNetworkState();
+    },
+
+    async forgetSavedWifi(ssid: string) {
+      if (!isTauriRuntime()) return;
+
+      await invoke("forget_saved_wifi", { ssid });
+      await this.loadWifiSettings();
+    },
+
+    async setWiredInterfaceEnabled(interfaceName: string, enabled: boolean) {
+      if (!isTauriRuntime()) return;
+
+      await invoke("set_wired_interface_enabled", {
+        interfaceName,
+        enabled,
+      });
+
+      await this.loadWiredSettings();
+      await this.loadPrimaryIpAddress().catch(() => null);
     },
 
     applyConfig(config: AppConfig) {

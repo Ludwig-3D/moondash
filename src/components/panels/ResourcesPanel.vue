@@ -15,6 +15,7 @@ type McuObject = {
   last_stats?: {
     mcu_awake?: number | null
     mcu_task_avg?: number | null
+    mcu_task_stddev?: number | null
     freq?: number | null
   }
   temperature?: number | null
@@ -48,26 +49,6 @@ const cpuTemperature = computed(() => firstNumber(
     fullProcStats.value.cpu_temp,
     systemInfo.value.cpu_info?.temperature,
 ))
-
-const hostLoad = computed(() => {
-  const systemCpu = firstValue(
-      procStats.value.systemCpuUsage,
-      procStats.value.system_cpu_usage,
-      fullProcStats.value.systemCpuUsage,
-      fullProcStats.value.system_cpu_usage,
-  )
-
-  if (systemCpu && typeof systemCpu === 'object') {
-    return firstNumber(
-        systemCpu.cpu,
-        systemCpu.total,
-        systemCpu.usage,
-        systemCpu.value,
-    )
-  }
-
-  return firstNumber(systemCpu)
-})
 
 const systemMemory = computed<AnyRecord>(() =>
     procStats.value.system_memory ??
@@ -210,6 +191,7 @@ const mcus = computed(() => {
         const mcuName = key === 'mcu' ? 'mcu' : key.slice(4)
         const awake = firstNumber(mcu.last_stats?.mcu_awake)
         const taskAverage = firstNumber(mcu.last_stats?.mcu_task_avg)
+        const taskStddev = firstNumber(mcu.last_stats?.mcu_task_stddev)
         const measuredFrequency = firstNumber(mcu.last_stats?.freq)
         const configuredFrequency = firstNumber(mcu.mcu_constants?.CLOCK_FREQ)
 
@@ -217,9 +199,14 @@ const mcus = computed(() => {
           key,
           name: key === 'mcu' ? t('settings.resources.main_mcu') : mcuName,
           version: [mcu.app, mcu.mcu_version].filter(Boolean).join(' ') || '—',
-          load: taskAverage === null ? null : taskAverage * 1000,
+          // Mainsail displays the average MCU task time plus its
+          // standard deviation, converted from seconds to milliseconds.
+          load: taskAverage === null && taskStddev === null
+              ? null
+              : ((taskAverage ?? 0) + (taskStddev ?? 0)) * 1000,
           awake,
-          usage: awake === null ? null : normalizePercent(awake * 100),
+          // mcu_awake is the 0.0–1.0 utilization ratio for the bar.
+          usage: taskStddev === null ? null : taskStddev * 1000 * 100,
           frequency: measuredFrequency ?? configuredFrequency,
           chipset: mcu.mcu_constants?.MCU || '—',
           temperature: firstNumber(
@@ -234,13 +221,6 @@ const mcus = computed(() => {
         return a.name.localeCompare(b.name)
       })
 })
-
-function firstValue(...values: unknown[]): unknown {
-  for (const value of values) {
-    if (value !== null && value !== undefined) return value
-  }
-  return null
-}
 
 function firstNumber(...values: unknown[]): number | null {
   for (const value of values) {
@@ -309,10 +289,6 @@ function formatBytes(value: number | null): string {
 function formatFrequency(value: number | null): string {
   return value === null ? '—' : `${Math.round(value / 1_000_000)} MHz`
 }
-
-function formatDecimal(value: number | null): string {
-  return value === null ? '—' : value.toFixed(2)
-}
 </script>
 
 <template>
@@ -338,19 +314,12 @@ function formatDecimal(value: number | null): string {
                 height="8"
             />
 
-            <v-row density="comfortable" class="metric-details">
-              <v-col cols="6" class="py-0">
-                {{ t('settings.resources.load') }}:
-                <strong>{{ formatDecimal(hostLoad) }}</strong>
-              </v-col>
-
-              <v-col cols="6" class="py-0 text-right">
-                {{ t('settings.resources.temperature') }}:
-                <strong :class="temperatureClass(cpuTemperature)">
-                  {{ formatTemperature(cpuTemperature) }}
-                </strong>
-              </v-col>
-            </v-row>
+            <div class="text-caption">
+              {{ t('settings.resources.temperature') }}:
+              <strong :class="temperatureClass(cpuTemperature)">
+                {{ formatTemperature(cpuTemperature) }}
+              </strong>
+            </div>
           </section>
 
           <v-divider />

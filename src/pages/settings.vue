@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n'
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
-const validTabs = new Set(['network', 'settings', 'tools', 'shortcuts', 'updates'])
+const validTabs = new Set(['network', 'settings', 'tools', 'resources', 'shortcuts', 'updates'])
 const tab = ref(getInitialTab())
 
 function getInitialTab(): string {
@@ -59,6 +59,7 @@ onBeforeUnmount(() => {
         <v-tab value="network">{{ t('settings.tab.network') }}</v-tab>
         <v-tab value="settings">{{ t('settings.tab.settings') }}</v-tab>
         <v-tab value="tools">{{ t('settings.tab.tools') }}</v-tab>
+        <v-tab value="resources">{{ t('settings.tab.resources') }}</v-tab>
         <v-tab value="shortcuts">{{ t('settings.tab.shortcuts') }}</v-tab>
         <v-tab value="updates">{{ t('settings.tab.updates') }}</v-tab>
       </v-tabs>
@@ -78,6 +79,11 @@ onBeforeUnmount(() => {
       <v-tabs-window-item value="tools">
         <v-sheet class="pa-0 pr-3 pb-3 pt-2" color="transparent">
           <ToolsPanel/>
+        </v-sheet>
+      </v-tabs-window-item>
+      <v-tabs-window-item value="resources">
+        <v-sheet class="pa-0 pr-3 pb-3 pt-2" color="transparent">
+          <ResourcesPanel/>
         </v-sheet>
       </v-tabs-window-item>
       <v-tabs-window-item value="shortcuts">

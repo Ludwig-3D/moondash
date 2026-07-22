@@ -37,6 +37,7 @@ declare module 'vue' {
     PrintDialog: typeof import('./components/dialogs/PrintDialog.vue')['default']
     PrintFilePanel: typeof import('./components/panels/PrintFilePanel.vue')['default']
     PrintFilePreview: typeof import('./components/PrintFilePreview.vue')['default']
+    ResourcesPanel: typeof import('./components/panels/ResourcesPanel.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ShortcutBar: typeof import('./components/ShortcutBar.vue')['default']

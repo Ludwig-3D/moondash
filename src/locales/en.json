@@ -172,7 +172,8 @@
       "settings": "Settings",
       "tools": "Tools",
       "shortcuts": "Shortcuts",
-      "updates": "Updates"
+      "updates": "Updates",
+      "resources": "Resources"
     },
     "config": {
       "colors": "Colors",
@@ -220,7 +221,7 @@
       },
       "add": "Add"
     },
-    "tools":{
+    "tools": {
       "bed_mesh": {
         "title": "Bed Mesh",
         "no_loaded_mesh": "No Bed Mesh Loaded",
@@ -259,6 +260,20 @@
       "dialog": {
         "close": "Close"
       }
+    },
+    "resources": {
+      "main_mcu": "Main MCU",
+      "no_mcus": "No MCU data available",
+      "cpu_usage": "CPU Usage",
+      "ram_usage": "RAM Usage",
+      "storage_usage": "Storage Usage",
+      "storage_free": "Free",
+      "load": "Load",
+      "temperature": "Temperature",
+      "version": "Version",
+      "awake": "Awake",
+      "frequency": "Frequency",
+      "chipset": "Chipset"
     }
   },
   "job_queue": {

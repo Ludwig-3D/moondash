@@ -172,7 +172,8 @@
       "settings": "Einstellungen",
       "tools": "Werkzeuge",
       "shortcuts": "Kurzbefehle",
-      "updates": "Updates"
+      "updates": "Updates",
+      "resources": "Ressourcen"
     },
     "config": {
       "colors": "Farben",
@@ -259,6 +260,20 @@
       "dialog": {
         "close": "Schließen"
       }
+    },
+    "resources": {
+      "main_mcu": "Haupt-MCU",
+      "no_mcus": "Keine MCU-Daten verfügbar",
+      "cpu_usage": "CPU-Auslastung",
+      "ram_usage": "RAM-Auslastung",
+      "storage_usage": "Speicherauslastung",
+      "storage_free": "Frei",
+      "load": "Last",
+      "temperature": "Temperatur",
+      "version": "Version",
+      "awake": "Aktiv",
+      "frequency": "Frequenz",
+      "chipset": "Chipsatz"
     }
   },
   "job_queue": {

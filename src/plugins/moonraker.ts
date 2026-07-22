@@ -158,6 +158,7 @@ class MoonrakerConnection {
             this.onNotification('notify_proc_stat_update', (params) => {
                 const payload = Array.isArray(params) ? params[0] : params
                 appStore.applyMoonrakerProcStats(payload)
+                this.applyFullProcStatsToStore(appStore, payload)
             }),
 
             this.onNotification('notify_klippy_ready', async () => {
@@ -192,6 +193,7 @@ class MoonrakerConnection {
 
             const initialObjects = await this.registerAllKnownObjects()
             appStore.applyMoonrakerSubscriptionPayload(initialObjects)
+            await this.refreshHostResourceState(appStore)
         } catch (error) {
             console.warn('moonraker refresh after reconnect failed', error)
         } finally {
@@ -392,6 +394,27 @@ class MoonrakerConnection {
         return this.call('printer.info')
     }
 
+    async machineSystemInfo() {
+        return this.call('machine.system_info')
+    }
+
+    async machineProcStats() {
+        return this.call('machine.proc_stats')
+    }
+
+    async getStorageUsage() {
+        return this.call<{
+            disk_usage?: {
+                total?: number
+                used?: number
+                free?: number
+            }
+        }>('server.files.get_directory', {
+            path: 'gcodes',
+            extended: false,
+        })
+    }
+
     async fetchAvailablePrinterObjects(): Promise<string[]> {
         const result = await this.call<{ objects: string[] }>('printer.objects.list')
         return result.objects ?? []
@@ -442,6 +465,83 @@ class MoonrakerConnection {
         }
 
         return await this.subscribeToPrinterObjects(objects)
+    }
+
+
+    private async refreshHostResourceState(appStore: ReturnType<typeof useAppStore>) {
+        const moonrakerState = appStore.moonraker as Record<string, any>
+
+        try {
+            const result = await this.machineSystemInfo() as {
+                system_info?: Record<string, unknown>
+            } & Record<string, unknown>
+
+            moonrakerState.systemInfo = result.system_info ?? result
+        } catch (error) {
+            if (!this.isMethodNotFoundError(error)) {
+                console.warn('moonraker system info request failed', error)
+            }
+        }
+
+        try {
+            const result = await this.machineProcStats() as Record<string, unknown>
+            appStore.applyMoonrakerProcStats(result)
+            this.applyFullProcStatsToStore(appStore, result)
+        } catch (error) {
+            if (!this.isMethodNotFoundError(error)) {
+                console.warn('moonraker process stats request failed', error)
+            }
+        }
+
+        try {
+            const result = await this.getStorageUsage()
+            moonrakerState.storage = result.disk_usage ?? null
+        } catch (error) {
+            if (!this.isMethodNotFoundError(error)) {
+                console.warn('moonraker storage usage request failed', error)
+            }
+        }
+    }
+
+    private applyFullProcStatsToStore(
+        appStore: ReturnType<typeof useAppStore>,
+        payload: unknown,
+    ) {
+        if (!payload || typeof payload !== 'object') return
+
+        const source = payload as Record<string, any>
+        const moonrakerState = appStore.moonraker as Record<string, any>
+        const current = moonrakerState.procStats ?? {}
+        const moonrakerStats = source.moonraker_stats ?? source.moonrakerStats ?? {}
+
+        moonrakerState.procStats = {
+            ...current,
+            ...source,
+            moonrakerCpuUsage:
+                current.moonrakerCpuUsage ??
+                moonrakerStats.cpu_usage ??
+                moonrakerStats.cpuUsage ??
+                null,
+            memory:
+                current.memory ??
+                moonrakerStats.memory ??
+                null,
+            systemCpuUsage:
+                source.system_cpu_usage ??
+                source.systemCpuUsage ??
+                current.systemCpuUsage ??
+                null,
+            systemMemory:
+                source.system_memory ??
+                source.systemMemory ??
+                current.systemMemory ??
+                null,
+            cpuTemp:
+                source.cpu_temp ??
+                source.cpuTemp ??
+                current.cpuTemp ??
+                null,
+        }
     }
 
     private isMethodNotFoundError(error: unknown): boolean {

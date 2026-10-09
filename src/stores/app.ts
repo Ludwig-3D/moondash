@@ -123,6 +123,8 @@ type MoonrakerProcStats = {
   memory: number | null;
   network: Record<string, unknown>;
   systemUptime: number | null;
+  systemMemory: { total?: number; available?: number; used?: number } | null;
+  websocket_connections: number | null;
 };
 
 type MoonrakerThrottleState = {
@@ -398,6 +400,8 @@ export const useAppStore = defineStore("app", {
         memory: null,
         network: {},
         systemUptime: null,
+        systemMemory: null,
+        websocket_connections: null,
       } as MoonrakerProcStats,
 
       throttle: {
@@ -1246,8 +1250,20 @@ export const useAppStore = defineStore("app", {
           : usage;
         this.moonraker.procStats.systemCpuUsage = asNumber(aggregate);
       }
-      if ("system_uptime" in payload)
-        this.moonraker.procStats.systemUptime = asNumber(payload.system_uptime);
+      if ("system_uptime" in payload || "systemUptime" in payload)
+        this.moonraker.procStats.systemUptime = asNumber(payload.system_uptime ?? payload.systemUptime);
+      if ("system_memory" in payload || "systemMemory" in payload) {
+        const value = payload.system_memory ?? payload.systemMemory;
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          this.moonraker.procStats.systemMemory = {
+            total: asNumber(value.total) ?? undefined,
+            used: asNumber(value.used) ?? undefined,
+            available: asNumber(value.available) ?? undefined,
+          };
+        }
+      }
+      if ("websocket_connections" in payload || "websocketConnections" in payload)
+        this.moonraker.procStats.websocket_connections = asNumber(payload.websocket_connections ?? payload.websocketConnections);
 
       if (
           "network" in payload &&
@@ -1346,6 +1362,8 @@ export const useAppStore = defineStore("app", {
         memory: null,
         network: {},
         systemUptime: null,
+        systemMemory: null,
+        websocket_connections: null,
       };
 
       this.moonraker.throttle = {

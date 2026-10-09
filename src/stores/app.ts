@@ -1239,10 +1239,13 @@ export const useAppStore = defineStore("app", {
 
       if ("cpu_temp" in payload)
         this.moonraker.procStats.cpuTemp = asNumber(payload.cpu_temp);
-      if ("system_cpu_usage" in payload)
-        this.moonraker.procStats.systemCpuUsage = asNumber(
-            payload.system_cpu_usage,
-        );
+      if ("system_cpu_usage" in payload || "systemCpuUsage" in payload) {
+        const usage = payload.system_cpu_usage ?? payload.systemCpuUsage;
+        const aggregate = usage && typeof usage === "object" && !Array.isArray(usage)
+          ? (usage as Record<string, unknown>).cpu
+          : usage;
+        this.moonraker.procStats.systemCpuUsage = asNumber(aggregate);
+      }
       if ("system_uptime" in payload)
         this.moonraker.procStats.systemUptime = asNumber(payload.system_uptime);
 

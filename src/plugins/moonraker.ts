@@ -73,7 +73,8 @@ class MoonrakerConnection {
     private subscriptionObjects: Record<string, string[] | null> = {
         webhooks: ['state', 'state_message'],
         toolhead: ['position', 'homed_axes', 'axis_minimum', 'axis_maximum', 'max_velocity', 'max_accel', 'minimum_cruise_ratio', 'square_corner_velocity'],
-        gcode_move: ['speed', 'speed_factor'],
+        gcode_move: ['speed', 'speed_factor', 'gcode_position'],
+        motion_report: ['live_velocity', 'live_extruder_velocity'],
         configfile: ['config', 'settings', 'warnings'],
     }
 
@@ -526,11 +527,15 @@ class MoonrakerConnection {
                 current.memory ??
                 moonrakerStats.memory ??
                 null,
-            systemCpuUsage:
-                source.system_cpu_usage ??
-                source.systemCpuUsage ??
-                current.systemCpuUsage ??
-                null,
+            systemCpuUsage: (() => {
+                const usage = source.system_cpu_usage ?? source.systemCpuUsage
+                const aggregate = usage && typeof usage === 'object' && !Array.isArray(usage)
+                    ? usage.cpu
+                    : usage
+                return typeof aggregate === 'number' && Number.isFinite(aggregate)
+                    ? aggregate
+                    : current.systemCpuUsage ?? null
+            })(),
             systemMemory:
                 source.system_memory ??
                 source.systemMemory ??

@@ -16,29 +16,11 @@ const hasJobQueue = ref(false)
 
 const advancedStatesEnabled = computed(() => advancedStates.value === true)
 
-const printState = computed(
-    () => moonraker.value.printStats?.state?.toLowerCase() ?? '',
-)
-
-const isPrinting = computed(() => printState.value === 'printing')
-const isPaused = computed(() => printState.value === 'paused')
-const isFinished = computed(
-    () =>
-        printState.value === 'complete' ||
-        printState.value === 'cancelled',
-)
-
-const isPrintVisible = computed(
-    () => isPrinting.value || isPaused.value || isFinished.value,
+const isPrinting = computed(
+    () => moonraker.value.printStats?.state?.toLowerCase() === 'printing',
 )
 
 const showJobQueuePanel = computed(() => hasJobQueue.value && !hasNotifications.value && !isPrinting.value)
-const showAdvancedDetailsPanel = computed(() => (
-    advancedStatesEnabled.value &&
-    !hasNotifications.value &&
-    !showJobQueuePanel.value &&
-    isPrintVisible.value
-))
 </script>
 
 <template>
@@ -53,7 +35,7 @@ const showAdvancedDetailsPanel = computed(() => (
       </v-col>
 
       <v-col
-          v-show="hasNotifications || showJobQueuePanel || showAdvancedDetailsPanel"
+          v-show="hasNotifications || showJobQueuePanel"
           cols="auto"
           class="home-layout__panel"
       >
@@ -63,7 +45,14 @@ const showAdvancedDetailsPanel = computed(() => (
             @active-change="hasJobQueue = $event"
         />
 
-        <AdvancedDetailsPanel v-show="showAdvancedDetailsPanel" />
+      </v-col>
+
+      <v-col
+          v-if="advancedStatesEnabled && !hasNotifications"
+          cols="auto"
+          class="home-layout__panel"
+      >
+        <AdvancedDetailsPanel />
       </v-col>
     </v-row>
   </v-main>

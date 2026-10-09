@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { discoverAfcUnits } from '@/composables/afcUnits'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -195,24 +196,14 @@ const parsedUnits = computed<AfcUnit[]>(() => {
 
   if (!afcRoot) return []
 
-  if (Array.isArray(afcRoot.units) && afcRoot.units.length) {
-    return afcRoot.units.map((unitName: string) => {
-      const unitKey = `AFC_BoxTurtle ${unitName}`
-      const unitObject = objects[unitKey] ?? null
-
-      const laneNames: string[] = Array.isArray(unitObject?.lanes)
-          ? unitObject.lanes
-          : Array.isArray(afcRoot.lanes)
-              ? afcRoot.lanes
-              : []
-
-      return {
-        id: unitName,
-        label: unitName,
-        displayLabel: getUnitDisplayLabel(unitName, unitObject),
-        lanes: laneNames.map((laneName) => buildLane(laneName, afcRoot, objects)),
-      }
-    })
+  const discovered = discoverAfcUnits(objects)
+  if (discovered.length) {
+    return discovered.map((unit) => ({
+      id: unit.id,
+      label: unit.id,
+      displayLabel: getUnitDisplayLabel(unit.id, unit.data),
+      lanes: unit.lanes.map((laneName) => buildLane(laneName, afcRoot, objects)),
+    }))
   }
 
   const fallbackLaneNames: string[] = Array.isArray(afcRoot.lanes)

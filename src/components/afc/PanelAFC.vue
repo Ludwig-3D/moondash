@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { discoverAfcUnits } from '@/composables/afcUnits'
 import { computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '@/stores/app'
@@ -174,19 +175,11 @@ const parsedUnits = computed<AfcUnit[]>(() => {
   const objects = afcObjects.value
   const afcRoot = objects['AFC']
 
-  if (!afcRoot || !Array.isArray(afcRoot.units)) {
-    return []
-  }
+  if (!afcRoot) return []
 
-  return afcRoot.units.map((unitName: string) => {
-    const unitKey = `AFC_BoxTurtle ${unitName}`
-    const unitObject = objects[unitKey]
-
-    const laneNames: string[] = Array.isArray(unitObject?.lanes)
-        ? unitObject.lanes
-        : Array.isArray(afcRoot.lanes)
-            ? afcRoot.lanes
-            : []
+  return discoverAfcUnits(objects).map((unit) => {
+    const unitName = unit.id
+    const laneNames = unit.lanes
 
     const lanes: AfcLane[] = laneNames.map((laneName) => {
       const laneKey = `AFC_stepper ${laneName}`

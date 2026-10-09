@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { discoverAfcUnits } from '@/composables/afcUnits'
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from 'vuetify'
@@ -143,22 +144,11 @@ const afcLaneStates = computed<AfcLaneState[]>(() => {
   const objects = afc.objects as Record<string, any>
   const afcRoot = objects.AFC
 
-  if (!afcRoot || !Array.isArray(afcRoot.units)) {
-    return []
-  }
+  if (!afcRoot) return []
 
   const laneNames = new Set<string>()
-
-  for (const unitName of afcRoot.units) {
-    const unitObject = objects[`AFC_BoxTurtle ${unitName}`]
-
-    if (Array.isArray(unitObject?.lanes)) {
-      for (const laneName of unitObject.lanes) {
-        if (typeof laneName === 'string' && laneName.trim()) {
-          laneNames.add(laneName)
-        }
-      }
-    }
+  for (const unit of discoverAfcUnits(objects)) {
+    for (const laneName of unit.lanes) laneNames.add(laneName)
   }
 
   if (laneNames.size === 0 && Array.isArray(afcRoot.lanes)) {

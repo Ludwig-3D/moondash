@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { discoverAfcUnits } from '@/composables/afcUnits'
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
@@ -25,29 +26,18 @@ const selectedAfcUnit = ref<string | null>(null)
 
 const afcEnabled = computed(() => moonraker.value.afc.available)
 
-function displayAfterFirstSpace(value: string): string {
-  const parts = value.split(' ')
-  return parts.length > 1 ? parts.slice(1).join(' ') : value
-}
-
 const afcUnits = computed<AfcUnit[]>(() => {
   const objects = moonraker.value.afc.objects as Record<string, any>
   const afcRoot = objects['AFC']
 
-  if (!afcRoot || !Array.isArray(afcRoot.units)) {
-    return []
-  }
+  if (!afcRoot) return []
 
-  return afcRoot.units.map((unitName: string) => {
-    const unitKey = `AFC_BoxTurtle ${unitName}`
-
-    return {
-      id: unitName,
-      key: unitKey,
-      label: unitName,
-      displayLabel: displayAfterFirstSpace(unitName),
-    }
-  })
+  return discoverAfcUnits(objects).map((unit) => ({
+    id: unit.id,
+    key: unit.key,
+    label: unit.id,
+    displayLabel: unit.id,
+  }))
 })
 
 watch(

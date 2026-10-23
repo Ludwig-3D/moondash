@@ -102,7 +102,6 @@ const deleteOpen = ref(false)
 const actionFile = ref<MoonrakerFile | null>(null)
 const destinationFolder = ref('')
 const destinationFilename = ref('')
-const extraFolders = ref<string[]>([])
 const folderPickerOpen = ref(false)
 const browsingFolder = ref('')
 const browsingFolders = ref<string[]>([])
@@ -865,7 +864,7 @@ onBeforeUnmount(() => {
         <v-card-text class="pa-0">
           <div class="file-action-layout">
             <div class="file-action-preview">
-              <GcodeDialogThumbnail :file-path="actionPath" class="file-action-thumb" />
+              <GcodeDialogThumbnail :file-path="actionPath ?? ''" class="file-action-thumb" />
               <div class="file-action-info">
                 <div class="file-action-name">{{ actionDisplayName }}</div>
                 <div class="file-action-meta">

@@ -842,7 +842,7 @@ onBeforeUnmount(() => {
             <v-spacer />
             <v-btn variant="text" size="large" :disabled="createFolderBusy"
                    @click="folderPickerOpen = false">{{ t('print_files.cancel') }}</v-btn>
-            <v-btn variant="text" size="large" prepend-icon="mdi-folder-plus-outline"
+            <v-btn variant="text" size="large"
                    :disabled="directoryListingBusy" @click="newFolderOpen = true">
               {{ t('print_files.create_folder') }}
             </v-btn>

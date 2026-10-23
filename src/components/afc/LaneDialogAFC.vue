@@ -101,6 +101,16 @@ function parseWeight(value: string): number | null {
   return Math.round(parsed)
 }
 
+function contrastText(color: string): string {
+  const hex = normalizeHexColor(color).replace('#', '')
+  // Both three-digit and six-digit hex codes are supported.
+  const full = hex.length === 3 ? hex.split('').map(char => char + char).join('') : hex
+  const r = parseInt(full.slice(0, 2), 16)
+  const g = parseInt(full.slice(2, 4), 16)
+  const b = parseInt(full.slice(4, 6), 16)
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160 ? '#111' : '#fff'
+}
+
 function stripHash(color: string): string {
   return color.replace(/^#/, '').toUpperCase()
 }
@@ -163,8 +173,17 @@ async function saveDialog() {
 <template>
   <v-dialog v-model="dialogOpen" max-width="760" persistent>
     <v-card rounded="lg">
-      <v-card-title class="text-h5 pt-6 px-6">
-        {{ lane?.label ?? t('afc.edit.lane') }}
+      <v-card-title class="text-h5 edit-lane-header d-flex align-center ga-3">
+        <v-icon icon="mdi-pencil" />
+        {{ t('afc.edit.title') }}
+        <v-chip
+          v-if="lane"
+          size="small"
+          variant="flat"
+          :style="{ backgroundColor: normalizeHexColor(lane.color), color: contrastText(lane.color) }"
+        >
+          {{ lane.label }}
+        </v-chip>
       </v-card-title>
 
       <v-card-text class="px-6 pb-2">
@@ -305,4 +324,11 @@ async function saveDialog() {
 </template>
 
 <style scoped>
+.edit-lane-header {
+  padding: 18px 24px 8px !important;
+  line-height: 1.3;
+}
+@media (max-width: 600px) {
+  .edit-lane-header { padding: 12px 16px 6px !important; }
+}
 </style>

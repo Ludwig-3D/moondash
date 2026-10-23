@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { useI18n } from 'vue-i18n'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import LaneDialogAFC from '@/components/afc/LaneDialogAFC.vue'
+import InfiniteSpoolDialogAFC from '@/components/afc/InfiniteSpoolDialogAFC.vue'
 
 type AfcLane = {
   id: string
@@ -16,6 +17,7 @@ type AfcLane = {
   map: string
   material: string
   weight: number | null
+  runoutLane: string
 }
 
 type AfcUnit = {
@@ -36,6 +38,8 @@ const ejectingLaneIds = ref<string[]>([])
 const loadingLaneIds = ref<string[]>([])
 const laneDialogOpen = ref(false)
 const selectedLaneForDialog = ref<AfcLane | null>(null)
+const infiniteSpoolOpen = ref(false)
+const selectedInfiniteSpoolLane = ref<AfcLane | null>(null)
 
 function normalizeColor(color: unknown): string {
   if (typeof color !== 'string' || !color.trim()) {
@@ -203,6 +207,8 @@ const parsedUnits = computed<AfcUnit[]>(() => {
             typeof laneObject.material === 'string' && laneObject.material.trim()
                 ? laneObject.material
                 : t('afc.line.empty'),
+        runoutLane: typeof laneObject.runout_lane === 'string' ? laneObject.runout_lane :
+            typeof laneObject.runout === 'string' ? laneObject.runout : 'NONE',
         weight:
             typeof laneObject.weight === 'number' && Number.isFinite(laneObject.weight)
                 ? laneObject.weight
@@ -232,6 +238,12 @@ function handleEdit(lane: AfcLane) {
   if (lane.isLoaded || isLoading(lane.id) || isEjecting(lane.id)) return
   selectedLaneForDialog.value = { ...lane }
   laneDialogOpen.value = true
+}
+
+function handleInfiniteSpool(lane: AfcLane) {
+  if (printerIsPrinting.value) return
+  selectedInfiniteSpoolLane.value = { ...lane }
+  infiniteSpoolOpen.value = true
 }
 
 async function handleEject(lane: AfcLane) {
@@ -305,6 +317,15 @@ async function handleLoad(lane: AfcLane) {
                     :disabled="printerIsPrinting || lane.isLoaded || isEjecting(lane.id) || isLoading(lane.id)"
                     @click="handleEdit(lane)"
                 />
+                <v-btn
+                    class="afc-action-btn"
+                    icon="mdi-infinity"
+                    variant="plain"
+                    :style="{ color: lane.runoutLane && lane.runoutLane.toUpperCase() !== 'NONE' ? '#4caf50' : getContrastTextColor(lane.color) }"
+                    :disabled="printerIsPrinting || isEjecting(lane.id) || isLoading(lane.id)"
+                    :title="t('afc.infinite_spool.title')"
+                    @click="handleInfiniteSpool(lane)"
+                />
               </div>
 
               <div
@@ -352,6 +373,12 @@ async function handleLoad(lane: AfcLane) {
         </div>
       </div>
     </v-card-text>
+
+    <InfiniteSpoolDialogAFC
+        v-model="infiniteSpoolOpen"
+        :lane="selectedInfiniteSpoolLane"
+        :units="parsedUnits"
+    />
 
     <LaneDialogAFC
         v-model="laneDialogOpen"
@@ -455,8 +482,9 @@ async function handleLoad(lane: AfcLane) {
   justify-content: space-around;
 }
 
-.afc-lane-edit {
-  width: 100%;
+.lane-top-actions .afc-action-btn {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .lane-top-actions {

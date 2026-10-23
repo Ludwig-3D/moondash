@@ -19,6 +19,7 @@
       "empty": "Empty"
     },
     "edit": {
+      "title": "Edit Lane",
       "save": "Save",
       "cancel": "Cancel",
       "filament": "Filament",
@@ -27,6 +28,15 @@
       "choose_color": "Choose a Color",
       "other_lane_colors": "Colors of other Lanes",
       "other_colors": "other Colors"
+    },
+    "infinite_spool": {
+      "title": "Infinite Spool",
+      "source": "Source lane",
+      "destination": "Runout replacement lane",
+      "disabled": "Disabled (no replacement)",
+      "cancel": "Cancel",
+      "save": "Save",
+      "error": "Could not update Infinite Spool"
     }
   },
   "temp": {

@@ -24,6 +24,7 @@ declare module 'vue' {
     FanDialog: typeof import('./components/dialogs/FanDialog.vue')['default']
     GcodeDialogThumbnail: typeof import('./components/dialogs/GcodeDialogThumbnail.vue')['default']
     IdleOverlay: typeof import('./components/overlays/IdleOverlay.vue')['default']
+    InfiniteSpoolDialogAFC: typeof import('./components/afc/InfiniteSpoolDialogAFC.vue')['default']
     JobQueuePanel: typeof import('./components/panels/JobQueuePanel.vue')['default']
     KeyboardOverlay: typeof import('./components/overlays/KeyboardOverlay.vue')['default']
     KlipperAlert: typeof import('./components/notifications/KlipperAlert.vue')['default']

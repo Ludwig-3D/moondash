@@ -19,6 +19,7 @@
       "empty": "Leer"
     },
     "edit": {
+      "title": "Spur bearbeiten",
       "save": "Speichern",
       "cancel": "Abbrechen",
       "filament": "Filament",
@@ -27,6 +28,15 @@
       "choose_color": "Farbe auswählen",
       "other_lane_colors": "Farben anderer Spuren",
       "other_colors": "Andere Farben"
+    },
+    "infinite_spool": {
+      "title": "Infinite Spool",
+      "source": "Ausgangsspur",
+      "destination": "Ersatzspur bei Filamentende",
+      "disabled": "Deaktiviert (keine Ersatzspur)",
+      "cancel": "Abbrechen",
+      "save": "Speichern",
+      "error": "Infinite Spool konnte nicht aktualisiert werden"
     }
   },
   "temp": {

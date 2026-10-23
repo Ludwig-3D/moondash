@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, type WifiNetwork } from '@/stores/app'
+import KeyboardOverlay from '../../overlays/KeyboardOverlay.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -20,6 +21,34 @@ const selectedNetwork = ref<WifiNetwork | null>(null)
 const wifiPassword = ref('')
 const hiddenSsid = ref('')
 const hiddenPassword = ref('')
+const activeKeyboardField = ref<'wifiPassword' | 'hiddenSsid' | 'hiddenPassword' | null>(null)
+const keyboardVisible = computed(() => activeKeyboardField.value !== null)
+const keyboardTitle = computed(() => activeKeyboardField.value === 'hiddenSsid'
+  ? t('settings.network.wifi.ssid') : t('settings.network.wifi.password'))
+const keyboardValue = computed({
+  get: () => {
+    switch (activeKeyboardField.value) {
+      case 'wifiPassword': return wifiPassword.value
+      case 'hiddenSsid': return hiddenSsid.value
+      case 'hiddenPassword': return hiddenPassword.value
+      default: return ''
+    }
+  },
+  set: (value: string) => {
+    switch (activeKeyboardField.value) {
+      case 'wifiPassword': wifiPassword.value = value; break
+      case 'hiddenSsid': hiddenSsid.value = value; break
+      case 'hiddenPassword': hiddenPassword.value = value; break
+    }
+  },
+})
+function closeKeyboard() { activeKeyboardField.value = null }
+function keyboardEnter() {
+  const field = activeKeyboardField.value
+  closeKeyboard()
+  if (field === 'hiddenSsid') activeKeyboardField.value = 'hiddenPassword'
+}
+
 
 const wifiSettings = computed(() => appStore.getWifiSettings)
 const wifiEnabled = computed(() => wifiSettings.value?.enabled ?? false)
@@ -73,6 +102,7 @@ async function connectNetwork(network: WifiNetwork, password?: string) {
     scanDialogOpen.value = false
     savedDialogOpen.value = false
     passwordDialogOpen.value = false
+    closeKeyboard()
   } finally {
     connectBusy.value = false
   }
@@ -90,6 +120,7 @@ async function connectHiddenNetwork() {
     await appStore.connectHiddenWifi(hiddenSsid.value, hiddenPassword.value || null)
 
     hiddenDialogOpen.value = false
+    closeKeyboard()
     hiddenSsid.value = ''
     hiddenPassword.value = ''
   } finally {
@@ -281,7 +312,7 @@ function selectNetwork(network: WifiNetwork) {
     </v-card>
   </v-dialog>
 
-  <v-dialog v-model="passwordDialogOpen" max-width="460">
+  <v-dialog v-model="passwordDialogOpen" max-width="460" @update:model-value="closeKeyboard">
     <v-card rounded="lg">
       <v-card-title>
         {{ t('settings.network.wifi.connect_to', { ssid: selectedNetwork?.ssid }) }}
@@ -292,8 +323,13 @@ function selectNetwork(network: WifiNetwork) {
             v-model="wifiPassword"
             :label="t('settings.network.wifi.password')"
             type="password"
-            autofocus
-            @keyup.enter="connectSelectedNetwork"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            readonly
+            prepend-inner-icon="mdi-lock-outline"
+            @click="activeKeyboardField = 'wifiPassword'"
+            @focus="activeKeyboardField = 'wifiPassword'"
         />
       </v-card-text>
 
@@ -316,7 +352,7 @@ function selectNetwork(network: WifiNetwork) {
     </v-card>
   </v-dialog>
 
-  <v-dialog v-model="hiddenDialogOpen" max-width="460">
+  <v-dialog v-model="hiddenDialogOpen" max-width="460" @update:model-value="closeKeyboard">
     <v-card rounded="lg">
       <v-card-title>{{ t('settings.network.wifi.hidden') }}</v-card-title>
 
@@ -324,14 +360,27 @@ function selectNetwork(network: WifiNetwork) {
         <v-text-field
             v-model="hiddenSsid"
             :label="t('settings.network.wifi.ssid')"
-            autofocus
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            readonly
+            prepend-inner-icon="mdi-wifi"
+            class="mb-4"
+            @click="activeKeyboardField = 'hiddenSsid'"
+            @focus="activeKeyboardField = 'hiddenSsid'"
         />
 
         <v-text-field
             v-model="hiddenPassword"
             :label="t('settings.network.wifi.password')"
             type="password"
-            @keyup.enter="connectHiddenNetwork"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            readonly
+            prepend-inner-icon="mdi-lock-outline"
+            @click="activeKeyboardField = 'hiddenPassword'"
+            @focus="activeKeyboardField = 'hiddenPassword'"
         />
       </v-card-text>
 
@@ -353,6 +402,14 @@ function selectNetwork(network: WifiNetwork) {
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <KeyboardOverlay
+      v-model="keyboardValue"
+      :visible="keyboardVisible"
+      :title="keyboardTitle"
+      @enter="keyboardEnter"
+      @close="closeKeyboard"
+  />
 </template>
 
 <style scoped>

@@ -312,5 +312,10 @@
   },
   "boot": {
     "startup": "System fährt hoch..."
+  },
+  "keyboard": {
+    "clear": "Löschen",
+    "space": "Leerzeichen",
+    "enter": "Eingabe"
   }
 }

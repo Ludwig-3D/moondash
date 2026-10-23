@@ -312,5 +312,10 @@
   },
   "boot": {
     "startup": "System booting up..."
+  },
+  "keyboard": {
+    "clear": "Clear",
+    "space": "Space",
+    "enter": "Enter"
   }
 }

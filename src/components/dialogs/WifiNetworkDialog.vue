@@ -140,6 +140,7 @@ function submit() {
               :label="t('settings.network.wifi.ssid')"
               variant="outlined"
               density="comfortable"
+              hide-details
               :readonly="true"
               @click="openSsidKeyboard"
           />

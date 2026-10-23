@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 type KeyboardMode = 'alpha' | 'numeric' | 'symbols'
 
@@ -36,6 +37,9 @@ const emit = defineEmits<{
   (e: 'enter', value: string): void
   (e: 'close'): void
 }>()
+
+const { locale, t } = useI18n()
+const isGerman = computed(() => locale.value.toLowerCase().startsWith('de'))
 
 const shifted = defineModel<boolean>('shifted', { default: false })
 const keyboardMode = ref<KeyboardMode>(props.layout === 'numeric' ? 'numeric' : 'alpha')
@@ -81,9 +85,9 @@ onBeforeUnmount(() => {
 })
 
 const alphaRows = computed<KeyboardKey[][]>(() => {
-  const letters1 = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p']
+  const letters1 = ['q', 'w', 'e', 'r', 't', isGerman.value ? 'z' : 'y', 'u', 'i', 'o', 'p']
   const letters2 = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l']
-  const letters3 = ['z', 'x', 'c', 'v', 'b', 'n', 'm']
+  const letters3 = [isGerman.value ? 'y' : 'z', 'x', 'c', 'v', 'b', 'n', 'm']
 
   const mapKey = (key: string): KeyboardKey => ({
     label: shifted.value ? key.toUpperCase() : key,
@@ -94,7 +98,7 @@ const alphaRows = computed<KeyboardKey[][]>(() => {
     letters1.map(mapKey),
     letters2.map(mapKey),
     [
-      { label: '⇧', action: 'shift', wide: true },
+      { label: 'Shift', action: 'shift', wide: true },
       ...letters3.map(mapKey),
       { label: '⌫', action: 'backspace', wide: true },
     ],
@@ -133,10 +137,10 @@ const inputRows = computed(() => {
 
 const bottomRow = computed<KeyboardKey[]>(() => [
   { label: nextModeLabel.value, action: 'cycle-mode', wide: true },
-  { label: 'Clear', action: 'clear', wide: true },
-  { label: 'Space', action: 'space', extraWide: true },
-  { label: 'Enter', action: 'enter', wide: true },
-  { label: 'Close', action: 'close', wide: true },
+  { label: t('keyboard.clear'), action: 'clear', wide: true },
+  { label: t('keyboard.space'), action: 'space', extraWide: true },
+  { label: t('keyboard.enter'), action: 'enter', wide: true },
+  { label: '', action: 'close', wide: true },
 ])
 
 function handlePhysicalKeyboard(event: KeyboardEvent) {
@@ -270,7 +274,9 @@ function pressKey(key: KeyboardKey) {
                 }"
                 @click="pressKey(key)"
             >
-              {{ key.label }}
+              <v-icon v-if="key.action === 'shift'" icon="mdi-apple-keyboard-shift" size="24" />
+              <v-icon v-else-if="key.action === 'backspace'" icon="mdi-backspace-outline" size="24" />
+              <template v-else>{{ key.label }}</template>
             </button>
           </div>
 
@@ -287,7 +293,10 @@ function pressKey(key: KeyboardKey) {
                 }"
                 @click="pressKey(key)"
             >
-              {{ key.label }}
+              <v-icon v-if="key.action === 'close'" icon="mdi-chevron-down" size="24" />
+              <v-icon v-else-if="key.action === 'shift'" icon="mdi-apple-keyboard-shift" size="24" />
+              <v-icon v-else-if="key.action === 'backspace'" icon="mdi-backspace-outline" size="24" />
+              <template v-else>{{ key.label }}</template>
             </button>
           </div>
         </div>

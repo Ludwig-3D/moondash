@@ -126,7 +126,7 @@ async function runAction(
       <v-card-actions>
         <v-spacer />
         <v-btn
-            variant="text"
+            
             :disabled="Boolean(loadingAction)"
             @click="dialogOpen = false"
         >

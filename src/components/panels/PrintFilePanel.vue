@@ -100,6 +100,9 @@ const actionsOpen = ref(false)
 const moveOpen = ref(false)
 const deleteOpen = ref(false)
 const actionFile = ref<MoonrakerFile | null>(null)
+const actionFolder = ref<FolderEntry | null>(null)
+let folderLongPressTimer: ReturnType<typeof setTimeout> | null = null
+let suppressFolderClick = false
 const destinationFolder = ref('')
 const destinationFilename = ref('')
 const folderPickerOpen = ref(false)
@@ -114,8 +117,8 @@ const feedbackOpen = ref(false)
 const feedbackMessage = ref('')
 const feedbackError = ref(false)
 
-const actionDisplayName = computed(() => actionFile.value ? getFileName(actionFile.value) : '')
-const actionPath = computed(() => actionFile.value ? getFilePath(actionFile.value) : '')
+const actionDisplayName = computed(() => actionFolder.value?.name ?? (actionFile.value ? getFileName(actionFile.value) : ''))
+const actionPath = computed(() => actionFolder.value?.path ?? (actionFile.value ? getFilePath(actionFile.value) : ''))
 
 const actionMetadata = computed(() => actionFile.value ? getMetadata(actionFile.value) : null)
 const actionEstimatedTime = computed(() => {
@@ -142,6 +145,18 @@ const actionFilamentWeight = computed(() => {
 
 const visibleBrowseFolders = computed(() => browsingFolders.value.filter(name => name !== '.thumbs').sort((a, b) => a.localeCompare(b)))
 const browsingFolderLabel = computed(() => browsingFolder.value || t('print_files.root_folder'))
+
+// A folder cannot be moved into itself or any directory beneath it.
+function isInvalidFolderDestination(path: string): boolean {
+  const source = actionFolder.value?.path
+  return Boolean(source && (path === source || path.startsWith(`${source}/`)))
+}
+
+
+const newFolderNameValidForMove = computed(() => {
+  const value = destinationFilename.value.trim()
+  return Boolean(value) && value === destinationFilename.value && value !== '.' && value !== '..' && !/[\/\\]/.test(value) && !/[\u0000-\u001f]/.test(value) && !value.startsWith('.')
+})
 
 const targetFilenameValid = computed(() => {
   const value = destinationFilename.value.trim()
@@ -181,7 +196,9 @@ function loadFolderPicker() {
 }
 
 function enterBrowseFolder(name: string) {
-  void browseFolder(browsingFolder.value ? `${browsingFolder.value}/${name}` : name)
+  const next = browsingFolder.value ? `${browsingFolder.value}/${name}` : name
+  if (isInvalidFolderDestination(next)) return
+  void browseFolder(next)
 }
 
 function browseUp() {
@@ -189,6 +206,7 @@ function browseUp() {
 }
 
 function chooseDestination() {
+  if (isInvalidFolderDestination(browsingFolder.value)) return
   destinationFolder.value = browsingFolder.value
   folderPickerOpen.value = false
   newFolderOpen.value = false
@@ -200,7 +218,7 @@ const newFolderNameValid = computed(() => {
 })
 
 async function createFolder() {
-  if (!newFolderNameValid.value || createFolderBusy.value) return
+  if (!newFolderNameValid.value || createFolderBusy.value || isInvalidFolderDestination(browsingFolder.value)) return
   const path = browsingFolder.value ? `${browsingFolder.value}/${newFolderName.value}` : newFolderName.value
   createFolderBusy.value = true
   try {
@@ -223,14 +241,43 @@ function notify(message: string, error = false) {
 }
 
 function showFileActions(file: MoonrakerFile) {
+  actionFolder.value = null
   actionFile.value = file
   moveOpen.value = false
   deleteOpen.value = false
   actionsOpen.value = true
 }
 
+function showFolderActions(folder: FolderEntry) {
+  actionFile.value = null
+  actionFolder.value = folder
+  moveOpen.value = false
+  deleteOpen.value = false
+  actionsOpen.value = true
+}
+
+function cancelFolderLongPress() {
+  if (folderLongPressTimer !== null) clearTimeout(folderLongPressTimer)
+  folderLongPressTimer = null
+}
+
+function startFolderLongPress(folder: FolderEntry) {
+  cancelFolderLongPress()
+  suppressFolderClick = false
+  folderLongPressTimer = setTimeout(() => {
+    folderLongPressTimer = null
+    suppressFolderClick = true
+    showFolderActions(folder)
+  }, 550)
+}
+
+function folderClick(path: string) {
+  if (suppressFolderClick) { suppressFolderClick = false; return }
+  void openFolder(path)
+}
+
 function openMoveDialog() {
-  const path = actionFile.value && getFilePath(actionFile.value)
+  const path = actionPath.value
   if (!path) return
   destinationFolder.value = path.split('/').slice(0, -1).join('/')
   destinationFilename.value = path.split('/').pop() || ''
@@ -244,12 +291,12 @@ function openDeleteDialog() {
 }
 
 const moveIsValid = computed(() => {
-  const path = actionFile.value && getFilePath(actionFile.value)
+  const path = actionPath.value
   if (!path) return false
-  if (!targetFilenameValid.value) return false
+  if (actionFolder.value ? !newFolderNameValidForMove.value : !targetFilenameValid.value) return false
   const filename = destinationFilename.value
   const target = destinationFolder.value ? `${destinationFolder.value}/${filename}` : filename
-  return target !== path && !allFiles.value.some(file => getFilePath(file) === target)
+  return target !== path && !(actionFolder.value && (destinationFolder.value === path || destinationFolder.value.startsWith(`${path}/`))) && !allFiles.value.some(file => getFilePath(file) === target || (actionFolder.value && getFilePath(file).startsWith(`${target}/`)))
 })
 
 async function refreshAfterFileChange() {
@@ -261,7 +308,7 @@ async function refreshAfterFileChange() {
 }
 
 async function moveFile() {
-  const source = actionFile.value && getFilePath(actionFile.value)
+  const source = actionPath.value
   if (!source || !moveIsValid.value || fileActionBusy.value) return
   const filename = destinationFilename.value
   const dest = destinationFolder.value ? `${destinationFolder.value}/${filename}` : filename
@@ -281,11 +328,15 @@ async function moveFile() {
 }
 
 async function deleteFile() {
-  const path = actionFile.value && getFilePath(actionFile.value)
+  const path = actionPath.value
   if (!path || fileActionBusy.value) return
   fileActionBusy.value = true
   try {
-    await moonrakerClient.call('server.files.delete_file', { path: `gcodes/${path}` })
+    if (actionFolder.value) {
+      await moonrakerClient.call('server.files.delete_directory', { path: `gcodes/${path}` })
+    } else {
+      await moonrakerClient.call('server.files.delete_file', { path: `gcodes/${path}` })
+    }
     actionsOpen.value = false
     deleteOpen.value = false
     await refreshAfterFileChange()
@@ -651,6 +702,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateViewportSize)
+  cancelFolderLongPress()
   unlistenConfigLoaded?.()
 })
 </script>
@@ -762,7 +814,12 @@ onBeforeUnmount(() => {
           :key="`folder:${entry.path}`"
           class="print-folder-card pa-0"
           variant="flat"
-          @click="openFolder(entry.path)"
+          @click="folderClick(entry.path)"
+          @contextmenu.prevent="cancelFolderLongPress(); showFolderActions(entry)"
+          @pointerdown="($event: PointerEvent) => { if ($event.pointerType === 'touch') startFolderLongPress(entry) }"
+          @pointerup="cancelFolderLongPress"
+          @pointercancel="cancelFolderLongPress"
+          @pointerleave="cancelFolderLongPress"
       >
         <v-icon icon="mdi-folder" style="font-size: 48px;" />
         <div class="print-folder-card__title">
@@ -812,7 +869,7 @@ onBeforeUnmount(() => {
           <div class="file-folder-scroll">
             <v-list bg-color="transparent" class="pa-0">
               <v-list-item v-for="name in visibleBrowseFolders" :key="name"
-                           class="file-action-folder-row" :disabled="directoryListingBusy"
+                           class="file-action-folder-row" :disabled="directoryListingBusy || isInvalidFolderDestination(browsingFolder ? `${browsingFolder}/${name}` : name)"
                            @click="enterBrowseFolder(name)">
                 <template #prepend><v-icon icon="mdi-folder-outline" size="27" /></template>
                 <v-list-item-title>{{ name }}</v-list-item-title>
@@ -834,19 +891,19 @@ onBeforeUnmount(() => {
             <v-spacer />
             <v-btn variant="text" size="large" :disabled="createFolderBusy"
                    @click="newFolderOpen = false; newFolderName = ''">{{ t('print_files.cancel') }}</v-btn>
-            <v-btn color="primary" variant="text" size="large"
-                   :disabled="!newFolderNameValid" :loading="createFolderBusy"
+            <v-btn color="primary" variant="tonal" size="large"
+                   :disabled="!newFolderNameValid || isInvalidFolderDestination(browsingFolder)" :loading="createFolderBusy"
                    @click="createFolder">{{ t('print_files.create_folder') }}</v-btn>
           </template>
           <template v-else>
             <v-spacer />
             <v-btn variant="text" size="large" :disabled="createFolderBusy"
                    @click="folderPickerOpen = false">{{ t('print_files.cancel') }}</v-btn>
-            <v-btn variant="text" size="large"
-                   :disabled="directoryListingBusy" @click="newFolderOpen = true">
+            <v-btn  size="large"
+                   :disabled="directoryListingBusy || isInvalidFolderDestination(browsingFolder)" @click="newFolderOpen = true">
               {{ t('print_files.create_folder') }}
             </v-btn>
-            <v-btn color="primary" variant="text" size="large" :disabled="directoryListingBusy || createFolderBusy"
+            <v-btn color="primary" variant="tonal" size="large" :disabled="directoryListingBusy || createFolderBusy || isInvalidFolderDestination(browsingFolder)"
                    @click="chooseDestination">{{ t('print_files.select_this_folder') }}</v-btn>
           </template>
         </v-card-actions>
@@ -860,14 +917,17 @@ onBeforeUnmount(() => {
 
     <!-- Same image-left, controls-right layout used by PrintDialog. -->
     <v-dialog v-model="actionsOpen" max-width="1200" :persistent="fileActionBusy">
-      <v-card v-if="actionFile" rounded="lg" class="pa-0">
+      <v-card v-if="actionFile || actionFolder" rounded="lg" class="pa-0">
         <v-card-text class="pa-0">
           <div class="file-action-layout">
             <div class="file-action-preview">
-              <GcodeDialogThumbnail :file-path="actionPath ?? ''" class="file-action-thumb" />
+              <div v-if="actionFolder" class="file-action-thumb file-action-folder-preview">
+                <v-icon icon="mdi-folder-outline" size="150" />
+              </div>
+              <GcodeDialogThumbnail v-else :file-path="actionPath" class="file-action-thumb" />
               <div class="file-action-info">
                 <div class="file-action-name">{{ actionDisplayName }}</div>
-                <div class="file-action-meta">
+                <div v-if="!actionFolder" class="file-action-meta">
                   <span class="file-action-meta-item"><v-icon icon="mdi-clock-outline" size="16" />{{ actionEstimatedTime }}</span>
                   <span class="file-action-meta-item"><v-icon icon="mdi-scale-balance" size="16" />{{ actionFilamentWeight }}</span>
                 </div>
@@ -892,7 +952,7 @@ onBeforeUnmount(() => {
                                 prepend-inner-icon="mdi-file-code-outline" variant="outlined"
                                 density="comfortable" class="mt-4" hide-details readonly
                                 :disabled="fileActionBusy" @click="filenameKeyboardOpen = true" @focus="filenameKeyboardOpen = true" />
-                  <div v-if="!targetFilenameValid" class="file-action-hint mt-2">
+                  <div v-if="!(actionFolder ? newFolderNameValidForMove : targetFilenameValid)" class="file-action-hint mt-2">
                     <v-icon icon="mdi-information-outline" size="18" />
                     <span>{{ t('print_files.invalid_filename') }}</span>
                   </div>
@@ -905,14 +965,14 @@ onBeforeUnmount(() => {
               <template v-else-if="deleteOpen">
                 <div class="file-action-heading">
                   <v-icon icon="mdi-delete-outline" color="error" />
-                  {{ t('print_files.delete_confirm_title') }}
+                  {{ actionFolder ? t('print_files.folder_delete_title') : t('print_files.delete_confirm_title') }}
                 </div>
                 <v-alert class="mt-5 file-action-delete-alert" type="warning" variant="tonal" density="comfortable" icon="mdi-alert-outline">
-                  {{ t('print_files.delete_confirm_message') }}
+                  {{ actionFolder ? t('print_files.folder_delete_message') : t('print_files.delete_confirm_message') }}
                 </v-alert>
               </template>
               <template v-else>
-                <div class="file-action-heading">{{ t('print_files.file_actions') }}</div>
+                <div class="file-action-heading">{{ actionFolder ? t('print_files.folder_actions') : t('print_files.file_actions') }}</div>
                 <div class="file-action-choices">
                   <v-btn variant="tonal" prepend-icon="mdi-folder-move-outline" size="large" block @click="openMoveDialog">
                     {{ t('print_files.move') }}
@@ -928,10 +988,10 @@ onBeforeUnmount(() => {
                 <v-btn variant="text" :disabled="fileActionBusy" @click="moveOpen || deleteOpen ? (moveOpen = false, deleteOpen = false) : (actionsOpen = false)">
                   {{ t('print_files.cancel') }}
                 </v-btn>
-                <v-btn v-if="moveOpen" variant="text" color="primary" :loading="fileActionBusy" :disabled="!moveIsValid" @click="moveFile">
+                <v-btn v-if="moveOpen" variant="tonal" color="primary" :loading="fileActionBusy" :disabled="!moveIsValid" @click="moveFile">
                   {{ t('print_files.move') }}
                 </v-btn>
-                <v-btn v-else-if="deleteOpen" variant="text" color="error" :loading="fileActionBusy" @click="deleteFile">
+                <v-btn v-else-if="deleteOpen" variant="tonal" color="error" :loading="fileActionBusy" @click="deleteFile">
                   {{ t('print_files.delete') }}
                 </v-btn>
               </div>
@@ -1156,4 +1216,8 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 .file-folder-new-name { min-width: 180px; flex: 1 1 220px; }
+</style>
+
+<style scoped>
+.file-action-folder-preview { display: flex; align-items: center; justify-content: center; background: rgba(var(--v-theme-on-surface), 0.035); }
 </style>

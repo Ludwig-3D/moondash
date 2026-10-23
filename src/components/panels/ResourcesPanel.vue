@@ -159,6 +159,12 @@ const storageUsage = computed(() => {
   return normalizePercent((usedStorageBytes.value / totalStorageBytes.value) * 100)
 })
 
+const resourceRings = computed(() => [
+  { key: 'cpu', radius: 58, value: cpuUsage.value, color: '#e26c85' },
+  { key: 'ram', radius: 47, value: memoryUsage.value, color: '#ff9e16' },
+  { key: 'storage', radius: 36, value: storageUsage.value, color: '#1e9fe6' },
+])
+
 const mcus = computed(() => {
   const rawObjects = moonraker.value.rawObjects ?? {}
   const config = rawObjects.configfile?.config ?? {}
@@ -294,87 +300,50 @@ function formatFrequency(value: number | null): string {
 <template>
   <v-row density="comfortable" align="start" class="resources-row">
     <v-col cols="12" sm="6" class="resource-col host-col">
-      <v-card rounded="lg" variant="tonal">
+      <v-card rounded="lg" variant="tonal" class="host-card">
         <v-card-text class="host-content pa-3">
-          <section class="metric-section">
-            <div class="metric-header">
-              <div class="metric-label">
-                <v-icon icon="mdi-cpu-64-bit" size="19" />
-                <span>{{ t('settings.resources.cpu_usage') }}</span>
+          <div class="host-title">{{ t('settings.resources.system_information') }}</div>
+
+          <div class="host-overview">
+            <div class="resource-rings" role="img" :aria-label="`${t('settings.resources.cpu_usage')}: ${formatPercent(cpuUsage)}, ${t('settings.resources.ram_usage')}: ${formatPercent(memoryUsage)}, ${t('settings.resources.storage_usage')}: ${formatPercent(storageUsage)}`">
+              <svg viewBox="0 0 144 144" class="rings-svg" aria-hidden="true">
+                <g v-for="ring in resourceRings" :key="ring.key">
+                  <circle cx="72" cy="72" :r="ring.radius" class="ring-track" />
+                  <circle
+                    cx="72" cy="72" :r="ring.radius"
+                    class="ring-progress"
+                    :stroke="ring.color"
+                    :stroke-dasharray="`${2 * Math.PI * ring.radius}`"
+                    :stroke-dashoffset="(2 * Math.PI * ring.radius) * (1 - (ring.value ?? 0) / 100)"
+                  />
+                </g>
+              </svg>
+            </div>
+
+            <div class="host-metrics">
+              <div class="host-metric">
+                <span class="metric-dot cpu-dot" />
+                <v-icon icon="mdi-cpu-64-bit" size="16" />
+                <span class="metric-name">{{ t('settings.resources.cpu_usage') }}</span>
+                <strong class="metric-number">{{ formatPercent(cpuUsage) }}</strong>
+                <span class="metric-secondary" :class="temperatureClass(cpuTemperature)">{{ t('settings.resources.temperature') }}: {{ formatTemperature(cpuTemperature) }}</span>
               </div>
-              <strong :class="usageClass(cpuUsage)">
-                {{ formatPercent(cpuUsage) }}
-              </strong>
-            </div>
-
-            <v-progress-linear
-                :model-value="cpuUsage ?? 0"
-                :color="usageColor(cpuUsage)"
-                rounded
-                height="8"
-            />
-
-            <div class="text-caption">
-              {{ t('settings.resources.temperature') }}:
-              <strong :class="temperatureClass(cpuTemperature)">
-                {{ formatTemperature(cpuTemperature) }}
-              </strong>
-            </div>
-          </section>
-
-          <v-divider />
-
-          <section class="metric-section">
-            <div class="metric-header">
-              <div class="metric-label">
-                <v-icon icon="mdi-memory" size="19" />
-                <span>{{ t('settings.resources.ram_usage') }}</span>
+              <div class="host-metric">
+                <span class="metric-dot ram-dot" />
+                <v-icon icon="mdi-memory" size="16" />
+                <span class="metric-name">{{ t('settings.resources.ram_usage') }}</span>
+                <strong class="metric-number">{{ formatPercent(memoryUsage) }}</strong>
+                <span class="metric-secondary">{{ formatBytes(usedMemoryBytes) }} / {{ formatBytes(totalMemoryBytes) }}</span>
               </div>
-              <strong :class="usageClass(memoryUsage)">
-                {{ formatPercent(memoryUsage) }}
-              </strong>
-            </div>
-
-            <v-progress-linear
-                :model-value="memoryUsage ?? 0"
-                :color="usageColor(memoryUsage)"
-                rounded
-                height="8"
-            />
-
-            <div class="text-caption">
-              <strong>{{ formatBytes(usedMemoryBytes) }}</strong>
-              /
-              {{ formatBytes(totalMemoryBytes) }}
-            </div>
-          </section>
-
-          <v-divider />
-
-          <section class="metric-section">
-            <div class="metric-header">
-              <div class="metric-label">
-                <v-icon icon="mdi-harddisk" size="19" />
-                <span>{{ t('settings.resources.storage_usage') }}</span>
+              <div class="host-metric">
+                <span class="metric-dot storage-dot" />
+                <v-icon icon="mdi-harddisk" size="16" />
+                <span class="metric-name">{{ t('settings.resources.storage_usage') }}</span>
+                <strong class="metric-number">{{ formatPercent(storageUsage) }}</strong>
+                <span class="metric-secondary">{{ formatBytes(usedStorageBytes) }} / {{ formatBytes(totalStorageBytes) }}</span>
               </div>
-              <strong :class="usageClass(storageUsage)">
-                {{ formatPercent(storageUsage) }}
-              </strong>
             </div>
-
-            <v-progress-linear
-                :model-value="storageUsage ?? 0"
-                :color="usageColor(storageUsage)"
-                rounded
-                height="8"
-            />
-
-            <div class="text-caption">
-              <strong>{{ formatBytes(usedStorageBytes) }}</strong>
-              /
-              {{ formatBytes(totalStorageBytes) }}
-            </div>
-          </section>
+          </div>
         </v-card-text>
       </v-card>
     </v-col>
@@ -450,6 +419,28 @@ function formatFrequency(value: number | null): string {
 </template>
 
 <style scoped>
+.host-content { display: flex; flex-direction: column; gap: 12px; }
+.host-title { font-size: .9rem; font-weight: 500; }
+.host-overview { display: grid; grid-template-columns: minmax(105px, 36%) minmax(0, 1fr); gap: 12px; align-items: center; }
+.resource-rings { width: 100%; max-width: 170px; aspect-ratio: 1; align-self: center; justify-self: center; }
+.rings-svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-track, .ring-progress { fill: none; stroke-width: 6; }
+.ring-track { stroke: rgba(0,0,0,.43); }
+.ring-progress { stroke-linecap: round; transition: stroke-dashoffset .4s ease; }
+.host-metrics { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.host-metric { display: grid; grid-template-columns: 8px 17px minmax(0,1fr) auto; column-gap: 6px; align-items: center; font-size: .82rem; min-width: 0; }
+.host-metric .v-icon { opacity: .68; }
+.metric-dot { height: 7px; width: 7px; border-radius: 100%; }
+.cpu-dot { background: #e26c85; }
+.ram-dot { background: #ff9e16; }
+.storage-dot { background: #1e9fe6; }
+.dot-spacer { width: 8px; }
+.metric-name { opacity: .76; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metric-number { white-space: nowrap; font-size: .82rem; font-variant-numeric: tabular-nums; }
+.metric-secondary { grid-column: 3 / 5; opacity: .62; font-size: .72rem; margin-top: 1px; white-space: nowrap; }
+.host-divider { margin: 4px 0; }
+@media (max-width: 420px) { .host-overview { grid-template-columns: minmax(90px, 33%) minmax(0,1fr); gap: 8px; } .host-metric { column-gap: 4px; font-size: .75rem; } .metric-number { font-size: .75rem; } }
+
 .resources-row {
   align-items: flex-start;
 }
@@ -471,11 +462,6 @@ function formatFrequency(value: number | null): string {
   align-self: flex-start;
 }
 
-.host-content {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
 
 .metric-section {
   display: flex;

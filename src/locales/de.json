@@ -98,7 +98,10 @@
     "moved": "Datei erfolgreich verschoben",
     "deleted": "Datei erfolgreich gelöscht",
     "move_failed": "Datei konnte nicht verschoben werden",
-    "delete_failed": "Datei konnte nicht gelöscht werden"
+    "delete_failed": "Datei konnte nicht gelöscht werden",
+    "folder_actions": "Ordneraktionen",
+    "folder_delete_title": "Ordner löschen?",
+    "folder_delete_message": "Dieser Ordner wird gelöscht. Er muss leer sein."
   },
   "print": {
     "current": {
@@ -295,6 +298,7 @@
       }
     },
     "resources": {
+      "system_information": "Systeminformationen",
       "main_mcu": "Haupt-MCU",
       "no_mcus": "Keine MCU-Daten verfügbar",
       "cpu_usage": "CPU-Auslastung",

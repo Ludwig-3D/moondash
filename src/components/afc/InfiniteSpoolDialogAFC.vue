@@ -134,10 +134,10 @@ async function save() {
       </v-card-text>
       <v-card-actions>
         <v-spacer />
-        <v-btn variant="text" :disabled="saving" @click="dialogOpen = false">
+        <v-btn  :disabled="saving" @click="dialogOpen = false">
           {{ t('afc.infinite_spool.cancel') }}
         </v-btn>
-        <v-btn color="primary" :loading="saving" :disabled="!lane || !isValid" @click="save">
+        <v-btn variant="tonal" color="primary" :loading="saving" :disabled="!lane || !isValid" @click="save">
           {{ t('afc.infinite_spool.save') }}
         </v-btn>
       </v-card-actions>

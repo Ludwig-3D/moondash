@@ -50,7 +50,7 @@ function close() {
 
       <v-card-actions>
         <v-spacer />
-        <v-btn variant="text" @click="close">
+        <v-btn  @click="close">
           {{ t('settings.updates.dialog.close') }}
         </v-btn>
       </v-card-actions>

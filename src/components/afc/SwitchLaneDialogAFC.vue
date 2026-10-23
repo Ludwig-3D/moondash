@@ -366,7 +366,7 @@ function selectLane(lane: AfcLane) {
       <v-card-actions class="switch-lane-actions">
         <v-spacer />
         <v-btn
-            variant="text"
+            
             :disabled="saving"
             @click="closeDialog"
         >

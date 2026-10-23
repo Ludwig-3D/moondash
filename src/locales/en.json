@@ -98,7 +98,10 @@
     "moved": "File moved successfully",
     "deleted": "File deleted successfully",
     "move_failed": "Could not move file",
-    "delete_failed": "Could not delete file"
+    "delete_failed": "Could not delete file",
+    "folder_actions": "Folder actions",
+    "folder_delete_title": "Delete folder?",
+    "folder_delete_message": "This folder will be deleted. It must be empty."
   },
   "print": {
     "current": {
@@ -295,6 +298,7 @@
       }
     },
     "resources": {
+      "system_information": "System information",
       "main_mcu": "Main MCU",
       "no_mcus": "No MCU data available",
       "cpu_usage": "CPU Usage",

@@ -935,7 +935,7 @@ async function startPrint() {
               </v-btn>
 
               <v-btn
-                  variant="text"
+                  variant="tonal"
                   color="primary"
                   :disabled="primaryActionDisabled"
                   @click="handlePrimaryAction"

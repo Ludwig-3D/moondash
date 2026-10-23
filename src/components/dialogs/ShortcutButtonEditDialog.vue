@@ -326,10 +326,10 @@ function close() {
 
       <v-card-actions>
         <v-spacer/>
-        <v-btn variant="text" @click="close">
+        <v-btn  @click="close">
           {{ t('settings.shortcuts.dialog.actions.cancel') }}
         </v-btn>
-        <v-btn color="primary" :disabled="!canSave" @click="save">
+        <v-btn variant="tonal" color="primary" :disabled="!canSave" @click="save">
           {{ t('settings.shortcuts.dialog.actions.save') }}
         </v-btn>
       </v-card-actions>

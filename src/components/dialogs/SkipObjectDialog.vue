@@ -355,12 +355,12 @@ async function skipSelectedObject() {
             </div>
 
             <div class="skip-object-actions">
-              <v-btn variant="text" @click="dialogOpen = false">
+              <v-btn @click="dialogOpen = false">
                 {{ t('print.current.close') }}
               </v-btn>
               <v-btn
                   color="secondary"
-                  variant="text"
+                  variant="tonal"
                   :disabled="loading || !selectedObject || selectedObject.excluded"
                   @click="skipSelectedObject"
               >

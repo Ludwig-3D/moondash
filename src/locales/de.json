@@ -311,6 +311,26 @@
       "awake": "Aktiv",
       "frequency": "Frequenz",
       "chipset": "Chipsatz"
+    },
+    "print_history": {
+      "title": "Druckstatistik",
+      "chart": "Diagramm",
+      "table": "Details",
+      "refresh": "Aktualisieren",
+      "unavailable": "Druckhistorie konnte nicht geladen werden",
+      "loading": "Historie wird geladen…",
+      "empty": "Noch keine Druckhistorie",
+      "total_print_time": "Gesamtdruckzeit",
+      "longest_print": "Längste Druckzeit",
+      "average_print": "Durchschnittliche Druckzeit",
+      "filament": "Filamentverbrauch gesamt",
+      "jobs": "Aufträge",
+      "completed": "Abgeschlossen",
+      "cancelled": "Abgebrochen",
+      "error": "Fehler",
+      "shutdown": "Klippy-Absturz",
+      "interrupted": "Unterbrochen",
+      "in_progress": "Läuft"
     }
   },
   "job_queue": {

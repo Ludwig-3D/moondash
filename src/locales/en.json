@@ -311,6 +311,26 @@
       "awake": "Awake",
       "frequency": "Frequency",
       "chipset": "Chipset"
+    },
+    "print_history": {
+      "title": "Print history",
+      "chart": "Chart",
+      "table": "Details",
+      "refresh": "Refresh",
+      "unavailable": "Unable to load print history",
+      "loading": "Loading history…",
+      "empty": "No print history yet",
+      "total_print_time": "Total print time",
+      "longest_print": "Longest print time",
+      "average_print": "Average print time",
+      "filament": "Total filament used",
+      "jobs": "Jobs",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "error": "Error",
+      "shutdown": "Klippy shutdown",
+      "interrupted": "Interrupted",
+      "in_progress": "In progress"
     }
   },
   "job_queue": {

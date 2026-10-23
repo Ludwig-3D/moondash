@@ -82,7 +82,7 @@ onBeforeUnmount(() => {
         </v-sheet>
       </v-tabs-window-item>
       <v-tabs-window-item value="resources">
-        <v-sheet class="pa-0 pr-3 pb-3 pt-2" color="transparent">
+        <v-sheet class="pa-0 pr-3 pb-3 pt-2 resources-sheet" color="transparent">
           <ResourcesPanel/>
         </v-sheet>
       </v-tabs-window-item>
@@ -106,5 +106,8 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
   max-height: 100%;
+}
+.resources-sheet {
+  overflow: visible;
 }
 </style>

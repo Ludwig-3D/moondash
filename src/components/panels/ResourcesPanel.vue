@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import PrintHistoryStatsPanel from '@/components/panels/PrintHistoryStatsPanel.vue'
 
 type AnyRecord = Record<string, any>
 
@@ -298,7 +299,7 @@ function formatFrequency(value: number | null): string {
 </script>
 
 <template>
-  <v-row density="comfortable" align="start" class="resources-row">
+  <v-row density="comfortable" align="stretch" class="resources-row">
     <v-col cols="12" sm="6" class="resource-col host-col">
       <v-card rounded="lg" variant="tonal" class="host-card">
         <v-card-text class="host-content pa-3">
@@ -346,6 +347,7 @@ function formatFrequency(value: number | null): string {
           </div>
         </v-card-text>
       </v-card>
+      <PrintHistoryStatsPanel class="history-below-host mt-3" />
     </v-col>
 
     <v-col cols="12" sm="6" class="resource-col mcu-col">
@@ -424,7 +426,7 @@ function formatFrequency(value: number | null): string {
 .host-overview { display: grid; grid-template-columns: minmax(105px, 36%) minmax(0, 1fr); gap: 12px; align-items: center; }
 .resource-rings { width: 100%; max-width: 170px; aspect-ratio: 1; align-self: center; justify-self: center; }
 .rings-svg { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
-.ring-track, .ring-progress { fill: none; stroke-width: 6; }
+.ring-track, .ring-progress { fill: none; stroke-width: 8; }
 .ring-track { stroke: rgba(0,0,0,.43); }
 .ring-progress { stroke-linecap: round; transition: stroke-dashoffset .4s ease; }
 .host-metrics { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -442,12 +444,15 @@ function formatFrequency(value: number | null): string {
 @media (max-width: 420px) { .host-overview { grid-template-columns: minmax(90px, 33%) minmax(0,1fr); gap: 8px; } .host-metric { column-gap: 4px; font-size: .75rem; } .metric-number { font-size: .75rem; } }
 
 .resources-row {
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 .resource-col {
   padding-top: 4px !important;
   padding-bottom: 4px !important;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .resource-col > .v-card {
@@ -455,11 +460,25 @@ function formatFrequency(value: number | null): string {
 }
 
 .host-col {
-  align-self: flex-start;
+  align-self: stretch;
+}
+
+.host-col > .host-card {
+  flex: 0 0 auto;
+}
+
+.history-below-host {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .mcu-col {
-  align-self: flex-start;
+  align-self: stretch;
+}
+
+.mcu-col > .mcu-card {
+  flex: 1 1 auto;
 }
 
 

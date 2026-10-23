@@ -296,7 +296,12 @@ const moveIsValid = computed(() => {
   if (actionFolder.value ? !newFolderNameValidForMove.value : !targetFilenameValid.value) return false
   const filename = destinationFilename.value
   const target = destinationFolder.value ? `${destinationFolder.value}/${filename}` : filename
-  return target !== path && !(actionFolder.value && (destinationFolder.value === path || destinationFolder.value.startsWith(`${path}/`))) && !allFiles.value.some(file => getFilePath(file) === target || (actionFolder.value && getFilePath(file).startsWith(`${target}/`)))
+  if (target === path) return false
+  if (actionFolder.value && (destinationFolder.value === path || destinationFolder.value.startsWith(`${path}/`))) return false
+  return !allFiles.value.some(file => {
+    const existingPath = getFilePath(file)
+    return existingPath === target || (actionFolder.value !== null && existingPath !== null && existingPath.startsWith(`${target}/`))
+  })
 })
 
 async function refreshAfterFileChange() {
@@ -924,7 +929,7 @@ onBeforeUnmount(() => {
               <div v-if="actionFolder" class="file-action-thumb file-action-folder-preview">
                 <v-icon icon="mdi-folder-outline" size="150" />
               </div>
-              <GcodeDialogThumbnail v-else :file-path="actionPath" class="file-action-thumb" />
+              <GcodeDialogThumbnail v-else :file-path="actionPath ?? ''" class="file-action-thumb" />
               <div class="file-action-info">
                 <div class="file-action-name">{{ actionDisplayName }}</div>
                 <div v-if="!actionFolder" class="file-action-meta">

@@ -77,6 +77,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select', file: MoonrakerFile): void
+  (e: 'actions', file: MoonrakerFile): void
 }>()
 
 function formatPrintTime(seconds: number | undefined): string {
@@ -191,6 +192,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposed = true
+  cancelLongPress()
+  if (suppressResetTimer) clearTimeout(suppressResetTimer)
 })
 
 watch(
@@ -200,7 +203,52 @@ watch(
     },
 )
 
+let longPressTimer: ReturnType<typeof setTimeout> | null = null
+let suppressClick = false
+let suppressResetTimer: ReturnType<typeof setTimeout> | null = null
+
+function suppressNextClick() {
+  suppressClick = true
+  if (suppressResetTimer) clearTimeout(suppressResetTimer)
+  suppressResetTimer = setTimeout(() => { suppressClick = false }, 800)
+}
+let startX = 0
+let startY = 0
+
+function cancelLongPress() {
+  if (longPressTimer) clearTimeout(longPressTimer)
+  longPressTimer = null
+}
+
+function pointerDown(event: PointerEvent) {
+  if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return
+  cancelLongPress()
+  startX = event.clientX
+  startY = event.clientY
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    suppressNextClick()
+    emit('actions', props.file)
+  }, 550)
+}
+
+function pointerMove(event: PointerEvent) {
+  if (Math.hypot(event.clientX - startX, event.clientY - startY) > 12) cancelLongPress()
+}
+
+function showContextMenu(event: MouseEvent) {
+  event.preventDefault()
+  cancelLongPress()
+  if (suppressClick) return
+  suppressNextClick()
+  emit('actions', props.file)
+}
+
 function selectFile() {
+  if (suppressClick) {
+    suppressClick = false
+    return
+  }
   emit('select', props.file)
 }
 </script>
@@ -211,6 +259,12 @@ function selectFile() {
       :class="{ 'print-file-card--disabled': disabled }"
       variant="flat"
       @click="selectFile"
+      @contextmenu="showContextMenu"
+      @pointerdown="pointerDown"
+      @pointermove="pointerMove"
+      @pointerup="cancelLongPress"
+      @pointercancel="cancelLongPress"
+      @pointerleave="cancelLongPress"
   >
     <div class="print-file-card__title">
       {{ title }}
@@ -267,6 +321,9 @@ function selectFile() {
 <style scoped>
 .print-file-card {
   overflow: hidden;
+  -webkit-touch-callout: none;
+  user-select: none;
+  touch-action: pan-y;
   background: transparent !important;
   box-shadow: none !important;
   position: relative;

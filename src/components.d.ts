@@ -22,6 +22,7 @@ declare module 'vue' {
     CurrentPrintPanel: typeof import('./components/panels/CurrentPrintPanel.vue')['default']
     ExtruderPanel: typeof import('./components/panels/ExtruderPanel.vue')['default']
     FanDialog: typeof import('./components/dialogs/FanDialog.vue')['default']
+    GcodeDialogThumbnail: typeof import('./components/dialogs/GcodeDialogThumbnail.vue')['default']
     IdleOverlay: typeof import('./components/overlays/IdleOverlay.vue')['default']
     JobQueuePanel: typeof import('./components/panels/JobQueuePanel.vue')['default']
     KeyboardOverlay: typeof import('./components/overlays/KeyboardOverlay.vue')['default']

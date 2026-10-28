@@ -1,5 +1,4 @@
 import { defineConfig } from "vite";
-import Layouts from 'vite-plugin-vue-layouts-next'
 import Vuetify, { transformAssetUrls } from 'vite-plugin-vuetify'
 import Vue from '@vitejs/plugin-vue'
 import AutoImport from 'unplugin-auto-import/vite'
@@ -16,7 +15,6 @@ export default defineConfig(async () => ({
       VueRouter({
           dts: 'src/typed-router.d.ts',
       }),
-      Layouts(),
       AutoImport({
           imports: [
               'vue',

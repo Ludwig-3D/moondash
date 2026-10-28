@@ -112,7 +112,7 @@ watch(
 
 <template>
   <v-dialog v-model="dialogOpen" max-width="760" persistent>
-    <v-card rounded="lg">
+    <v-card class="wifi-scan-dialog__card" rounded="lg">
       <v-card-title class="wifi-scan-dialog__title">
         <span>{{ t('settings.network.wifi.scan') }}</span>
 
@@ -128,12 +128,13 @@ watch(
         </v-btn>
       </v-card-title>
 
-      <v-card-text>
+      <v-card-text class="wifi-scan-dialog__content network-panel__scan-content">
         <div class="wifi-scan-dialog__list-wrap">
           <v-list density="compact" bg-color="transparent">
             <v-list-item
-                v-for="network in sortedVisibleNetworks"
+                v-for="(network, index) in sortedVisibleNetworks"
                 :key="`visible-${network.ssid}`"
+                :class="{ 'wifi-network-row--alternate': index % 2 === 1 }"
                 @click="openNetwork(network)"
             >
               <template #prepend>
@@ -187,6 +188,9 @@ watch(
 </template>
 
 <style scoped>
+.wifi-scan-dialog__card { display: flex; flex-direction: column; max-height: min(640px, calc(100dvh - 48px)); overflow: hidden; }
+.wifi-scan-dialog__title, .wifi-scan-dialog__card > .v-card-actions { flex: 0 0 auto; }
+.wifi-scan-dialog__content { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; margin-right: 16px; padding-right: 0; }
 .wifi-scan-dialog__title {
   display: flex;
   align-items: center;
@@ -195,9 +199,14 @@ watch(
 }
 
 .wifi-scan-dialog__list-wrap {
-  max-height: calc(100vh - 200px);
-  height: calc(100vh - 200px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  margin-right: 0; /* spacing belongs to the v-card-text scroll region */
+}
+/* Subtle alternating rows, respecting Vuetify light and dark themes. */
+.wifi-network-row--alternate {
+  background-color: rgba(var(--v-theme-on-surface), 0.055);
 }
 </style>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import { useAppStore } from '@/stores/app'
 import UpdateInfoDialog from '@/components/dialogs/UpdateInfoDialog.vue'
+import UpdateProgressDialog from '@/components/dialogs/UpdateProgressDialog.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -57,6 +59,67 @@ const updateBusy = ref(false)
 const versionInfo = ref<Record<string, MoonrakerUpdateService>>({})
 const errorMessage = ref<string | null>(null)
 const infoDialogOpen = ref(false)
+const progressOpen = ref(false)
+const progressRunning = ref(false)
+const progressError = ref('')
+const progressMessages = ref<string[]>([])
+const progressApplication = ref('')
+let updateListener: (() => void) | null = null
+let refreshListener: (() => void) | null = null
+let progressFailed = false
+let restartRequired = false
+
+function includesMoondash(packages: string[] | undefined): boolean {
+  return Boolean(packages?.some(pkg => /^moondash(?:$|[=: /])/i.test(pkg.trim())))
+}
+
+function systemPackagesContainMoondash(): boolean {
+  return Object.values(versionInfo.value).some(service =>
+    service.configured_type === 'system' && includesMoondash(service.package_list))
+}
+
+function receiveUpdate(params?: unknown[]) {
+  const event = (Array.isArray(params) ? params[0] : params) as
+    { application?: string; message?: string; complete?: boolean } | undefined
+  if (!event || !progressRunning.value) return
+  progressApplication.value = event.application || progressApplication.value
+  if (event.message) {
+    progressMessages.value.push(event.message)
+    if (progressMessages.value.length > 250) progressMessages.value.shift()
+    if (/^error(?: updating|:|\s)/i.test(event.message.trim())) progressFailed = true
+  }
+  // 'complete' belongs to the entire Moonraker operation, not an individual package.
+  if (event.complete) {
+  }
+}
+
+function beginProgress() {
+  progressMessages.value = []
+  progressApplication.value = ''
+  progressError.value = ''
+  progressFailed = false
+  progressOpen.value = true
+  progressRunning.value = true
+}
+
+async function finishProgress(success: boolean) {
+  progressRunning.value = false
+  if (success && !progressFailed) {
+    progressMessages.value.push(t('settings.updates.dialog.completed'))
+    if (restartRequired) {
+      progressMessages.value.push(t('settings.updates.dialog.restarting'))
+      try {
+        await invoke('restart_after_package_update')
+      } catch (error) {
+        progressError.value = t('settings.updates.dialog.restart_failed', { error: String(error) })
+      }
+    }
+  } else {
+    progressError.value ||= t('settings.updates.dialog.failed')
+  }
+  restartRequired = false
+}
+
 const infoDialogTitle = ref('')
 const infoDialogMessages = ref<string[]>([])
 
@@ -177,12 +240,17 @@ async function updateService(service: ServiceEntry) {
   try {
     errorMessage.value = null
     updatingService.value = service.key
+    restartRequired = service.service.configured_type === 'system' && includesMoondash(service.service.package_list)
+    beginProgress()
 
     await moonrakerClient.call('machine.update.upgrade', { name: service.name }, null)
+    await finishProgress(true)
     await loadUpdateStatus()
   } catch (error) {
     console.error(`Failed to update ${service.name}`, error)
     errorMessage.value = error instanceof Error ? error.message : String(error)
+    progressError.value = errorMessage.value
+    await finishProgress(false)
   } finally {
     updatingService.value = null
   }
@@ -194,18 +262,31 @@ async function updateAll() {
   try {
     errorMessage.value = null
     updatingAll.value = true
+    restartRequired = systemPackagesContainMoondash()
+    beginProgress()
 
     await moonrakerClient.call('machine.update.full', undefined, null)
+    await finishProgress(true)
     await loadUpdateStatus()
   } catch (error) {
     console.error('Failed to update all services', error)
     errorMessage.value = error instanceof Error ? error.message : String(error)
+    progressError.value = errorMessage.value
+    await finishProgress(false)
   } finally {
     updatingAll.value = false
   }
 }
 
 onMounted(async () => {
+  updateListener = moonrakerClient.onNotification('notify_update_response', receiveUpdate)
+  refreshListener = moonrakerClient.onNotification('notify_update_refreshed', (params) => {
+    const data = (Array.isArray(params) ? params[0] : params) as UpdateStatusResponse | undefined
+    if (data?.version_info && !progressRunning.value) {
+      versionInfo.value = data.version_info
+      updateBusy.value = Boolean(data.busy)
+    }
+  })
   try {
     loading.value = true
     await loadUpdateStatus()
@@ -215,6 +296,10 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+})
+onUnmounted(() => {
+  updateListener?.()
+  refreshListener?.()
 })
 </script>
 
@@ -339,6 +424,14 @@ onMounted(async () => {
         </template>
       </v-list-item>
     </v-list>
+
+    <UpdateProgressDialog
+        v-model="progressOpen"
+        :running="progressRunning"
+        :application="progressApplication"
+        :messages="progressMessages"
+        :error="progressError"
+    />
 
     <UpdateInfoDialog
         v-model="infoDialogOpen"

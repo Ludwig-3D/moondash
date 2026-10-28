@@ -253,6 +253,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             frontend_log,
+            version::restart_after_package_update,
             config::get_config,
             config::load_config_file,
             config::save_editable_config,
@@ -273,8 +274,6 @@ pub fn run() {
             network::get_primary_ip_address,
         ])
         .setup(|app| {
-            version::check_and_restart_if_updated();
-            version::start_executable_update_watcher();
 
             let matches = app.cli().matches().ok();
 

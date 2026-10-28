@@ -118,8 +118,9 @@ async function forgetNetwork(ssid: string) {
         <div class="wifi-saved-dialog__list-wrap">
           <v-list density="compact" bg-color="transparent">
             <v-list-item
-                v-for="network in sortedSavedNetworks"
+                v-for="(network, index) in sortedSavedNetworks"
                 :key="`saved-${network.ssid}`"
+                :class="{ 'wifi-network-row--alternate': index % 2 === 1 }"
                 :disabled="Boolean(connectingSsid || forgettingSsid)"
                 @click="connectSavedNetwork(network)"
             >
@@ -205,5 +206,9 @@ async function forgetNetwork(ssid: string) {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+/* Subtle alternating rows, respecting Vuetify light and dark themes. */
+.wifi-network-row--alternate {
+  background-color: rgba(var(--v-theme-on-surface), 0.055);
 }
 </style>

@@ -212,16 +212,17 @@ function selectNetwork(network: WifiNetwork) {
     </v-card-text>
   </v-card>
 
-  <v-dialog v-model="scanDialogOpen" max-width="720">
-    <v-card rounded="lg">
+  <v-dialog v-model="scanDialogOpen" max-width="720" scrollable>
+    <v-card class="network-panel__dialog" rounded="lg">
       <v-card-title>{{ t('settings.network.wifi.available') }}</v-card-title>
 
-      <v-card-text>
+      <v-card-text class="network-panel__content">
         <v-list v-if="scannedNetworks.length" density="compact">
           <v-list-item
               v-for="network in scannedNetworks"
               :key="network.ssid"
               @click="selectNetwork(network)"
+              class="pr-0"
           >
             <template #prepend>
               <v-icon :icon="signalIcon(network.signalPercent)" />
@@ -255,14 +256,15 @@ function selectNetwork(network: WifiNetwork) {
   </v-dialog>
 
   <v-dialog v-model="savedDialogOpen" max-width="720">
-    <v-card rounded="lg">
+    <v-card class="network-panel__dialog" rounded="lg">
       <v-card-title>{{ t('settings.network.wifi.saved_networks') }}</v-card-title>
 
-      <v-card-text>
+      <v-card-text class="network-panel__content">
         <v-list v-if="savedNetworks.length" density="compact">
           <v-list-item
               v-for="network in savedNetworks"
               :key="network.ssid"
+              class="pr-0"
           >
             <template #prepend>
               <v-icon :icon="signalIcon(network.signalPercent)" />
@@ -452,5 +454,26 @@ function selectNetwork(network: WifiNetwork) {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.network-panel__dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: min(640px, calc(100dvh - 48px));
+  overflow: hidden;
+
+  > .v-card-title,
+  > .v-card-actions {
+    flex: 0 0 auto;
+  }
+}
+.network-panel__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin-right: 16px;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin-top: 5px;
+  margin-bottom: 5px;
 }
 </style>

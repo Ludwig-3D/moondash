@@ -294,7 +294,13 @@
       "dirty": "Dreckig",
       "packages": "Pakete",
       "dialog": {
-        "close": "Schließen"
+        "close": "Schließen",
+        "title": "Update-Fortschritt",
+        "preparing": "Update wird vorbereitet…",
+        "completed": "Update abgeschlossen.",
+        "restarting": "Moondash-Paket aktualisiert. Moondash-Dienst wird neu gestartet…",
+        "restart_failed": "Neustart von Moondash fehlgeschlagen: {error}",
+        "failed": "Update fehlgeschlagen. Siehe Meldungen oben."
       }
     },
     "resources": {

@@ -59,6 +59,7 @@ declare module 'vue' {
     UpdateAlert: typeof import('./components/notifications/UpdateAlert.vue')['default']
     UpdateInfoDialog: typeof import('./components/dialogs/UpdateInfoDialog.vue')['default']
     UpdatePanel: typeof import('./components/panels/UpdatePanel.vue')['default']
+    UpdateProgressDialog: typeof import('./components/dialogs/UpdateProgressDialog.vue')['default']
     WebcamToolPanel: typeof import('./components/panels/WebcamToolPanel.vue')['default']
     WebPanelQrPanel: typeof import('./components/panels/network/WebPanelQrPanel.vue')['default']
     WifiNetworkDialog: typeof import('./components/dialogs/WifiNetworkDialog.vue')['default']

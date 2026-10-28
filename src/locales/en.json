@@ -294,7 +294,13 @@
       "dirty": "Dirty",
       "packages": "Packages",
       "dialog": {
-        "close": "Close"
+        "close": "Close",
+        "title": "Update progress",
+        "preparing": "Preparing update…",
+        "completed": "Update completed.",
+        "restarting": "Moondash package updated. Restarting Moondash service…",
+        "restart_failed": "Moondash restart failed: {error}",
+        "failed": "Update failed. See the messages above."
       }
     },
     "resources": {

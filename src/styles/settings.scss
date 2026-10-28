@@ -2,7 +2,8 @@
 @use "shortcutbar.scss";
 @use "numpad.scss";
 @use "performance.scss";
-@use "overlay.scss";
+@use "overlays.scss";
+@use "dialogs.scss";
 
 .v-list-item__overlay {
   background: transparent !important;

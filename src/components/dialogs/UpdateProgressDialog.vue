@@ -36,7 +36,6 @@ watch(() => props.messages.length, async () => {
       </v-card-title>
 
       <v-card-text class="update-progress-dialog__content">
-        <v-progress-linear v-if="running" indeterminate rounded class="mb-4" />
         <div v-if="application" class="text-subtitle-2 mb-2">{{ application }}</div>
         <div ref="logElement" class="update-progress-dialog__log" role="log">
           <div v-for="(line, index) in messages" :key="index">{{ line }}</div>

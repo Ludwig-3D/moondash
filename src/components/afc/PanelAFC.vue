@@ -323,7 +323,6 @@ async function handleLoad(lane: AfcLane) {
                     variant="plain"
                     :style="{ color: lane.runoutLane && lane.runoutLane.toUpperCase() !== 'NONE' ? '#4caf50' : getContrastTextColor(lane.color) }"
                     :disabled="printerIsPrinting || isEjecting(lane.id) || isLoading(lane.id)"
-                    :title="t('afc.infinite_spool.title')"
                     @click="handleInfiniteSpool(lane)"
                 />
               </div>

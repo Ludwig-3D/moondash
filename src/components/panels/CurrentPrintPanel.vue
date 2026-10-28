@@ -508,7 +508,6 @@ watch(
           <div
               ref="filenameWrapRef"
               class="current-print-panel__filename-wrap"
-              :title="fileDisplayName"
           >
             <div
                 ref="filenameTextRef"
@@ -532,7 +531,6 @@ watch(
               <div
                   ref="displayMessageWrapRef"
                   class="current-print-panel__display-message-wrap"
-                  :title="displayMessage"
               >
                 <div
                     ref="displayMessageTextRef"
@@ -665,7 +663,6 @@ watch(
             <div
                 ref="displayMessageWrapRef"
                 class="current-print-panel__display-message-wrap"
-                :title="displayMessage"
             >
               <div
                   ref="displayMessageTextRef"

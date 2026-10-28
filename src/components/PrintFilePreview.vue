@@ -137,14 +137,6 @@ const lastPrintStateIcon = computed(() => {
   }
 })
 
-const lastPrintStateLabel = computed(() => {
-  if (!lastPrintStatus.value) return ''
-  return lastPrintStatus.value
-      .split('_')
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ')
-})
-
 function normalizeHistoryFilename(value: string | undefined | null): string {
   if (!value) return ''
 
@@ -308,7 +300,6 @@ function selectFile() {
             v-if="lastPrintStatus"
             class="print-file-card__meta-item print-file-card__meta-item--last-state"
             :style="lastPrintStateColor ? { color: `rgb(var(--v-theme-${lastPrintStateColor}))` } : undefined"
-            :title="`Last print: ${lastPrintStateLabel} (${lastPrintCount})`"
         >
           <v-icon :icon="lastPrintStateIcon" :color="lastPrintStateColor" size="16" />
           <span>{{ lastPrintCount }}</span>

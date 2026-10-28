@@ -428,7 +428,6 @@ watch(
                 <div
                     :ref="(el) => setFilenameWrapRef(job.key, el as HTMLElement | null)"
                     class="job-query-panel__filename-wrap"
-                    :title="displayName(job.filename)"
                 >
                   <div
                       :ref="(el) => setFilenameTextRef(job.key, el as HTMLElement | null)"

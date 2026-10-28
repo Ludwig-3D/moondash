@@ -211,14 +211,12 @@ onUnmounted(() => {
               value="chart"
               icon="mdi-chart-donut"
               size="small"
-              :title="t('settings.print_history.chart')"
           />
 
           <v-btn
               value="details"
               icon="mdi-format-list-bulleted"
               size="small"
-              :title="t('settings.print_history.table')"
           />
         </v-btn-toggle>
       </div>

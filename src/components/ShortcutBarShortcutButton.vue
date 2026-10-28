@@ -155,12 +155,6 @@ const isActive = computed(() => {
 
 const buttonColor = computed(() => (isActive.value ? 'primary' : undefined))
 
-const buttonTitle = computed(() => {
-  return isActive.value && props.item.macro_active
-      ? props.item.macro_active
-      : props.item.macro_inactive
-})
-
 const macroToSend = computed(() => {
   if (isActive.value && props.item.macro_active) return props.item.macro_active
   return props.item.macro_inactive
@@ -186,7 +180,6 @@ async function handleClick() {
       variant="tonal"
       :color="buttonColor"
       :icon="item.icon"
-      :title="buttonTitle"
       @click="handleClick"
   />
 </template>

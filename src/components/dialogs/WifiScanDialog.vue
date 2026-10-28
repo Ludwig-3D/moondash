@@ -1,212 +1,63 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-
-type WifiNetwork = {
-  ssid: string
-  secured: boolean
-  saved: boolean
-  signalPercent: number | null
-}
+import type { WifiNetwork } from '@/stores/app'
 
 const { t } = useI18n()
-
 const props = defineProps<{
   modelValue: boolean
-  enabled: boolean
-  connectedSsid: string | null
-  visibleNetworks: WifiNetwork[]
+  networks: WifiNetwork[]
 }>()
-
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'open-network', network: WifiNetwork): void
-  (e: 'changed'): void
+  (e: 'select', network: WifiNetwork): void
 }>()
-
-const scanBusy = ref(false)
-
-const dialogOpen = computed({
+const open = computed({
   get: () => props.modelValue,
-  set: (value: boolean) => emit('update:modelValue', value),
+  set: value => emit('update:modelValue', value),
 })
-
-const sortedVisibleNetworks = computed(() => {
-  const bySsid = new Map<string, WifiNetwork>()
-
-  for (const network of props.visibleNetworks) {
-    const ssid = network.ssid.trim()
-    if (!ssid) continue
-
-    const existing = bySsid.get(ssid)
-
-    if (!existing) {
-      bySsid.set(ssid, {
-        ...network,
-        ssid,
-      })
-      continue
-    }
-
-    const existingSignal = existing.signalPercent ?? -1
-    const nextSignal = network.signalPercent ?? -1
-
-    if (nextSignal > existingSignal) {
-      bySsid.set(ssid, {
-        ...network,
-        ssid,
-      })
-    }
-  }
-
-  return [...bySsid.values()].sort((a, b) => {
-    const signalDiff = (b.signalPercent ?? -1) - (a.signalPercent ?? -1)
-    if (signalDiff !== 0) return signalDiff
-
-    return a.ssid.localeCompare(b.ssid, undefined, { sensitivity: 'base' })
-  })
-})
-
-function signalLabel(percent: number | null | undefined): string {
-  if (typeof percent !== 'number' || !Number.isFinite(percent)) {
-    return '--'
-  }
-
-  return `${percent}%`
+function signalIcon(signal: number | null): string {
+  if (signal === null) return 'mdi-wifi-strength-outline'
+  if (signal >= 80) return 'mdi-wifi-strength-4'
+  if (signal >= 60) return 'mdi-wifi-strength-3'
+  if (signal >= 40) return 'mdi-wifi-strength-2'
+  if (signal >= 20) return 'mdi-wifi-strength-1'
+  return 'mdi-wifi-strength-outline'
 }
-
-function signalColor(percent: number | null | undefined): string | undefined {
-  if (typeof percent !== 'number' || !Number.isFinite(percent)) return undefined
-  if (percent >= 80) return 'success'
-  if (percent >= 50) return 'warning'
-  return 'error'
-}
-
-async function scanWifi() {
-  if (!props.enabled || scanBusy.value) return
-
-  try {
-    scanBusy.value = true
-
-    await invoke('scan_wifi_networks')
-    emit('changed')
-  } finally {
-    scanBusy.value = false
-  }
-}
-
-function openNetwork(network: WifiNetwork) {
-  emit('open-network', network)
-}
-
-watch(
-    () => props.modelValue,
-    (open) => {
-      if (!open) return
-      void scanWifi()
-    },
-    { immediate: false },
-)
 </script>
 
 <template>
-  <v-dialog v-model="dialogOpen" max-width="760" persistent>
-    <v-card class="wifi-scan-dialog__card" rounded="lg">
-      <v-card-title class="wifi-scan-dialog__title">
-        <span>{{ t('settings.network.wifi.scan') }}</span>
-
-        <v-btn
-            variant="tonal"
-            prepend-icon="mdi-wifi-refresh"
-            :disabled="!enabled || scanBusy"
-            :loading="scanBusy"
-            @click="scanWifi"
-            style="font-size: 15px"
-        >
-          {{ t('settings.network.wifi.scan') }}
-        </v-btn>
-      </v-card-title>
-
-      <v-card-text class="wifi-scan-dialog__content network-panel__scan-content">
-        <div class="wifi-scan-dialog__list-wrap">
-          <v-list density="compact" bg-color="transparent">
-            <v-list-item
-                v-for="(network, index) in sortedVisibleNetworks"
-                :key="`visible-${network.ssid}`"
-                :class="{ 'wifi-network-row--alternate': index % 2 === 1 }"
-                @click="openNetwork(network)"
-            >
-              <template #prepend>
-                <v-icon :color="signalColor(network.signalPercent)">
-                  {{ network.secured ? 'mdi-wifi-lock' : 'mdi-wifi' }}
-                </v-icon>
-              </template>
-
-              <v-list-item-title>{{ network.ssid }}</v-list-item-title>
-
-              <v-list-item-subtitle>
-                {{ signalLabel(network.signalPercent) }}
-              </v-list-item-subtitle>
-
-              <template #append>
-                <v-chip
-                    v-if="connectedSsid === network.ssid"
-                    color="success"
-                    variant="tonal"
-                >
-                  {{ t('settings.network.wifi.connected') }}
-                </v-chip>
-
-                <v-chip
-                    v-else-if="network.saved"
-                    variant="tonal"
-                >
-                  {{ t('settings.network.wifi.saved') }}
-                </v-chip>
-              </template>
-            </v-list-item>
-
-            <v-list-item v-if="!sortedVisibleNetworks.length">
-              <v-list-item-title>
-                {{ t('settings.network.wifi.no_networks') }}
-              </v-list-item-title>
-            </v-list-item>
-          </v-list>
-        </div>
+  <v-dialog v-model="open" max-width="720">
+    <v-card class="wifi-dialog__card" rounded="lg">
+      <v-card-title>{{ t('settings.network.wifi.available') }}</v-card-title>
+      <v-card-text class="wifi-dialog__content">
+        <v-list v-if="networks.length" class="wifi-dialog__list" density="compact" bg-color="transparent">
+          <v-list-item
+              v-for="network in networks"
+              :key="network.ssid"
+              @click="emit('select', network)"
+          >
+            <template #prepend>
+              <v-icon :icon="signalIcon(network.signalPercent)" />
+            </template>
+            <v-list-item-title>{{ network.ssid }}</v-list-item-title>
+            <v-list-item-subtitle>
+              {{ network.signalPercent ?? 0 }}%
+              <span v-if="network.saved"> · {{ t('settings.network.wifi.saved') }}</span>
+            </v-list-item-subtitle>
+            <template #append>
+              <v-icon v-if="network.secured" icon="mdi-lock" size="small" />
+            </template>
+          </v-list-item>
+        </v-list>
+        <v-alert v-else type="info" variant="tonal">
+          {{ t('settings.network.wifi.no_networks') }}
+        </v-alert>
       </v-card-text>
-
       <v-card-actions>
         <v-spacer />
-
-        <v-btn variant="text" @click="dialogOpen = false">
-          {{ t('settings.network.close') }}
-        </v-btn>
+        <v-btn @click="open = false">{{ t('settings.network.close') }}</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
 </template>
-
-<style scoped>
-.wifi-scan-dialog__card { display: flex; flex-direction: column; max-height: min(640px, calc(100dvh - 48px)); overflow: hidden; }
-.wifi-scan-dialog__title, .wifi-scan-dialog__card > .v-card-actions { flex: 0 0 auto; }
-.wifi-scan-dialog__content { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; flex-direction: column; margin-right: 16px; padding-right: 0; }
-.wifi-scan-dialog__title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.wifi-scan-dialog__list-wrap {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  margin-right: 0; /* spacing belongs to the v-card-text scroll region */
-}
-/* Subtle alternating rows, respecting Vuetify light and dark themes. */
-.wifi-network-row--alternate {
-  background-color: rgba(var(--v-theme-on-surface), 0.055);
-}
-</style>

@@ -1,0 +1,37 @@
+.wifi-dialog__card {
+  display: flex;
+  flex-direction: column;
+  max-height: min(640px, calc(100dvh - 48px));
+  overflow: hidden;
+}
+
+.wifi-dialog__card {
+  display: flex !important;
+  flex-direction: column;
+  max-height: min(85vh, 700px);
+  overflow: hidden;
+
+  > .v-card-title,
+  > .v-card-actions {
+    flex: 0 0 auto;
+  }
+
+  > .v-card-text.wifi-dialog__content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 5px 10px 5px 0!important;
+    padding: 0 10px 0 16px!important;
+  }
+}
+
+.wifi-dialog__list {
+  .v-list-item {
+    margin-right: 0;
+  }
+
+  > .v-list-item:nth-child(even) {
+    background-color: rgba(var(--v-theme-on-surface), 0.12);
+    border-radius: 8px;
+  }
+}

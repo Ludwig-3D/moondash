@@ -36,9 +36,6 @@ export default defineConfig(async () => ({
       }),
       Vuetify({
           autoImport: true,
-          styles: {
-              configFile: 'src/styles/settings.scss',
-          },
       }),
   ],
     resolve: {

@@ -5,6 +5,14 @@
 @use "overlays.scss";
 @use "dialogs.scss";
 
+:root {
+  --app-scrollbar-thumb-opacity: 0.42;
+}
+
+.v-theme--dark {
+  --app-scrollbar-thumb-opacity: 0.55;
+}
+
 .v-list-item__overlay {
   background: transparent !important;
 }
@@ -32,7 +40,10 @@
 /* Handle */
 ::-webkit-scrollbar-thumb {
   border-radius: 25px;
-  background: rgb(var(--v-theme-surface-bright));
+  background-color: rgba(
+          var(--v-theme-on-surface),
+          var(--app-scrollbar-thumb-opacity)
+  );
 }
 
 /* Handle on hover */

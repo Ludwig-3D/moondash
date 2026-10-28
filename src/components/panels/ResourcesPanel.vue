@@ -306,8 +306,8 @@ function formatFrequency(value: number | null): string {
           <div class="host-title">{{ t('settings.resources.system_information') }}</div>
 
           <div class="host-overview">
-            <div class="resource-rings" role="img" :aria-label="`${t('settings.resources.cpu_usage')}: ${formatPercent(cpuUsage)}, ${t('settings.resources.ram_usage')}: ${formatPercent(memoryUsage)}, ${t('settings.resources.storage_usage')}: ${formatPercent(storageUsage)}`">
-              <svg viewBox="0 0 144 144" class="rings-svg" aria-hidden="true">
+            <div class="resource-rings" role="img">
+              <svg viewBox="0 0 144 144" class="rings-svg">
                 <g v-for="ring in resourceRings" :key="ring.key">
                   <circle cx="72" cy="72" :r="ring.radius" class="ring-track" />
                   <circle

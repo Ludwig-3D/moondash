@@ -108,7 +108,7 @@ const hostUptime = computed(() => {
   <v-card class="advanced-details-panel my-2 mr-2" rounded="lg" variant="flat">
     <section class="position-panel">
       <div class="position-graphic">
-        <svg class="position-map" viewBox="0 0 202 156" role="img" aria-label="Top-down printer bed; X increases right, Y increases toward the back, Z is vertical">
+        <svg class="position-map" viewBox="0 0 202 156" role="img">
           <!-- Actual X/Y travel proportions from Klipper axis bounds; viewed from printer front. -->
           <rect :x="bedX" :y="bedY" :width="bedW" :height="bedH" rx="3" class="bed" />
           <path v-for="i in 3" :key="`vx${i}`" :d="`M${bedX + bedW * i / 4} ${bedY} v${bedH}`" class="grid-lines" />
@@ -142,7 +142,7 @@ const hostUptime = computed(() => {
       <div class="material-divider"></div>
       <div class="material-value"><span>{{ t('advanced_details.filament_length') }}</span><strong>{{ filament }}</strong></div>
     </section>
-    <section class="system-panel" aria-label="Printer host telemetry">
+    <section class="system-panel">
       <div class="system-grid">
         <div class="system-metric system-usage cpu-metric">
           <div class="cpu-header-row">

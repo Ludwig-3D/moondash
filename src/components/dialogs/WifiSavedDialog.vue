@@ -50,7 +50,6 @@ function signalIcon(signal: number | null): string {
                     variant="text"
                     size="small"
                     :loading="connectBusy"
-                    :aria-label="t('settings.network.connect')"
                     @click="emit('connect', network)"
                 />
                 <v-btn

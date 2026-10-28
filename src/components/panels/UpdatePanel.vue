@@ -331,7 +331,6 @@ onUnmounted(() => {
           icon
           variant="text"
           :disabled="busy"
-          :aria-label="t('settings.updates.refresh')"
           @click="refreshUpdates"
       >
         <LoadingActionIcon icon="mdi-refresh" :loading="refreshing" />

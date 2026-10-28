@@ -9,7 +9,6 @@ withDefaults(defineProps<{
   <v-icon
     :icon="loading ? 'mdi-loading' : icon"
     :class="{ 'loading-action-icon--spinning': loading }"
-    aria-hidden="true"
   />
 </template>
 

@@ -436,7 +436,7 @@ watch(
                       :class="{ 'job-query-panel__marquee': isFilenameOverflowing(job.key) }"
                   >
                     <span>{{ displayName(job.filename) }}</span>
-                    <span v-if="isFilenameOverflowing(job.key)" aria-hidden="true">
+                    <span v-if="isFilenameOverflowing(job.key)">
                       {{ displayName(job.filename) }}
                     </span>
                   </div>

@@ -87,7 +87,6 @@ async function save() {
               type="button"
               class="disabled-option"
               :class="{ 'disabled-option--selected': destination === 'NONE' }"
-              :aria-pressed="destination === 'NONE'"
               :disabled="saving"
               @click="destination = 'NONE'"
           >

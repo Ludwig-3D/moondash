@@ -212,7 +212,6 @@ onUnmounted(() => {
               icon="mdi-chart-donut"
               size="small"
               :title="t('settings.print_history.chart')"
-              :aria-label="t('settings.print_history.chart')"
           />
 
           <v-btn
@@ -220,7 +219,6 @@ onUnmounted(() => {
               icon="mdi-format-list-bulleted"
               size="small"
               :title="t('settings.print_history.table')"
-              :aria-label="t('settings.print_history.table')"
           />
         </v-btn-toggle>
       </div>
@@ -276,7 +274,6 @@ onUnmounted(() => {
               viewBox="0 0 100 100"
               class="history-donut"
               role="img"
-              :aria-label="t('settings.print_history.title')"
           >
             <circle
                 cx="50"

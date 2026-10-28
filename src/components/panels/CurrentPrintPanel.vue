@@ -516,7 +516,7 @@ watch(
                 :class="{ 'current-print-panel__marquee': isFilenameOverflowing }"
             >
               <span>{{ fileDisplayName }}</span>
-              <span v-if="isFilenameOverflowing" aria-hidden="true">{{ fileDisplayName }}</span>
+              <span v-if="isFilenameOverflowing">{{ fileDisplayName }}</span>
             </div>
           </div>
 

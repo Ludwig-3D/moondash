@@ -3,13 +3,6 @@
   flex-direction: column;
   max-height: min(640px, calc(100dvh - 48px));
   overflow: hidden;
-}
-
-.wifi-dialog__card {
-  display: flex !important;
-  flex-direction: column;
-  max-height: min(85vh, 700px);
-  overflow: hidden;
 
   > .v-card-title,
   > .v-card-actions {
@@ -20,8 +13,8 @@
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    margin: 5px 10px 5px 0!important;
-    padding: 0 10px 0 16px!important;
+    margin: 5px 10px 5px 0;
+    padding: 0 10px 0 16px;
   }
 }
 

@@ -7,6 +7,7 @@ import { moonraker as moonrakerClient } from '@/plugins/moonraker'
 import { useAppStore } from '@/stores/app'
 import UpdateInfoDialog from '@/components/dialogs/UpdateInfoDialog.vue'
 import UpdateProgressDialog from '@/components/dialogs/UpdateProgressDialog.vue'
+import LoadingActionIcon from '@/components/common/LoadingActionIcon.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -327,12 +328,14 @@ onUnmounted(() => {
       </v-btn>
 
       <v-btn
-          icon="mdi-refresh"
+          icon
           variant="text"
-          :loading="refreshing"
-          :disabled="busy && !refreshing"
+          :disabled="busy"
+          :aria-label="t('settings.updates.refresh')"
           @click="refreshUpdates"
-      />
+      >
+        <LoadingActionIcon icon="mdi-refresh" :loading="refreshing" />
+      </v-btn>
     </v-toolbar>
 
     <v-alert

@@ -29,6 +29,7 @@ declare module 'vue' {
     KeyboardOverlay: typeof import('./components/overlays/KeyboardOverlay.vue')['default']
     KlipperAlert: typeof import('./components/notifications/KlipperAlert.vue')['default']
     LaneDialogAFC: typeof import('./components/afc/LaneDialogAFC.vue')['default']
+    LoadingActionIcon: typeof import('./components/common/LoadingActionIcon.vue')['default']
     MoonrakerAlert: typeof import('./components/notifications/MoonrakerAlert.vue')['default']
     Navigation: typeof import('./components/Navigation.vue')['default']
     NetworkPanel: typeof import('./components/panels/NetworkPanel.vue')['default']

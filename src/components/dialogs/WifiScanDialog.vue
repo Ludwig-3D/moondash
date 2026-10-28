@@ -2,11 +2,14 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { WifiNetwork } from '@/stores/app'
+import LoadingActionIcon from '@/components/common/LoadingActionIcon.vue'
 
 const { t } = useI18n()
 const props = defineProps<{
   modelValue: boolean
   networks: WifiNetwork[]
+  connectBusy: boolean
+  connectingSsid: string | null
 }>()
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
@@ -35,7 +38,8 @@ function signalIcon(signal: number | null): string {
           <v-list-item
               v-for="network in networks"
               :key="network.ssid"
-              @click="emit('select', network)"
+              :disabled="connectBusy"
+              @click="!connectBusy && emit('select', network)"
           >
             <template #prepend>
               <v-icon :icon="signalIcon(network.signalPercent)" />
@@ -43,10 +47,15 @@ function signalIcon(signal: number | null): string {
             <v-list-item-title>{{ network.ssid }}</v-list-item-title>
             <v-list-item-subtitle>
               {{ network.signalPercent ?? 0 }}%
-              <span v-if="network.saved"> · {{ t('settings.network.wifi.saved') }}</span>
+              <span v-if="network.saved" class="text-success font-weight-medium"> · {{ t('settings.network.wifi.saved') }}</span>
             </v-list-item-subtitle>
             <template #append>
-              <v-icon v-if="network.secured" icon="mdi-lock" size="small" />
+              <LoadingActionIcon
+                v-if="connectBusy && connectingSsid === network.ssid"
+                icon="mdi-wifi"
+                :loading="true"
+              />
+              <v-icon v-else-if="network.secured" icon="mdi-lock" size="small" />
             </template>
           </v-list-item>
         </v-list>

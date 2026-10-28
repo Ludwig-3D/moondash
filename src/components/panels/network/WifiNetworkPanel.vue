@@ -6,6 +6,7 @@ import WifiPasswordDialog from '../../dialogs/WifiPasswordDialog.vue'
 import WifiHiddenDialog from '../../dialogs/WifiHiddenDialog.vue'
 import WifiScanDialog from '../../dialogs/WifiScanDialog.vue'
 import WifiSavedDialog from '../../dialogs/WifiSavedDialog.vue'
+import LoadingActionIcon from '@/components/common/LoadingActionIcon.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -13,6 +14,7 @@ const appStore = useAppStore()
 const wifiBusy = ref(false)
 const scanBusy = ref(false)
 const connectBusy = ref(false)
+const connectingSsid = ref<string | null>(null)
 const forgetBusy = ref<string | null>(null)
 
 const scanDialogOpen = ref(false)
@@ -59,6 +61,8 @@ function openPasswordDialog(network: WifiNetwork) {
 }
 
 async function connectNetwork(network: WifiNetwork, password?: string) {
+  if (connectBusy.value) return
+  connectingSsid.value = network.ssid
   connectBusy.value = true
 
   try {
@@ -69,6 +73,7 @@ async function connectNetwork(network: WifiNetwork, password?: string) {
     passwordDialogOpen.value = false
   } finally {
     connectBusy.value = false
+    connectingSsid.value = null
   }
 }
 
@@ -102,6 +107,7 @@ async function forgetNetwork(network: WifiNetwork) {
 }
 
 function selectNetwork(network: WifiNetwork) {
+  if (connectBusy.value) return
   if (network.secured && !network.saved) {
     openPasswordDialog(network)
     return
@@ -118,12 +124,13 @@ function selectNetwork(network: WifiNetwork) {
 
       <div class="network-panel__wifi-controls">
         <v-btn
-            icon="mdi-magnify"
+            icon
             variant="text"
-            :loading="scanBusy"
-            :disabled="!wifiEnabled"
+            :disabled="!wifiEnabled || scanBusy"
             @click="scanWifiNetworks"
-        />
+        >
+          <LoadingActionIcon icon="mdi-magnify" :loading="scanBusy" />
+        </v-btn>
 
         <v-btn
             icon="mdi-key-plus"
@@ -178,6 +185,8 @@ function selectNetwork(network: WifiNetwork) {
   <WifiScanDialog
       v-model="scanDialogOpen"
       :networks="scannedNetworks"
+      :connect-busy="connectBusy"
+      :connecting-ssid="connectingSsid"
       @select="selectNetwork"
   />
 

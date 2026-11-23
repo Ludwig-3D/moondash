@@ -62,10 +62,11 @@ install_packages() {
   sudo apt-get -y install --no-install-recommends \
     labwc \
     dbus-user-session \
-    libwebkit2gtk-4.1-0 \
-    libgtk-3-0 \
-    libayatana-appindicator3-1 \
+    libvulkan1 \
+    mesa-vulkan-drivers \
+    fonts-dejavu-core \
     libgl1-mesa-dri \
+    libegl1 \
     libegl-mesa0 \
     libgles2 \
     swayidle wtype \

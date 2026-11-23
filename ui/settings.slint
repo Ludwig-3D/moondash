@@ -1,0 +1,87 @@
+import { ScrollView } from "std-widgets.slint";
+import { Palette, Row, Label, Tile } from "widgets.slint";
+
+component Toggle inherits Rectangle {
+    in property <bool> checked;
+    in property <string> description;
+    callback toggled;
+    width: 44px;
+    height: 30px;
+    accessible-role: checkbox;
+    accessible-label: description;
+    accessible-checkable: true;
+    accessible-checked: checked;
+    accessible-action-default => { root.toggled(); }
+
+    Rectangle {
+        width: 42px;
+        height: 21px;
+        border-radius: 11px;
+        background: root.checked ? Palette.accent.transparentize(50%) : Palette.ink.transparentize(83%);
+        Rectangle {
+            x: root.checked ? parent.width - self.width - 3px : 3px;
+            width: 15px;
+            height: 15px;
+            border-radius: 8px;
+            background: root.checked ? Palette.accent : Palette.muted;
+        }
+    }
+    TouchArea { mouse-cursor: pointer; clicked => { root.toggled(); } }
+}
+
+export component ConfigForm inherits Rectangle {
+    in property <[Row]> entries;
+    callback action(string, string);
+    background: Palette.surface;
+    border-radius: 8px;
+
+    ScrollView {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        VerticalLayout {
+            padding: 13px;
+            spacing: 13px;
+
+            for entry in root.entries: HorizontalLayout {
+                min-height: 38px;
+                spacing: 16px;
+
+                Label {
+                    text: entry.title;
+                    width: min(320px, root.width * 0.42);
+                    font-weight: 600;
+                }
+
+                HorizontalLayout {
+                    horizontal-stretch: 1;
+                    alignment: start;
+                    spacing: 10px;
+                    if entry.action == "config-toggle": Toggle {
+                        description: entry.title;
+                        checked: entry.active;
+                        toggled => { root.action(entry.action, entry.argument); }
+                    }
+                    if entry.argument == "styling.primary": Tile {
+                        accessible-role: button; accessible-label: entry.button;
+                        fill: Palette.accent; width: 42px; height: 42px; border-radius: 9px;
+                        clicked => { root.action(entry.action, entry.argument); }
+                    }
+                    if entry.argument == "styling.primary": Tile {
+                        accessible-role: button; accessible-label: entry.alternate-button;
+                        fill: Palette.secondary; width: 42px; height: 42px; border-radius: 9px;
+                        clicked => { root.action(entry.alternate, entry.argument); }
+                    }
+                    if entry.action != "config-toggle" && entry.argument != "styling.primary": Tile {
+                        width: min(230px, root.width * 0.5 - 13px);
+                        icon: entry.icon;
+                        label: entry.detail == "" || entry.action == "config-raw" ? entry.button : entry.detail;
+                        fill: Palette.raised;
+                        clicked => { root.action(entry.action, entry.argument); }
+                    }
+                }
+            }
+        }
+    }
+}

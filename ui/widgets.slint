@@ -1,0 +1,133 @@
+export global Palette {
+    in property <bool> dark: true;
+    in property <color> accent: #2196f3;
+    in property <color> secondary: #48a9a6;
+    out property <color> background: dark ? #121212 : #ffffff;
+    out property <color> surface: dark ? #212121 : #ebebeb;
+    out property <color> raised: dark ? #2f2f2f : #e2e2e2;
+    out property <color> divider: dark ? #454545 : #cccccc;
+    out property <color> header: dark ? #121212cc : #ffffffcc;
+    out property <color> ink: dark ? #ffffff : #191919;
+    out property <color> muted: dark ? #bdbdbd : #525252;
+    out property <color> warning: #fb8c00;
+    out property <color> error: #cf6679;
+    out property <color> success: #4caf50;
+    out property <color> info: #2196f3;
+}
+
+export struct Row {
+    title: string,
+    detail: string,
+    action: string,
+    argument: string,
+    button: string,
+    alternate: string,
+    alternate-button: string,
+    active: bool,
+    icon: string,
+    tone: color,
+    preview: image,
+}
+
+export component Label inherits Text {
+    color: Palette.ink;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
+export component Mdi inherits Text {
+    font-family: "Material Design Icons";
+    font-size: 24px;
+    color: Palette.ink;
+    horizontal-alignment: center;
+    vertical-alignment: center;
+}
+
+export component Tile inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> stacked;
+    in property <bool> active;
+    in property <bool> enabled: true;
+    in property <color> fill: active ? Palette.accent : Palette.raised;
+    in property <color> ink: active ? #ffffff : Palette.ink;
+    in property <length> icon-size: 20px;
+    callback clicked;
+    min-height: 36px;
+    min-width: 40px;
+    border-radius: 5px;
+    background: !enabled ? fill.transparentize(55%) : touch.pressed ? fill.transparentize(28%) : touch.has-hover ? fill.mix(Palette.ink, 88%) : fill;
+
+    if !root.stacked: HorizontalLayout {
+        alignment: center;
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 7px;
+        if root.icon != "": Mdi {
+            text: root.icon; width: root.icon-size; font-size: root.icon-size;
+            color: root.enabled ? root.ink : root.ink.transparentize(65%);
+        }
+        if root.label != "": Label {
+            text: root.label;
+            font-size: 14px;
+            color: root.enabled ? root.ink : root.ink.transparentize(65%);
+        }
+    }
+    if root.stacked: VerticalLayout {
+        alignment: center;
+        padding-left: 3px;
+        padding-right: 3px;
+        spacing: 2px;
+        if root.icon != "": Mdi {
+            text: root.icon; height: root.icon-size; font-size: root.icon-size;
+            color: root.enabled ? root.ink : root.ink.transparentize(65%);
+        }
+        if root.label != "": Label {
+            text: root.label;
+            horizontal-alignment: center;
+            font-size: 14px;
+            color: root.enabled ? root.ink : root.ink.transparentize(65%);
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component RailButton inherits Tile {
+    accessible-role: button;
+    accessible-action-default => { root.clicked(); }
+    border-radius: 0px;
+    min-width: 0px;
+    min-height: 0px;
+    icon-size: 36px;
+    fill: Palette.background;
+    background: Palette.background;
+    ink: self.active ? Palette.accent : Palette.muted;
+    vertical-stretch: 1;
+}
+
+export component Tab inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked;
+    min-height: 40px;
+
+    Label {
+        text: root.label;
+        horizontal-alignment: center;
+        color: root.active ? Palette.accent : Palette.ink;
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    Rectangle {
+        y: parent.height - self.height;
+        height: 2px;
+        background: root.active ? Palette.accent : transparent;
+    }
+    TouchArea { mouse-cursor: pointer; clicked => { root.clicked(); } }
+}

@@ -2,337 +2,63 @@ name: Build
 
 on:
   push:
-    branches: [main, master, dev, develop]
+    branches: [main, master, dev, develop, rust-native]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  frontend-build:
-    name: Build frontend
+  check:
     runs-on: [self-hosted, linux, x64]
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo fmt --check
+      - run: cargo test --locked --all-targets
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "25"
-          cache: "npm"
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Frontend audit
-        run: npm audit --audit-level=critical
-
-      - name: Frontend build
-        run: npm run build --if-present
-
-      - name: Upload frontend build
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: |
-            dist
-            build
-          if-no-files-found: error
-
-  audit:
-    name: Security audit
-    needs: frontend-build
-    runs-on: [self-hosted, linux, x64]
-
-    steps:
-      - name: Install base tools
-        run: |
-          sudo -n apt-get update
-          sudo -n apt-get install -y \
-            ca-certificates curl git xz-utils build-essential \
-            pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev librsvg2-dev patchelf \
-            libssl-dev clang mold
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-
-      - name: Rust audit
-        working-directory: src-tauri
-        run: cargo audit || true
-
-      - name: Rust build check
-        working-directory: src-tauri
-        run: cargo check --all-targets
-
-  build-linux-native:
-    name: Build Linux ${{ matrix.arch }} ${{ matrix.osname }}
-    needs:
-      - frontend-build
-      - audit
+  package:
+    name: Package Debian ${{ matrix.suite }} ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    container: debian:${{ matrix.debian }}
-
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: amd64
-            runner: [self-hosted, linux, x64]
-            debian: "12"
-            osname: bookworm
-
-          - arch: amd64
-            runner: [self-hosted, linux, x64]
-            debian: "13"
-            osname: trixie
-
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            debian: "12"
-            osname: bookworm
-
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            debian: "13"
-            osname: trixie
-
+          - {suite: bookworm, arch: amd64, image: 'debian:12', platform: linux/amd64, runner: [self-hosted, linux, x64]}
+          - {suite: trixie, arch: amd64, image: 'debian:13', platform: linux/amd64, runner: [self-hosted, linux, x64]}
+          - {suite: bookworm, arch: arm64, image: 'debian:12', platform: linux/arm64, runner: ubuntu-24.04-arm}
+          - {suite: trixie, arch: arm64, image: 'debian:13', platform: linux/arm64, runner: ubuntu-24.04-arm}
+          - {suite: bookworm, arch: armhf, image: 'arm32v7/debian:12', platform: linux/arm/v7, runner: ubuntu-24.04-arm}
+          - {suite: trixie, arch: armhf, image: 'arm32v7/debian:13', platform: linux/arm/v7, runner: ubuntu-24.04-arm}
     steps:
-      - name: Install native build tools
-        run: |
-          apt-get update
-          apt-get install -y \
-            ca-certificates curl git xz-utils build-essential \
-            pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev librsvg2-dev patchelf \
-            libssl-dev clang mold binutils file dpkg
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download frontend build
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.arch == 'armhf'
         with:
-          name: frontend-dist
-          path: .
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "25"
-          cache: "npm"
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Tauri app
+          platforms: arm
+      - name: Build and package the native binary
+        env:
+          BUILD_IMAGE: ${{ matrix.image }}
+          BUILD_PLATFORM: ${{ matrix.platform }}
+          BUILD_SUITE: ${{ matrix.suite }}
+          BUILD_ARCH: ${{ matrix.arch }}
         run: |
-          set -eu
-
-          CORES="$(nproc)"
-          JOBS="$((CORES > 1 ? CORES - 1 : 1))"
-
-          export CARGO_BUILD_JOBS="$JOBS"
-          export MAKEFLAGS="-j$JOBS"
-
-          echo "Using $JOBS build jobs out of $CORES cores"
-          echo "Debian architecture:"
-          dpkg --print-architecture
-
-          npm run tauri build
-
-      - name: Verify GLIBC requirement
-        run: |
-          ldd --version
-
-          BIN="src-tauri/target/release/moondash"
-
-          if [ -f "$BIN" ]; then
-            objdump -T "$BIN" | grep GLIBC_ | sort -Vu | tail -n 30 || true
-            file "$BIN" || true
-          fi
-
-      - name: Collect artifacts
-        run: |
-          set -eu
-
-          VERSION="$(node -p "require('./package.json').version")"
-          OUT_DIR="dist-artifacts/${{ matrix.osname }}-${{ matrix.arch }}"
-          mkdir -p "$OUT_DIR"
-
-          DEB_FILE="$(find src-tauri/target/release/bundle -type f -name "*.deb" | head -n 1 || true)"
-
-          if [ -n "$DEB_FILE" ]; then
-            echo "Deb file: $DEB_FILE"
-            DEB_ARCH="$(dpkg-deb -f "$DEB_FILE" Architecture)"
-            echo "Deb architecture: $DEB_ARCH"
-
-            if [ "$DEB_ARCH" != "${{ matrix.arch }}" ]; then
-              echo "Expected .deb architecture ${{ matrix.arch }}, got $DEB_ARCH"
-              exit 1
-            fi
-
-            cp -v "$DEB_FILE" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}.deb"
-          fi
-
-          BIN_FILE="src-tauri/target/release/moondash"
-
-          if [ -f "$BIN_FILE" ]; then
-            cp -v "$BIN_FILE" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
-            chmod +x "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_${{ matrix.arch }}"
-          fi
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: moondash-${{ matrix.osname }}-${{ matrix.arch }}
-          path: dist-artifacts/${{ matrix.osname }}-${{ matrix.arch }}
-          if-no-files-found: error
-
-  build-linux-armhf:
-    name: Build Linux armhf ${{ matrix.osname }}
-    needs:
-      - frontend-build
-      - audit
-    runs-on: ubuntu-24.04-arm
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - debian: "12"
-            osname: bookworm
-
-          - debian: "13"
-            osname: trixie
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download frontend build
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: .
-
-      - name: Test armhf container support
-        run: |
-          docker run --rm --platform linux/arm/v7 arm32v7/debian:${{ matrix.debian }} \
-            bash -lc 'dpkg --print-architecture && uname -m'
-
-      - name: Build Tauri app armhf in Debian ${{ matrix.debian }}
-        run: |
-          set -eu
-
-          CORES="$(nproc)"
-          JOBS="$((CORES > 1 ? CORES - 1 : 1))"
-
-          echo "Host cores: $CORES"
-          echo "Using jobs: $JOBS"
-
-          docker run --rm \
-            --platform linux/arm/v7 \
-            -e CARGO_BUILD_JOBS="$JOBS" \
-            -e MAKEFLAGS="-j$JOBS" \
-            -v "$PWD:/work" \
-            -w /work \
-            arm32v7/debian:${{ matrix.debian }} \
-            bash -lc '
-              set -eu
-
-              CORES="$(nproc)"
-              JOBS="${CARGO_BUILD_JOBS:-$CORES}"
-
-              export CARGO_BUILD_JOBS="$JOBS"
-              export MAKEFLAGS="-j$JOBS"
-
-              echo "Container cores: $CORES"
-              echo "Using build jobs: $JOBS"
-              echo "Container Debian architecture:"
-              dpkg --print-architecture
-              uname -m
-
+          docker run --rm --platform "$BUILD_PLATFORM" \
+            -e BUILD_SUITE -e BUILD_ARCH -v "$PWD:/work" -w /work "$BUILD_IMAGE" sh -ec '
               apt-get update
-              apt-get install -y \
-                ca-certificates curl git xz-utils build-essential \
-                pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
-                libayatana-appindicator3-dev librsvg2-dev patchelf \
-                libssl-dev clang mold binutils file gnupg dpkg
-
-              mkdir -p /etc/apt/keyrings
-              curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-                | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-
-              echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
-                > /etc/apt/sources.list.d/nodesource.list
-
-              apt-get update
-              apt-get install -y nodejs
-
-              node --version
-              npm --version
-
-              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-                | sh -s -- -y --default-toolchain stable
-
+              apt-get install -y --no-install-recommends ca-certificates curl build-essential pkg-config libfontconfig1-dev
+              test "$(dpkg --print-architecture)" = "$BUILD_ARCH"
+              curl --proto "=https" --tlsv1.2 -fsSL https://sh.rustup.rs -o /tmp/rustup.sh
+              sh /tmp/rustup.sh -y --profile minimal
               . "$HOME/.cargo/env"
-
-              rustc --version
-              cargo --version
-
-              npm ci
-
-              rustup target add armv7-unknown-linux-gnueabihf
-              npm run tauri build -- --target armv7-unknown-linux-gnueabihf
-
-              VERSION="$(node -p "require(\"./package.json\").version")"
-              OUT_DIR="dist-artifacts/${{ matrix.osname }}-armhf"
-              mkdir -p "$OUT_DIR"
-
-              DEB_FILE="$(find src-tauri/target/armv7-unknown-linux-gnueabihf/release/bundle -type f -name "*.deb" | head -n 1 || true)"
-
-              if [ -z "$DEB_FILE" ]; then
-                echo "No .deb file found"
-                find src-tauri/target -maxdepth 7 -type f | sort || true
-                exit 1
-              fi
-
-              echo "Deb file: $DEB_FILE"
-              DEB_ARCH="$(dpkg-deb -f "$DEB_FILE" Architecture)"
-              echo "Deb architecture: $DEB_ARCH"
-
-              if [ "$DEB_ARCH" != "armhf" ]; then
-                echo "Expected .deb architecture armhf, got $DEB_ARCH"
-                exit 1
-              fi
-
-              cp -v "$DEB_FILE" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_armhf.deb"
-
-              BIN_FILE="src-tauri/target/armv7-unknown-linux-gnueabihf/release/moondash"
-
-              if [ -f "$BIN_FILE" ]; then
-                cp -v "$BIN_FILE" "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_armhf"
-                chmod +x "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_armhf"
-                file "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_armhf" || true
-                objdump -T "$OUT_DIR/moondash_${VERSION}.${{ matrix.osname }}_armhf" | grep GLIBC_ | sort -Vu | tail -n 30 || true
-              fi
+              export CARGO_BUILD_JOBS=4
+              case "$BUILD_ARCH" in armhf) CARGO_BUILD_JOBS=2;; esac
+              cargo build --locked --release
+              scripts/package-deb.sh target/release/moondash dist-artifacts "$BUILD_SUITE"
             '
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: moondash-${{ matrix.osname }}-armhf
-          path: dist-artifacts/${{ matrix.osname }}-armhf
+          name: moondash-${{ matrix.suite }}-${{ matrix.arch }}
+          path: dist-artifacts/*
           if-no-files-found: error

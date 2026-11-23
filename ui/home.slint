@@ -1,0 +1,282 @@
+import { ScrollView } from "std-widgets.slint";
+import { Icons } from "icons.slint";
+import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
+
+component PrintStat inherits VerticalLayout {
+    in property <string> caption;
+    in property <string> value;
+    in property <TextHorizontalAlignment> align: left;
+    spacing: 2px;
+
+    Label { text: root.caption; font-size: 13px; height: 19px; color: Palette.muted; horizontal-alignment: root.align; }
+    Label { text: root.value; font-size: 16px; height: 22px; font-weight: 700; horizontal-alignment: root.align; }
+}
+
+component Notice inherits Rectangle {
+    in property <string> message;
+    callback dismissed;
+    min-height: 38px;
+    background: Palette.info.transparentize(82%);
+    border-radius: 6px;
+
+    HorizontalLayout {
+        padding-left: 10px;
+        spacing: 6px;
+        Mdi { width: 20px; font-size: 20px; text: Icons.information-outline; color: Palette.info; }
+        Label { text: root.message; horizontal-stretch: 1; font-weight: 600; }
+        Tile { icon: Icons.close; fill: transparent; clicked => { root.dismissed(); } }
+    }
+}
+
+export component Dashboard inherits HorizontalLayout {
+    in property <bool> german;
+    in property <bool> ready;
+    in property <bool> online;
+    in property <bool> printing;
+    in property <bool> paused;
+    in property <bool> finished;
+    in property <bool> can-skip;
+    in property <string> connection;
+    in property <string> error;
+    in property <string> message;
+    in property <string> filename;
+    in property <float> progress;
+    in property <string> layers;
+    in property <string> remaining;
+    in property <image> logo;
+    in property <image> preview;
+    in property <[Row]> macros;
+    in property <[Row]> controls;
+    in property <[Row]> jobs;
+    in property <[Row]> details;
+    private property <bool> loaded: filename != "" && (printing || paused || finished);
+    callback action(string, string);
+
+    spacing: 8px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    padding-right: 6px;
+
+    Rectangle {
+        horizontal-stretch: 1;
+        background: Palette.surface;
+        border-radius: 8px;
+        clip: true;
+
+        if root.loaded: Rectangle {
+            if root.preview.width > 0: Image {
+                source: root.preview;
+                width: parent.width;
+                height: parent.height;
+                image-fit: cover;
+            }
+
+            if root.preview.width == 0: Mdi {
+                text: Icons.printer-3d;
+                font-size: 96px;
+                color: Palette.muted.transparentize(40%);
+            }
+
+            VerticalLayout {
+                Rectangle {
+                    height: root.message == "" ? 48px : 94px;
+                    background: Palette.header;
+                    VerticalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        padding-bottom: root.message != "" ? 8px : 0px;
+
+                        Label { text: root.filename; font-size: 16px; font-weight: 700; height: 48px; }
+                        if root.message != "": Notice {
+                            message: root.message;
+                            dismissed => { root.action("clear-message", ""); }
+                        }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                Rectangle {
+                    height: 142px;
+                    background: Palette.header;
+                    VerticalLayout {
+                        padding-top: 12px;
+                        padding-bottom: 13px;
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 10px;
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            PrintStat { caption: root.german ? "Fortschritt" : "Progress"; value: round(root.progress * 100) + "%"; horizontal-stretch: 1; }
+                            PrintStat { caption: root.german ? "Schicht" : "Layer"; value: root.layers; align: center; horizontal-stretch: 1; }
+                            PrintStat { caption: root.german ? "Verbleibend" : "Remaining"; value: root.remaining; align: right; horizontal-stretch: 1; }
+                        }
+
+                        track := Rectangle {
+                            height: 10px;
+                            border-radius: 5px;
+                            clip: true;
+                            background: Palette.secondary.transparentize(82%);
+                            Rectangle { x: 0px; y: 0px; width: track.width * clamp(root.progress, 0, 1); height: track.height; background: Palette.accent; }
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+                            height: 40px;
+                            padding-top: 4px;
+                            Rectangle {
+                                border-radius: 14px;
+                                clip: true;
+                                height: 36px;
+                                HorizontalLayout {
+                                    if !root.finished && root.can-skip: Tile {
+                                        icon: Icons.debug-step-over; width: 38px; border-radius: 0px;
+                                        clicked => { root.action("show-objects", ""); }
+                                    }
+                                    if !root.finished: Tile {
+                                        icon: root.paused ? Icons.play : Icons.pause;
+                                        label: root.paused ? (root.german ? "Fortsetzen" : "Resume") : (root.german ? "Pausieren" : "Pause");
+                                        fill: root.paused ? Palette.success : Palette.warning;
+                                        ink: #ffffff;
+                                        border-radius: 0px;
+                                        min-width: root.german ? 134px : 115px;
+                                        clicked => { root.action(root.paused ? "resume" : "pause", ""); }
+                                    }
+                                    if !root.finished: Tile {
+                                        icon: Icons.stop; label: root.german ? "Stoppen" : "Stop";
+                                        fill: Palette.error; ink: #ffffff; border-radius: 0px;
+                                        min-width: root.german ? 121px : 110px;
+                                        clicked => { root.action("cancel", ""); }
+                                    }
+                                    if root.finished && root.jobs.length == 0: Tile {
+                                        icon: Icons.printer; label: root.german ? "Erneut drucken" : "Reprint"; border-radius: 0px;
+                                        clicked => { root.action("reprint", ""); }
+                                    }
+                                    if root.finished: Tile {
+                                        icon: Icons.broom; label: root.german ? "Datei entfernen" : "Clear file";
+                                        fill: Palette.accent; ink: #ffffff; border-radius: 0px;
+                                        clicked => { root.action("clear-file", ""); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !root.loaded: Rectangle {
+            if root.online: Image {
+                source: root.logo;
+                width: 128px;
+                height: 128px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                opacity: 0.6;
+                image-fit: contain;
+            }
+
+            if !root.online: VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Label {
+                    text: root.german ? "Moondash wird gestartet…" : "Starting Moondash…";
+                    color: Palette.accent; horizontal-alignment: center;
+                }
+                Rectangle {
+                    width: 110px;
+                    height: 4px;
+                    x: (parent.width - self.width) / 2;
+                    border-radius: 2px;
+                    background: Palette.accent.transparentize(70%);
+                    Rectangle { width: 42px; height: parent.height; x: 34px; border-radius: 2px; background: Palette.accent; }
+                }
+            }
+
+            if root.message != "": Notice {
+                x: 12px; y: 12px; width: parent.width - 24px; height: 38px;
+                message: root.message;
+                dismissed => { root.action("clear-message", ""); }
+            }
+        }
+    }
+
+    VerticalLayout {
+        width: 64px;
+        spacing: 8px;
+        for shortcut in root.macros: Tile {
+            icon: shortcut.icon;
+            icon-size: 24px;
+            height: 48px;
+            active: shortcut.active;
+            enabled: root.ready;
+            clicked => { root.action(shortcut.action, shortcut.argument); }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 5px;
+            background: Palette.raised;
+            clip: true;
+
+            VerticalLayout {
+                for control in root.controls: VerticalLayout {
+                    Tile {
+                        height: 66px;
+                        label: control.title;
+                        icon: control.icon;
+                        icon-size: 30px;
+                        stacked: true;
+                        border-radius: 0px;
+                        enabled: root.ready;
+                        ink: control.tone;
+                        clicked => { root.action(control.action, control.argument); }
+                    }
+                    Rectangle { height: 1px; background: Palette.divider; }
+                }
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+    }
+
+    if root.error != "" || (root.online && !root.ready) || (!root.printing && !root.paused && root.jobs.length > 0) || root.details.length > 0: Rectangle {
+        width: 174px;
+        background: Palette.surface;
+        border-radius: 8px;
+
+        ScrollView {
+            VerticalLayout {
+                padding: 8px;
+                spacing: 6px;
+
+                if root.error != "": VerticalLayout {
+                    Label { text: root.error; wrap: word-wrap; overflow: clip; }
+                    Tile { icon: Icons.close; fill: transparent; clicked => { root.action("dismiss", ""); } }
+                }
+
+                if root.online && !root.ready: VerticalLayout {
+                    Label { text: root.connection; wrap: word-wrap; overflow: clip; }
+                    Tile { icon: Icons.restart; label: "Klipper"; clicked => { root.action("restart-klipper", ""); } }
+                }
+
+                if root.ready && root.error == "" && !root.printing && !root.paused && root.jobs.length > 0: VerticalLayout {
+                    spacing: 5px;
+                    Label { text: root.german ? "Warteschlange" : "Job Queue"; font-weight: 700; }
+                    for job in root.jobs: Tile {
+                        label: job.title;
+                        icon: Icons.printer;
+                        clicked => { root.action(job.action, job.argument); }
+                    }
+                }
+
+                if root.ready && root.error == "": VerticalLayout {
+                    for detail in root.details: Label {
+                        text: detail.title + "  " + detail.detail;
+                        font-size: 13px;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,162 @@
+import { Icons } from "icons.slint";
+import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
+
+component FileCard inherits Rectangle {
+    in property <Row> item;
+    callback selected;
+    callback context;
+    border-radius: 7px;
+    background: Palette.surface;
+    clip: true;
+
+    if root.item.preview.width > 0: Image {
+        source: root.item.preview;
+        width: parent.width;
+        height: parent.height;
+        image-fit: cover;
+    }
+
+    if root.item.action == "folder": VerticalLayout {
+        alignment: center;
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 12px;
+        Mdi { text: Icons.folder; height: 48px; font-size: 48px; }
+        Label { text: root.item.title; horizontal-alignment: center; font-weight: 600; wrap: word-wrap; }
+    }
+
+    if root.item.action != "folder": Rectangle {
+        if root.item.preview.width == 0: Mdi { text: Icons.printer-3d; font-size: 48px; color: Palette.muted; }
+
+        Rectangle {
+            y: 0px;
+            height: 31px;
+            background: Palette.header;
+            Label { x: 10px; width: parent.width - 44px; text: root.item.title; font-size: 13px; font-weight: 600; }
+        }
+
+        if root.item.detail != "": Rectangle {
+            height: 31px;
+            y: parent.height - self.height;
+            background: Palette.header;
+            HorizontalLayout {
+                padding-left: 9px;
+                spacing: 6px;
+                Mdi { text: Icons.clock-outline; font-size: 14px; width: 14px; color: Palette.muted; }
+                Label { text: root.item.detail; font-size: 13px; color: Palette.muted; horizontal-stretch: 1; }
+            }
+        }
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.selected(); }
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
+                root.context();
+            }
+        }
+    }
+
+    if root.item.alternate != "": Tile {
+        x: parent.width - self.width - 2px;
+        y: 2px;
+        width: 30px;
+        height: 29px;
+        min-width: 30px;
+        min-height: 29px;
+        icon: Icons.dots-vertical;
+        fill: Palette.header;
+        clicked => { root.context(); }
+    }
+}
+
+export component FileBrowser inherits Rectangle {
+    in property <bool> german;
+    in property <[Row]> entries;
+    in property <string> folder;
+    in property <string> filter;
+    in property <int> columns: 4;
+    in property <int> rows: 3;
+    in property <int> sort;
+    in-out property <int> page;
+    out property <int> capacity: columns * rows;
+    callback action(string, string);
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 9px;
+
+        Rectangle {
+            height: 44px;
+            background: Palette.surface; border-radius: 5px;
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 3px;
+                for button[index] in [Icons.sort-clock-descending-outline, Icons.sort-clock-ascending-outline, Icons.sort-alphabetical-ascending, Icons.sort-alphabetical-descending]: Tile {
+                    icon: button; active: root.sort == index; fill: self.active ? Palette.accent : transparent;
+                    width: 48px; min-height: 34px;
+                    clicked => { root.action("file-sort", "\{index}"); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Tile {
+                    icon: Icons.filter-outline;
+                    min-width: 125px;
+                    max-width: 225px;
+                    label: root.filter == "" ? (root.german ? "Filtern" : "Filter") : root.filter;
+                    fill: transparent;
+                    clicked => { root.action("file-filter", ""); }
+                }
+                Tile {
+                    icon: Icons.folder-plus-outline; fill: transparent; width: 44px;
+                    clicked => { root.action("new-folder", ""); }
+                }
+                Tile { icon: Icons.reload; fill: transparent; width: 44px; clicked => { root.action("refresh", ""); } }
+            }
+        }
+
+        if root.folder != "": HorizontalLayout {
+            height: 36px;
+            spacing: 4px;
+            Tile { icon: Icons.arrow-left; fill: transparent; clicked => { root.action("up", ""); } }
+            Tile { icon: Icons.home-outline; fill: transparent; clicked => { root.action("folder", ""); } }
+            Mdi { text: Icons.chevron-right; font-size: 16px; width: 16px; }
+            Label { text: root.folder; horizontal-stretch: 1; }
+        }
+
+        grid := Rectangle {
+            vertical-stretch: 1;
+            private property <length> gap: 14px;
+            private property <length> card-width: (self.width - (root.columns - 1) * gap) / root.columns;
+            private property <length> card-height: (self.height - (root.rows - 1) * gap) / root.rows;
+            private property <int> offset: root.page * root.capacity;
+
+            if root.entries.length == 0: Label {
+                text: root.german ? "Keine Dateien gefunden" : "No files found";
+                horizontal-alignment: center;
+                color: Palette.muted;
+            }
+
+            for index in clamp(root.entries.length - grid.offset, 0, root.capacity): FileCard {
+                item: root.entries[grid.offset + index];
+                width: grid.card-width;
+                height: grid.card-height;
+                x: mod(index, root.columns) * (grid.card-width + grid.gap);
+                y: floor(index / root.columns) * (grid.card-height + grid.gap);
+                selected => { root.action(self.item.action, self.item.argument); }
+                context => { root.action("file-context", self.item.argument); }
+            }
+        }
+    }
+
+    if root.page > 0 || (root.page + 1) * root.capacity < root.entries.length: VerticalLayout {
+        x: parent.width - 53px;
+        y: parent.height - self.height - 8px;
+        width: 44px;
+        height: self.preferred-height;
+        spacing: 8px;
+        if root.page > 0: Tile { icon: Icons.chevron-up; active: true; clicked => { root.page -= 1; } }
+        if (root.page + 1) * root.capacity < root.entries.length: Tile { icon: Icons.chevron-down; active: true; clicked => { root.page += 1; } }
+    }
+}

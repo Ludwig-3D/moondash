@@ -39,7 +39,7 @@ swayidle -w \
 
 exec sh -c 'sleep 0.25; wtype -M alt -M logo -k h -m logo -m alt' &
 
-exec /usr/bin/moondash --app-config "$MCCONFIGFILE"
+exec /usr/bin/moondash --fullscreen --app-config "$MCCONFIGFILE"
 EOF
 
 chmod +x "$HOME/.config/labwc/autostart"

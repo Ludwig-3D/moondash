@@ -1,0 +1,620 @@
+import { LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
+import { Icons } from "icons.slint";
+import { Palette, Row, Label, Mdi, Tile, Tab, RailButton } from "widgets.slint";
+import { Dashboard } from "home.slint";
+import { MotionPanel, PrintOptions } from "tune.slint";
+import { FileBrowser } from "files.slint";
+import { AfcPanel, Lane } from "afc.slint";
+import { ConfigForm } from "settings.slint";
+export { Palette, Row, Lane }
+
+component RowList inherits ScrollView {
+    in property <[Row]> rows;
+    callback action(string, string);
+
+    VerticalLayout {
+        spacing: 4px;
+
+        for row in root.rows: Rectangle {
+            min-height: 48px;
+            border-radius: 5px;
+            background: Palette.surface;
+
+            HorizontalLayout {
+                padding: 5px;
+                padding-left: 10px;
+                spacing: 8px;
+
+                if row.icon != "": Mdi { text: row.icon; width: 27px; }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Label { text: row.title; font-weight: 500; }
+                    if row.detail != "": Label { text: row.detail; color: Palette.muted; font-size: 12px; }
+                }
+                if row.alternate != "": Tile {
+                    label: row.alternate-button;
+                    clicked => { root.action(row.alternate, row.argument); }
+                }
+                if row.action != "" && row.button != "": Tile {
+                    label: row.button;
+                    fill: row.active ? Palette.accent : Palette.raised;
+                    clicked => { root.action(row.action, row.argument); }
+                }
+            }
+            if row.action != "" && row.button == "": TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.action(row.action, row.argument); }
+            }
+        }
+    }
+}
+
+export component Moondash inherits Window {
+    title: "Moondash";
+    preferred-width: 800px;
+    preferred-height: 480px;
+    min-width: 460px;
+    min-height: 300px;
+    background: Palette.background;
+    default-font-size: 15px;
+
+    in property <bool> dark: true;
+    in property <bool> german;
+    in property <bool> online;
+    in property <bool> ready;
+    in property <bool> printing;
+    in property <bool> paused;
+    in property <bool> sleeping;
+    in property <bool> debug;
+    in property <string> connection: "Connecting to Moonraker…";
+    in property <string> message;
+    in property <string> print-name;
+    in property <bool> finished;
+    in property <bool> can-skip;
+    in property <string> display-message;
+    in property <bool> has-afc;
+    in property <bool> x-homed;
+    in property <bool> y-homed;
+    in property <bool> z-homed;
+    in property <bool> has-tilt;
+    in property <bool> has-qgl;
+    in property <bool> motion-busy;
+    in property <float> jog-step: 10;
+    in property <string> flow: "100";
+    in property <string> advance: "0";
+    in property <string> smooth: "0";
+    in property <[Row]> motion-controls;
+    in property <[Row]> sensors;
+    in property <[Lane]> afc-lanes;
+    in property <[Row]> afc-units;
+    in property <[Row]> macros;
+    in property <[Row]> jobs;
+    in property <[Row]> details;
+    in property <[Row]> trailing-rows;
+    in property <image> web-qr;
+    in property <string> web-url;
+    in property <int> file-sort;
+    in property <int> file-columns-config;
+    in property <int> file-rows-config;
+    out property <int> file-columns: root.file-columns-config > 0 ? root.file-columns-config : root.width < 800px || root.height < 480px ? 3 : root.width >= 1920px && root.height >= 1080px ? 6 : 4;
+    out property <int> file-rows: root.file-rows-config > 0 ? root.file-rows-config : root.width < 800px || root.height < 480px ? 2 : root.width >= 1920px && root.height >= 1080px ? 4 : 3;
+    in-out property <int> file-page;
+    in property <string> config-view;
+    in property <float> progress;
+    in property <string> layers: "—";
+    in property <string> remaining: "—";
+    in property <image> logo: @image-url("../images/logo.png");
+    in property <image> preview;
+    in property <image> tool-image;
+    in property <string> tool-title;
+    in property <[Row]> shortcuts;
+    in property <[Row]> rows;
+    in-out property <string> page: "home";
+    in-out property <string> tab: "motion";
+    in property <string> folder;
+    in-out property <string> filter;
+    in-out property <string> config-text;
+    in property <bool> config-dirty;
+    in property <string> diagnostics;
+    in property <string> dialog-title;
+    in property <string> dialog-detail;
+    in property <string> dialog-mode;
+    in property <bool> dialog-secret;
+    in-out property <string> dialog-value;
+    in property <image> dialog-image;
+    in property <bool> dialog-queue;
+    in property <bool> dialog-move;
+    in property <bool> dialog-folder;
+    in property <string> dialog-icon;
+    in property <[Row]> dialog-options;
+    in property <string> dialog-unit;
+    in property <string> dialog-current;
+    in property <string> dialog-limit;
+    private property <bool> first-number-key;
+    changed dialog-mode => { root.first-number-key = root.dialog-mode == "number"; }
+
+    callback navigate(string, string);
+    callback action(string, string);
+    callback config-edited;
+    callback dialog-submit(string, bool);
+    callback dialog-close;
+    callback erase-key;
+
+
+    HorizontalLayout {
+        x: 0px; y: 0px; width: root.width; height: root.height;
+        Rectangle {
+            width: 58px;
+            background: Palette.background;
+
+            VerticalLayout {
+                padding-top: 17px;
+                padding-bottom: 17px;
+                spacing: 5px;
+                RailButton { icon: Icons.home-variant; active: root.page == "home"; accessible-label: "Home"; clicked => { root.navigate("home", ""); } }
+                RailButton { icon: Icons.tune-vertical-variant; active: root.page == "tune"; accessible-label: "Controls"; clicked => { root.navigate("tune", "motion"); } }
+                RailButton { icon: Icons.printer-3d; active: root.page == "files"; accessible-label: "Files"; clicked => { root.navigate("files", ""); } }
+                RailButton { icon: Icons.cog; active: root.page == "settings"; accessible-label: "Settings"; clicked => { root.navigate("settings", "network"); } }
+                if root.debug: RailButton { icon: Icons.code-json; active: root.page == "debug"; accessible-label: "Debug"; clicked => { root.navigate("debug", ""); } }
+                RailButton {
+                    icon: root.printing || root.paused ? Icons.alert-octagon : Icons.power;
+                    ink: root.printing || root.paused ? Palette.error : Palette.muted;
+                    accessible-label: root.printing || root.paused ? "Emergency stop" : "Power";
+                    clicked => { root.action(root.printing || root.paused ? "emergency" : "power", ""); }
+                }
+            }
+        }
+
+        if root.page == "home": Dashboard {
+            horizontal-stretch: 1;
+            german: root.german;
+            online: root.online;
+            ready: root.ready;
+            printing: root.printing;
+            paused: root.paused;
+            finished: root.finished;
+            can-skip: root.can-skip;
+            connection: root.connection;
+            error: root.message;
+            message: root.display-message;
+            filename: root.print-name;
+            progress: root.progress;
+            layers: root.layers;
+            remaining: root.remaining;
+            logo: root.logo;
+            preview: root.preview;
+            macros: root.macros;
+            controls: root.shortcuts;
+            jobs: root.jobs;
+            details: root.details;
+            action(name, argument) => { root.action(name, argument); }
+        }
+
+        if root.page != "home": VerticalLayout {
+            horizontal-stretch: 1;
+
+            if root.page == "tune": Rectangle {
+                height: 40px;
+                HorizontalLayout {
+                    padding-right: 8px;
+                    spacing: 2px;
+                    alignment: start;
+                    Tab { width: 105px; label: root.german ? "Steuerung" : "Controls"; active: root.tab == "motion"; clicked => { root.navigate("tune", "motion"); } }
+                    if root.has-afc: Tab { width: 100px; label: "Filament"; active: root.tab == "afc"; clicked => { root.navigate("tune", "afc"); } }
+                    Tab { width: 135px; label: root.german ? "Druckoptionen" : "Print options"; active: root.tab == "print"; clicked => { root.navigate("tune", "print"); } }
+                    if root.tab == "objects": Tab { width: 105px; label: root.german ? "Objekte" : "Objects"; active: true; }
+                    if root.tab == "queue": Tab { width: 115px; label: root.german ? "Warteschlange" : "Job Queue"; active: true; }
+                }
+            }
+
+            if root.page == "settings": Rectangle {
+                height: 40px;
+                HorizontalLayout {
+                    padding-right: 8px;
+                    Tab { label: root.german ? "Netzwerk" : "Network"; active: root.tab == "network"; clicked => { root.navigate("settings", "network"); } }
+                    Tab { label: root.german ? "Einstellungen" : "Settings"; active: root.tab == "config"; clicked => { root.navigate("settings", "config"); } }
+                    Tab { label: root.german ? "Werkzeuge" : "Tools"; active: root.tab == "tools"; clicked => { root.navigate("settings", "tools"); } }
+                    Tab { label: root.german ? "Ressourcen" : "Resources"; active: root.tab == "host"; clicked => { root.navigate("settings", "host"); } }
+                    Tab { label: root.german ? "Kurzbefehle" : "Shortcuts"; active: root.tab == "shortcuts"; clicked => { root.navigate("settings", "shortcuts"); } }
+                    Tab { label: "Updates"; active: root.tab == "updates"; clicked => { root.navigate("settings", "updates"); } }
+                }
+            }
+
+            if root.message != "": Rectangle {
+                min-height: 34px;
+                background: Palette.error.transparentize(81%);
+                border-radius: 6px;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    spacing: 6px;
+                    Label { text: root.message; horizontal-stretch: 1; }
+                    Tile { icon: Icons.close; fill: transparent; min-height: 34px; width: 38px; clicked => { root.action("dismiss", ""); } }
+                }
+            }
+
+            if root.page == "tune" && root.tab == "motion": MotionPanel {
+                vertical-stretch: 1;
+                german: root.german;
+                enabled: root.ready && !root.printing && !root.paused && !root.motion-busy;
+                x-homed: root.x-homed;
+                y-homed: root.y-homed;
+                z-homed: root.z-homed;
+                has-tilt: root.has-tilt;
+                has-qgl: root.has-qgl;
+                step: root.jog-step;
+                controls: root.motion-controls;
+                sensors: root.sensors;
+                action(name, argument) => { root.action(name, argument); }
+            }
+
+            if root.page == "tune" && root.tab == "print": PrintOptions {
+                vertical-stretch: 1;
+                german: root.german;
+                enabled: root.ready;
+                flow: root.flow;
+                advance: root.advance;
+                smooth: root.smooth;
+                action(name, argument) => { root.action(name, argument); }
+            }
+
+            if root.page == "tune" && root.tab == "afc": AfcPanel {
+                vertical-stretch: 1;
+                german: root.german;
+                enabled: root.ready && !root.printing && !root.paused;
+                lanes: root.afc-lanes;
+                units: root.afc-units;
+                action(name, argument) => { root.action(name, argument); }
+            }
+
+            if root.page == "files": FileBrowser {
+                vertical-stretch: 1;
+                german: root.german;
+                entries: root.rows;
+                folder: root.folder;
+                filter: root.filter;
+                columns: root.file-columns;
+                rows: root.file-rows;
+                page <=> root.file-page;
+                sort: root.file-sort;
+                action(name, argument) => { root.action(name, argument); }
+            }
+
+            if root.page == "settings" && root.tab == "config" && root.config-view != "raw": VerticalLayout {
+                vertical-stretch: 1;
+                padding: 8px;
+                ConfigForm { entries: root.rows; action(name, argument) => { root.action(name, argument); } }
+            }
+
+            if root.page == "settings" && root.tab == "config" && root.config-view == "raw": VerticalLayout {
+                padding: 8px;
+                spacing: 6px;
+                TextEdit { text <=> root.config-text; vertical-stretch: 1; edited(_) => { root.config-edited(); } }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Tile { icon: Icons.arrow-left; clicked => { root.action("config-form", ""); } }
+                    Tile { icon: Icons.reload; label: root.german ? "Neu laden" : "Reload"; clicked => { root.action("reload-config", ""); } }
+                    Tile { icon: Icons.content-save; label: root.german ? "Speichern" : "Save"; active: root.config-dirty; enabled: root.config-dirty; clicked => { root.action("save-config", root.config-text); } }
+                }
+            }
+
+            if root.page == "settings" && root.tab == "network": HorizontalLayout {
+                vertical-stretch: 1;
+                padding: 8px;
+                spacing: 14px;
+                RowList { horizontal-stretch: 1; rows: root.rows; action(name, argument) => { root.action(name, argument); } }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        padding: 8px;
+                        spacing: 10px;
+                        if root.web-qr.width > 0: Image { source: root.web-qr; width: 100px; height: 100px; image-fit: contain; }
+                        VerticalLayout {
+                            alignment: center;
+                            Label { text: "Web Panel"; font-weight: 600; }
+                            Label { text: root.web-url; color: Palette.muted; }
+                        }
+                    }
+                    RowList { vertical-stretch: 1; rows: root.trailing-rows; action(name, argument) => { root.action(name, argument); } }
+                }
+            }
+
+            if root.page == "debug": VerticalLayout {
+                padding: 8px;
+                spacing: 6px;
+                TextEdit { text: root.diagnostics; read-only: true; vertical-stretch: 1; }
+                Tile { icon: Icons.power; label: root.german ? "Display ausschalten" : "Sleep display"; clicked => { root.action("sleep", ""); } }
+            }
+
+            if root.page == "settings" && root.tab == "tools" && root.tool-title != "": HorizontalLayout {
+                spacing: 6px;
+                padding: 8px;
+                Tile { icon: Icons.arrow-left; fill: transparent; clicked => { root.action("tools-home", ""); } }
+                Label { text: root.tool-title; font-size: 18px; font-weight: 600; horizontal-stretch: 1; }
+            }
+
+            if root.page == "settings" && root.tab == "tools" && root.tool-image.width > 0: Image {
+                source: root.tool-image;
+                image-fit: contain;
+                vertical-stretch: 1;
+            }
+
+            if root.page == "settings" && root.tab == "host": HorizontalLayout {
+                vertical-stretch: 1;
+                padding: 8px;
+                spacing: 12px;
+                RowList { horizontal-stretch: 1; rows: root.rows; action(name, argument) => { root.action(name, argument); } }
+                RowList { horizontal-stretch: 1; rows: root.trailing-rows; action(name, argument) => { root.action(name, argument); } }
+            }
+
+            if (root.page == "tune" && root.tab != "motion" && root.tab != "print" && root.tab != "afc") ||
+               (root.page == "settings" && root.tab != "network" && root.tab != "config" && root.tab != "host" && (root.tab != "tools" || root.tool-image.width == 0)): VerticalLayout {
+                vertical-stretch: 1;
+                padding: 8px;
+                RowList { rows: root.rows; action(name, argument) => { root.action(name, argument); } }
+            }
+        }
+    }
+
+    if root.dialog-mode == "power": Rectangle {
+        background: #00000099;
+        TouchArea {}
+        Rectangle {
+            width: min(parent.width - 24px, 730px);
+            height: power-layout.preferred-height;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Palette.surface;
+            border-radius: 8px;
+            power-layout := VerticalLayout {
+                padding: 14px;
+                spacing: 12px;
+                Label { text: root.german ? "Energieoptionen" : "Power options"; font-size: 20px; font-weight: 600; }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Tile { stacked: true; icon: Icons.power; label: root.german ? "Herunterfahren" : "Shut down"; height: 124px; fill: Palette.error.transparentize(77%); clicked => { root.action("shutdown", ""); } }
+                    Tile { stacked: true; icon: Icons.restart; label: root.german ? "Neustart" : "Reboot"; height: 124px; fill: Palette.warning.transparentize(77%); clicked => { root.action("reboot", ""); } }
+                    Tile { stacked: true; icon: Icons.refresh; label: "Restart Klipper"; height: 124px; clicked => { root.action("restart-klipper", ""); } }
+                    Tile { stacked: true; icon: Icons.chip; label: "Restart Firmware"; height: 124px; fill: Palette.info.transparentize(77%); clicked => { root.action("restart-firmware", ""); } }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    Tile { label: root.german ? "Schließen" : "Close"; fill: transparent; clicked => { root.dialog-close(); } }
+                }
+            }
+        }
+    }
+
+    if root.dialog-queue || root.dialog-mode == "file-context": Rectangle {
+        visible: root.dialog-mode != "";
+        background: #00000099;
+        TouchArea {}
+        Rectangle {
+            width: min(parent.width - 20px, 760px);
+            height: min(parent.height - 30px, 370px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Palette.surface;
+            border-radius: 8px;
+            clip: true;
+            HorizontalLayout {
+                Rectangle {
+                    horizontal-stretch: 3;
+                    if root.dialog-image.width == 0: Mdi {
+                        text: root.dialog-folder ? Icons.folder : Icons.printer-3d; font-size: 96px; color: Palette.muted;
+                    }
+                    if root.dialog-image.width > 0: Image { source: root.dialog-image; image-fit: cover; }
+                    Rectangle {
+                        y: parent.height - self.height;
+                        height: file-info.preferred-height;
+                        background: Palette.header;
+                        file-info := VerticalLayout {
+                            padding: 13px;
+                            spacing: 7px;
+                            Label { text: root.dialog-title; font-size: 16px; font-weight: 700; wrap: word-wrap; }
+                            if root.dialog-detail != "": Label { text: root.dialog-detail; color: Palette.muted; }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 2;
+                    background: Palette.raised;
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 8px;
+                        Label { text: root.dialog-queue ? (root.german ? "Drucken" : "Print") : (root.german ? "Dateiaktionen" : "File actions"); font-size: 19px; font-weight: 600; }
+                        if root.dialog-queue: Tile { icon: Icons.printer; label: root.german ? "Drucken" : "Print"; active: true; clicked => { root.dialog-submit("", false); } }
+                        if root.dialog-queue: Tile { icon: Icons.play; label: root.german ? "Einreihen" : "Queue"; clicked => { root.dialog-submit("", true); } }
+                        if root.dialog-move: Tile { icon: Icons.folder; label: root.german ? "Verschieben" : "Move"; clicked => { root.action("move-selected", ""); } }
+                        if root.dialog-mode == "file-context": Tile { icon: Icons.trash-can-outline; label: root.german ? "Löschen" : "Delete"; clicked => { root.action("delete-selected", ""); } }
+                        Rectangle { vertical-stretch: 1; }
+                        Tile { icon: Icons.close; label: root.german ? "Schließen" : "Close"; clicked => { root.dialog-close(); } }
+                    }
+                }
+            }
+        }
+    }
+    if root.dialog-mode == "number": Rectangle {
+        background: #00000099;
+        TouchArea {}
+        Rectangle {
+            width: min(parent.width - 20px, 760px);
+            height: min(parent.height - 20px, 420px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 8px;
+            background: Palette.surface;
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 9px;
+                HorizontalLayout {
+                    spacing: 9px;
+                    Mdi { text: root.dialog-icon; font-size: 26px; width: 28px; }
+                    Label { text: root.dialog-title; font-size: 21px; font-weight: 600; horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    vertical-stretch: 1;
+                    spacing: 12px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 8px;
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            background: Palette.raised;
+                            border-radius: 6px;
+                            VerticalLayout {
+                                padding: 10px;
+                                alignment: center;
+                                Label { text: root.german ? "Ziel" : "Target"; color: Palette.muted; }
+                                Label {
+                                    text: (root.dialog-value == "" ? "0" : root.dialog-value) + root.dialog-unit;
+                                    font-size: 29px; color: Palette.accent; font-weight: 700;
+                                }
+                            }
+                        }
+
+                        if root.dialog-current != "": Rectangle {
+                            vertical-stretch: 1;
+                            background: Palette.raised;
+                            border-radius: 6px;
+                            VerticalLayout {
+                                padding: 10px;
+                                alignment: center;
+                                Label { text: root.german ? "Aktuell" : "Current"; color: Palette.muted; }
+                                Label { text: root.dialog-current; font-size: 21px; font-weight: 600; }
+                            }
+                        }
+
+                        if root.dialog-limit != "": Rectangle {
+                            vertical-stretch: 1;
+                            background: Palette.raised;
+                            border-radius: 6px;
+                            VerticalLayout {
+                                padding: 10px;
+                                alignment: center;
+                                Label { text: "Max"; color: Palette.muted; }
+                                Label { text: root.dialog-limit; font-size: 21px; font-weight: 600; }
+                            }
+                        }
+                    }
+
+                    pad := Rectangle {
+                        horizontal-stretch: 2;
+                        private property <length> key-width: (self.width - 16px) / 3;
+                        private property <length> key-height: (self.height - 24px) / 4;
+                        for key[index] in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "erase"]: Tile {
+                            x: mod(index, 3) * (pad.key-width + 8px);
+                            y: floor(index / 3) * (pad.key-height + 8px);
+                            width: pad.key-width;
+                            height: pad.key-height;
+                            min-height: 0px;
+                            icon: key == "clear" ? Icons.trash-can-outline : key == "erase" ? Icons.backspace-outline : "";
+                            label: key == "clear" || key == "erase" ? "" : key;
+                            clicked => {
+                                if key == "clear" {
+                                    root.dialog-value = "";
+                                } else if key == "erase" {
+                                    root.erase-key();
+                                } else {
+                                    root.dialog-value = root.first-number-key ? key : root.dialog-value + key;
+                                }
+                                root.first-number-key = false;
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 7px;
+                    Label { text: root.dialog-detail; color: Palette.muted; font-size: 13px; horizontal-stretch: 1; }
+                    if root.dialog-unit == " mm": Tile {
+                        label: ".";
+                        clicked => {
+                            if root.first-number-key { root.dialog-value = "0."; root.first-number-key = false; }
+                            else if root.dialog-value.is-float() { root.dialog-value += "."; }
+                        }
+                    }
+                    Tile { label: root.german ? "Abbrechen" : "Cancel"; fill: transparent; clicked => { root.dialog-close(); } }
+                    Tile { label: root.german ? "Setzen" : "Set"; active: true; clicked => { root.dialog-submit(root.dialog-value == "" ? "0" : root.dialog-value, false); } }
+                }
+            }
+        }
+    }
+
+    if root.dialog-mode != "" && root.dialog-mode != "power" && root.dialog-mode != "number" && !root.dialog-queue && root.dialog-mode != "file-context": Rectangle {
+        background: #00000099;
+        TouchArea {}
+        Rectangle {
+            width: min(parent.width - 22px, 520px);
+            height: min(parent.height - 18px, dialog-layout.preferred-height + 4px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 8px;
+            background: Palette.surface;
+
+            dialog-layout := VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+                Label { text: root.dialog-title; font-size: 19px; font-weight: 700; }
+                if root.dialog-detail != "": Text { text: root.dialog-detail; color: Palette.muted; wrap: word-wrap; }
+                if root.dialog-image.width > 0: Image { source: root.dialog-image; image-fit: contain; height: 100px; }
+                if root.dialog-mode == "menu": VerticalLayout {
+                    spacing: 6px;
+                    for option in root.dialog-options: Tile {
+                        label: option.title;
+                        icon: option.icon;
+                        clicked => { root.action(option.action, option.argument); }
+                    }
+                }
+                if root.dialog-mode == "text": LineEdit {
+                    text <=> root.dialog-value;
+                    input-type: root.dialog-secret ? InputType.password : InputType.text;
+                    accepted => { root.dialog-submit(root.dialog-value, false); }
+                }
+                if root.dialog-mode == "text" || root.dialog-mode == "number": HorizontalLayout {
+                    spacing: 3px;
+                    for key in ["1","2","3","4","5","6","7","8","9","0",".","-",";",":","#"]: Tile {
+                        min-width: 20px; min-height: 29px; label: key;
+                        clicked => { root.dialog-value += key; }
+                    }
+                }
+                if root.dialog-mode == "text": VerticalLayout {
+                  spacing: 3px;
+                  for letters in [["q","w","e","r","t","y","u","i","o","p"], ["a","s","d","f","g","h","j","k","l"], ["z","x","c","v","b","n","m","_","/","="]]: HorizontalLayout {
+                    spacing: 3px;
+                    for letter in letters: Tile {
+                        min-width: 20px; min-height: 29px;
+                        label: root.shift ? letter.to-uppercase() : letter;
+                        clicked => { root.dialog-value += self.label; }
+                    }
+                }
+                }
+                if root.dialog-mode == "text": HorizontalLayout {
+                    spacing: 3px;
+                    if root.dialog-mode == "text": Tile { min-height: 29px; label: "Shift"; active: root.shift; clicked => { root.shift = !root.shift; } }
+                    if root.dialog-mode == "text": Tile { min-height: 29px; label: "Space"; horizontal-stretch: 1; clicked => { root.dialog-value += " "; } }
+                    Tile { min-height: 29px; label: "Clear"; clicked => { root.dialog-value = ""; } }
+                    Tile { min-height: 29px; label: "⌫"; clicked => { root.erase-key(); } }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Tile { label: root.german ? "Zurück" : "Back"; clicked => { root.dialog-close(); } }
+                    if root.dialog-move: Tile { label: root.german ? "Verschieben" : "Move"; clicked => { root.action("move-selected", ""); } }
+                    if root.dialog-queue: Tile { label: root.german ? "Einreihen" : "Queue"; clicked => { root.dialog-submit(root.dialog-value, true); } }
+                    if root.dialog-mode != "info" && root.dialog-mode != "menu": Tile { label: root.dialog-queue ? (root.german ? "Drucken" : "Print") : "OK"; active: true; clicked => { root.dialog-submit(root.dialog-value, false); } }
+                }
+            }
+        }
+    }
+
+    private property <bool> shift;
+
+    if root.sleeping: Rectangle {
+        background: black;
+        TouchArea {}
+    }
+}

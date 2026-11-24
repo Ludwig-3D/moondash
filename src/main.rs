@@ -4,6 +4,7 @@ mod icons;
 mod input_idle;
 mod moonraker;
 mod network;
+mod print_files;
 mod renderer;
 mod theme;
 mod version;

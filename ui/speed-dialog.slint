@@ -1,0 +1,491 @@
+import { Spinner } from "std-widgets.slint";
+import { NumberPad } from "number-pad.slint";
+import { Label, Palette, Tile } from "widgets.slint";
+
+component DialArc inherits Path {
+    in property <angle> start;
+    in property <angle> end;
+    in property <float> radius;
+    viewbox-width: 320;
+    viewbox-height: 246;
+
+    MoveTo {
+        x: 160 + root.radius * cos(root.start);
+        y: 125 + root.radius * sin(root.start);
+    }
+
+    ArcTo {
+        x: 160 + root.radius * cos(root.end);
+        y: 125 + root.radius * sin(root.end);
+        radius-x: root.radius;
+        radius-y: root.radius;
+        sweep: true;
+        large-arc: root.end - root.start > 180deg;
+    }
+}
+
+component SpeedGauge inherits Rectangle {
+    in property <int> target;
+    in property <string> readout;
+
+    private property <float> scale: root.width / 320px;
+    private property <angle> start-angle: 150deg;
+    private property <angle> red-zone-start: 348deg;
+    private property <angle> end-angle: 390deg;
+    private property <color> red-zone-color: Palette.dark ? #f46a66 : #c13b38;
+    private property <angle> needle-angle: root.dial-angle(root.target);
+    private property <color> needle-color: root.needle-angle > root.red-zone-start ? root.red-zone-color : Palette.accent;
+    animate needle-angle { duration: 210ms; easing: ease-out; }
+
+    function dial-angle(percent: float) -> angle {
+        return root.start-angle
+            + (root.red-zone-start - root.start-angle) * clamp(percent / 300, 0, 1)
+            + (root.end-angle - root.red-zone-start) * clamp((percent - 300) / 200, 0, 1);
+    }
+
+    DialArc {
+        width: root.width; height: root.height;
+        start: root.start-angle; end: root.red-zone-start; radius: 109;
+        stroke: Palette.ink.transparentize(88%);
+        stroke-width: 5px * root.scale;
+    }
+
+    DialArc {
+        width: root.width; height: root.height;
+        start: root.red-zone-start; end: root.end-angle; radius: 109;
+        stroke: root.red-zone-color.transparentize(45%);
+        stroke-width: 5px * root.scale;
+    }
+
+    DialArc {
+        width: root.width; height: root.height;
+        start: root.start-angle; end: min(root.needle-angle, root.red-zone-start); radius: 109;
+        stroke: Palette.accent;
+        stroke-width: 4px * root.scale;
+    }
+
+    if root.needle-angle > root.red-zone-start: DialArc {
+        width: root.width; height: root.height;
+        start: root.red-zone-start; end: root.needle-angle; radius: 109;
+        stroke: root.red-zone-color;
+        stroke-width: 4px * root.scale;
+    }
+
+    // The first 25 ticks cover 0–300% in 12.5% steps. The last four cover 350–500%.
+    for index in 29: Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 320; viewbox-height: 246;
+        private property <float> tick: index <= 24 ? index * 12.5 : 300 + (index - 24) * 50;
+        private property <angle> angle: root.dial-angle(tick);
+        private property <bool> major: index <= 24 ? mod(index, 4) == 0 : mod(index, 2) == 0;
+        private property <float> inner: major ? 92 : 97;
+        stroke: tick >= 300 ? root.red-zone-color : major ? Palette.muted : Palette.ink.transparentize(70%);
+        stroke-width: (major ? 2px : 1px) * root.scale;
+
+        MoveTo { x: 160 + inner * cos(angle); y: 125 + inner * sin(angle); }
+        LineTo { x: 160 + 102 * cos(angle); y: 125 + 102 * sin(angle); }
+    }
+
+    for tick in [0, 50, 100, 150, 200, 250, 300, 400, 500]: Label {
+        private property <angle> angle: root.dial-angle(tick);
+        width: 42px * root.scale;
+        height: 20px * root.scale;
+        x: (160px + 77px * cos(angle)) * root.scale - self.width / 2;
+        y: (125px + 77px * sin(angle)) * root.scale - self.height / 2;
+        text: "" + tick;
+        font-size: 13px * root.scale;
+        font-weight: 600;
+        horizontal-alignment: center;
+        color: tick >= 300 ? root.red-zone-color : Palette.muted;
+    }
+
+    Path {
+        width: parent.width; height: parent.height;
+        viewbox-width: 320; viewbox-height: 246;
+        fill: root.needle-color;
+        private property <angle> side: root.needle-angle + 90deg;
+
+        MoveTo {
+            x: 160 + 67 * cos(root.needle-angle);
+            y: 125 + 67 * sin(root.needle-angle);
+        }
+        LineTo {
+            x: 160 - 7 * cos(root.needle-angle) + 2.5 * cos(side);
+            y: 125 - 7 * sin(root.needle-angle) + 2.5 * sin(side);
+        }
+        LineTo {
+            x: 160 - 7 * cos(root.needle-angle) - 2.5 * cos(side);
+            y: 125 - 7 * sin(root.needle-angle) - 2.5 * sin(side);
+        }
+        Close {}
+    }
+
+    Rectangle {
+        width: 10px * root.scale;
+        height: self.width;
+        x: root.width / 2 - self.width / 2;
+        y: 125px * root.scale - self.height / 2;
+        border-radius: self.width / 2;
+        background: root.needle-color;
+    }
+
+    Label {
+        x: 100px * root.scale;
+        y: 149px * root.scale;
+        width: 120px * root.scale;
+        height: 36px * root.scale;
+        text: root.readout;
+        horizontal-alignment: center;
+        font-size: min(31px, 186px / max(1, root.readout.character-count)) * root.scale;
+        font-weight: 700;
+    }
+}
+
+component SpeedSteps inherits VerticalLayout {
+    in property <[int]> steps;
+    in property <bool> enabled;
+    callback adjust(int);
+    alignment: center;
+    spacing: 8px;
+
+    for step in root.steps: step-button := Rectangle {
+        private property <bool> repeated;
+        private property <bool> holding: root.enabled && hit.pressed
+            && hit.mouse-x >= 0px && hit.mouse-x < self.width
+            && hit.mouse-y >= 0px && hit.mouse-y < self.height;
+
+        height: 44px;
+        border-radius: 7px;
+        border-width: 1px;
+        border-color: (step > 0 ? Palette.accent : Palette.ink).transparentize(82%);
+        background: (!root.enabled ? Palette.surface :
+            hit.pressed ? (step > 0 ? Palette.accent.transparentize(68%) : Palette.raised.brighter(12%)) :
+            hit.has-hover ? (step > 0 ? Palette.accent.transparentize(77%) : Palette.raised) :
+            step > 0 ? Palette.accent.transparentize(87%) : Palette.ink.transparentize(95%));
+        accessible-role: button;
+        accessible-label: step < 0 ? "−" + abs(step) : "+" + step;
+        accessible-action-default => { if root.enabled { root.adjust(step); } }
+
+        Timer {
+            interval: step-button.repeated ? 90ms : 360ms;
+            running: step-button.holding;
+            triggered => {
+                if step-button.holding {
+                    step-button.repeated = true;
+                    root.adjust(step);
+                }
+            }
+        }
+
+        Label {
+            text: step < 0 ? "−" + abs(step) : "+" + step;
+            horizontal-alignment: center;
+            font-weight: 600;
+            font-size: 17px;
+            color: !root.enabled ? Palette.muted : step > 0 ? Palette.accent : Palette.ink;
+        }
+
+        hit := TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                    step-button.repeated = false;
+                }
+            }
+            clicked => { if !step-button.repeated { root.adjust(step); } }
+        }
+    }
+}
+
+component AccelerationEditor inherits Rectangle {
+    in property <bool> german;
+    in property <string> current;
+    callback commit(string);
+    callback close;
+    callback remove-last(string) -> string;
+
+    private property <bool> compact: root.height < 410px;
+    private property <length> inset: root.width < 620px ? 16px : 24px;
+    private property <string> entry;
+    private property <bool> editing;
+    private property <bool> valid: root.entry.is-float() && root.entry.to-float() > 0;
+
+    function append(digit: string) {
+        root.editing = true;
+        root.entry += digit;
+    }
+
+    function clear() {
+        root.editing = true;
+        root.entry = "";
+    }
+
+    function erase() {
+        root.editing = true;
+        root.entry = root.remove-last(root.entry);
+    }
+
+    init => { keys.focus(); }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.modifiers.control || event.modifiers.alt || event.modifiers.meta { return reject; }
+            if event.text == Key.Escape { root.close(); }
+            else if event.text == Key.Return || event.text == "\n" { if root.valid { root.commit(root.entry); } }
+            else if event.text == Key.Backspace { root.erase(); }
+            else if event.text == Key.Delete { root.clear(); }
+            else if event.text.character-count == 1 && event.text.is-float() { root.append(event.text); }
+            else { return reject; }
+            return accept;
+        }
+    }
+
+    card := Rectangle {
+        width: min(root.width - 48px, 580px);
+        height: root.compact ? 288px : 381px;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: 8px;
+        background: Palette.surface;
+
+        Label {
+            x: root.inset; y: root.compact ? 12px : 24px;
+            width: card.width - 2 * root.inset; height: 32px;
+            text: root.german ? "Beschleunigung" : "Acceleration";
+            font-size: 24px;
+        }
+
+        body := Rectangle {
+            x: root.inset; y: root.compact ? 57px : 72px;
+            width: card.width - 2 * root.inset;
+            height: root.compact ? 188px : 232px;
+
+            readout := Rectangle {
+                x: 0px; y: 0px;
+                width: body.width * 0.40;
+                height: root.compact ? 62px : 79px;
+                border-radius: 12px;
+                background: Palette.ink.transparentize(94%);
+
+                VerticalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    alignment: center;
+
+                    Label { text: "mm/s²"; font-size: 14px; color: Palette.muted; }
+                    Label {
+                        text: root.editing ? (root.entry == "" ? "—" : root.entry) : (root.current == "" ? "—" : root.current);
+                        font-size: root.compact ? 24px : 29px;
+                        font-weight: 700;
+                        overflow: elide;
+                    }
+                }
+            }
+
+            NumberPad {
+                x: readout.width + (root.width < 620px ? 14px : 24px); y: 0px;
+                width: body.width - self.x;
+                height: body.height;
+                german: root.german;
+                digit(value) => { root.append(value); }
+                clear => { root.clear(); }
+                erase => { root.erase(); }
+            }
+        }
+
+        HorizontalLayout {
+            x: 8px; y: card.height - (root.compact ? 39px : 52px);
+            width: card.width - 16px; height: root.compact ? 35px : 52px;
+            spacing: 8px;
+            alignment: end;
+
+            Tile {
+                width: root.german ? 99px : 78px; height: 36px;
+                fill: transparent;
+                label: root.german ? "Abbrechen" : "Cancel";
+                clicked => { root.close(); }
+            }
+            Tile {
+                width: root.german ? 82px : 64px; height: 36px;
+                fill: Palette.accent.transparentize(86%);
+                ink: Palette.accent;
+                enabled: root.valid;
+                label: root.german ? "Setzen" : "Set";
+                clicked => { root.commit(root.entry); }
+            }
+        }
+    }
+}
+
+export component SpeedDialog inherits Rectangle {
+    in property <bool> german;
+    in property <bool> busy;
+    in property <bool> ready;
+    in property <string> error;
+    in-out property <string> acceleration;
+    in property <int> target: 100;
+    in property <string> readout;
+    callback adjust(int);
+    callback remove-last(string) -> string;
+    callback save;
+    callback close;
+
+    private property <bool> compact: root.height < 410px;
+    private property <length> inset: root.width < 620px ? 16px : 24px;
+    private property <bool> editing-acceleration;
+
+    background: #00000052;
+    TouchArea {}
+
+    card := Rectangle {
+        visible: !root.editing-acceleration;
+        width: min(root.width - 48px, 760px);
+        height: (root.compact ? 288px : 381px) + (root.error == "" ? 0px : 21px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: 8px;
+        background: Palette.surface;
+        clip: true;
+
+        Label {
+            x: root.inset; y: root.compact ? 12px : 24px;
+            width: card.width - 2 * root.inset;
+            height: 32px;
+            text: root.german ? "Druckgeschwindigkeit" : "Print Speed";
+            font-size: 24px;
+        }
+
+        body := Rectangle {
+            x: root.inset;
+            y: root.compact ? 55px : 65px;
+            width: card.width - 2 * root.inset;
+            height: root.compact ? 190px : 252px;
+            private property <length> step-width: min(104px, (self.width - dial.width) / 2 - 12px);
+
+            SpeedSteps {
+                x: max(0px, (dial.x - body.step-width) / 2);
+                y: 0px;
+                width: body.step-width;
+                height: body.height;
+                steps: [-25, -10, -1];
+                enabled: !root.busy && !root.editing-acceleration;
+                adjust(step) => { root.adjust(step); }
+            }
+
+            dial := SpeedGauge {
+                width: min(320px, body.height * 320 / 246, body.width - 124px);
+                height: self.width * 246 / 320;
+                x: (body.width - self.width) / 2;
+                y: (body.height - self.height) / 2;
+                target: root.target;
+                readout: root.readout;
+            }
+
+            SpeedSteps {
+                x: body.width - body.step-width - max(0px, (dial.x - body.step-width) / 2);
+                y: 0px;
+                width: body.step-width;
+                height: body.height;
+                steps: [25, 10, 1];
+                enabled: !root.busy && !root.editing-acceleration;
+                adjust(step) => { root.adjust(step); }
+            }
+
+            reset := Tile {
+                x: (body.width - self.width) / 2;
+                y: dial.y + dial.height * 187 / 246;
+                width: root.german ? 112px : 84px;
+                height: 36px;
+                label: root.german ? "Zurücksetzen" : "Reset";
+                fill: Palette.ink.transparentize(94%);
+                enabled: !root.busy && !root.editing-acceleration && root.target != 100;
+                accessible-role: button;
+                accessible-label: root.german ? "Geschwindigkeit auf 100 % zurücksetzen" : "Reset speed to 100%";
+                accessible-action-default => { if reset.enabled { reset.clicked(); } }
+                clicked => { root.adjust(100 - root.target); }
+            }
+        }
+
+        if root.error != "": Label {
+            x: root.inset; y: footer.y - self.height;
+            width: card.width - 2 * root.inset; height: 20px;
+            text: root.error;
+            color: Palette.error;
+            font-size: 13px;
+        }
+
+        footer := HorizontalLayout {
+            x: 8px;
+            y: card.height - self.height - 8px;
+            width: card.width - self.x - 8px;
+            height: 36px;
+            spacing: 8px;
+            private property <length> cancel-width: root.german ? 99px : 78px;
+            private property <length> save-width: root.german ? 100px : 68px;
+
+            acceleration-field := Rectangle {
+                width: min(220px, footer.width - footer.cancel-width - footer.save-width - 3 * footer.spacing);
+                height: 36px;
+                border-radius: 7px;
+                border-width: 1px;
+                border-color: Palette.ink.transparentize(82%);
+                background: hit.pressed ? Palette.accent.transparentize(83%) : hit.has-hover ? Palette.raised : Palette.ink.transparentize(95%);
+                private property <string> title: root.german ? "Beschleunigung" : "Acceleration";
+                private property <string> value: (root.acceleration == "" ? "—" : root.acceleration) + " mm/s²";
+                accessible-role: button;
+                accessible-label: title + ", " + value;
+                accessible-action-default => { if !root.busy { root.editing-acceleration = true; } }
+
+                VerticalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    alignment: center;
+                    Label { text: acceleration-field.title; font-size: 12px; color: Palette.muted; }
+                    Label { text: acceleration-field.value; font-size: 14px; font-weight: 600; overflow: elide; }
+                }
+
+                hit := TouchArea {
+                    enabled: !root.busy;
+                    mouse-cursor: pointer;
+                    clicked => { root.editing-acceleration = true; }
+                }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Tile {
+                width: footer.cancel-width; height: 36px;
+                fill: transparent;
+                enabled: !root.busy;
+                label: root.german ? "Abbrechen" : "Cancel";
+                clicked => { root.close(); }
+            }
+
+            Rectangle {
+                width: footer.save-width;
+                height: 36px;
+
+                Tile {
+                    fill: Palette.accent.transparentize(86%);
+                    ink: Palette.accent;
+                    enabled: root.ready && !root.busy;
+                    label: root.busy ? "" : root.german ? "Speichern" : "Save";
+                    clicked => { root.save(); }
+                }
+                if root.busy: Spinner { width: 20px; height: 20px; }
+            }
+        }
+    }
+
+    if root.editing-acceleration: AccelerationEditor {
+        german: root.german;
+        current: root.acceleration;
+        remove-last(value) => { return root.remove-last(value); }
+        commit(value) => {
+            root.acceleration = value;
+            root.editing-acceleration = false;
+        }
+        close => { root.editing-acceleration = false; }
+    }
+}

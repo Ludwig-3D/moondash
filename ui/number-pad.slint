@@ -1,0 +1,62 @@
+import { Icons } from "icons.slint";
+import { Label, Mdi, Palette } from "widgets.slint";
+
+component NumberKey inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> enabled: true;
+    callback clicked;
+    border-radius: 4px;
+    background: !root.enabled ? Palette.ink.transparentize(95%) :
+        key.pressed ? Palette.ink.transparentize(78%) :
+        key.has-hover ? Palette.ink.transparentize(86%) : Palette.ink.transparentize(88%);
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+
+    if root.icon == "": Label {
+        text: root.label;
+        font-size: 18px;
+        horizontal-alignment: center;
+        color: root.enabled ? Palette.ink : Palette.muted;
+    }
+
+    if root.icon != "": Mdi {
+        text: root.icon;
+        font-size: 24px;
+        color: root.enabled ? Palette.ink : Palette.muted;
+    }
+
+    key := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component NumberPad inherits Rectangle {
+    in property <bool> german;
+    in property <bool> enabled: true;
+    callback digit(string);
+    callback clear;
+    callback erase;
+
+    private property <length> key-width: (self.width - 16px) / 3;
+    private property <length> key-height: (self.height - 24px) / 4;
+
+    for key[index] in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "erase"]: NumberKey {
+        x: mod(index, 3) * (root.key-width + 8px);
+        y: floor(index / 3) * (root.key-height + 8px);
+        width: root.key-width;
+        height: root.key-height;
+        enabled: root.enabled;
+        icon: key == "clear" ? Icons.trash-can-outline : key == "erase" ? Icons.backspace-outline : "";
+        label: key == "clear" ? (root.german ? "Löschen" : "Clear") : key == "erase" ? (root.german ? "Rücktaste" : "Backspace") : key;
+
+        clicked => {
+            if key == "clear" { root.clear(); }
+            else if key == "erase" { root.erase(); }
+            else { root.digit(key); }
+        }
+    }
+}

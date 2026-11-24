@@ -1,0 +1,139 @@
+import { ScrollView, Spinner } from "std-widgets.slint";
+import { Icons } from "icons.slint";
+import { Label, Palette, Tile } from "widgets.slint";
+
+export struct ColorSwatch {
+    hex: string,
+    fill: color,
+}
+
+component SwatchGrid inherits Rectangle {
+    in property <[ColorSwatch]> colors;
+    in property <color> selected;
+    in property <bool> enabled;
+    in property <bool> compact;
+    callback choose(string);
+
+    private property <length> gap: root.compact ? 14px : 18px;
+    private property <int> columns: max(1, floor((root.width + gap) / (48px + gap)));
+    private property <length> side: (root.width - (columns - 1) * gap) / columns;
+    private property <int> rows: ceil(root.colors.length / columns);
+    height: rows == 0 ? 0px : rows * (side + gap) - gap;
+
+    for swatch[index] in root.colors: Rectangle {
+        x: mod(index, root.columns) * (root.side + root.gap);
+        y: floor(index / root.columns) * (root.side + root.gap);
+        width: root.side;
+        height: root.side;
+        border-radius: root.compact ? 14px : 18px;
+        background: swatch.fill;
+        border-width: 2px;
+        border-color: #00000059;
+        accessible-role: button;
+        accessible-label: swatch.hex;
+        accessible-action-default => { if root.enabled { root.choose(swatch.hex); } }
+
+        if swatch.fill == root.selected: Rectangle {
+            x: -6px; y: -6px;
+            width: parent.width + 12px;
+            height: parent.height + 12px;
+            border-radius: parent.border-radius + 6px;
+            border-width: 3px;
+            border-color: Palette.accent;
+        }
+
+        TouchArea {
+            enabled: root.enabled;
+            mouse-cursor: pointer;
+            clicked => { root.choose(swatch.hex); }
+        }
+    }
+}
+
+export component ColorPicker inherits Rectangle {
+    in property <bool> german;
+    in property <bool> busy;
+    in property <bool> enabled: true;
+    in property <string> title;
+    in property <string> extras-title;
+    in property <string> error;
+    in property <color> selected;
+    in property <[ColorSwatch]> swatches;
+    in property <[ColorSwatch]> extras;
+    callback choose(string);
+    callback close;
+
+    background: Palette.surface;
+    TouchArea {}
+
+    Rectangle {
+        y: 0px;
+        height: 64px;
+        background: Palette.raised;
+
+        HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 12px;
+            spacing: 10px;
+
+            Tile {
+                icon: Icons.close;
+                width: 48px;
+                fill: transparent;
+                enabled: !root.busy;
+                accessible-role: button;
+                accessible-label: root.german ? "Schließen" : "Close";
+                accessible-action-default => { if !root.busy { root.close(); } }
+                clicked => { root.close(); }
+            }
+            Label { text: root.title; font-size: 20px; horizontal-stretch: 1; }
+            if root.busy: Spinner { width: 24px; height: 24px; }
+        }
+    }
+
+    pane := ScrollView {
+        x: 0px;
+        y: 64px;
+        width: root.width;
+        height: root.height - 64px;
+        content-width: pane.visible-width;
+
+        VerticalLayout {
+            width: pane.visible-width;
+            padding: 24px;
+            spacing: 12px;
+
+            if root.error != "": Label {
+                text: root.error;
+                color: Palette.error;
+                wrap: word-wrap;
+            }
+
+            if root.extras.length > 0: VerticalLayout {
+                spacing: 12px;
+                Label { text: root.extras-title; font-size: 18px; height: 22px; }
+                SwatchGrid {
+                    colors: root.extras;
+                    selected: root.selected;
+                    compact: true;
+                    enabled: root.enabled && !root.busy;
+                    choose(hex) => { root.choose(hex); }
+                }
+                Rectangle { height: 8px; }
+            }
+
+            if root.extras.length > 0: Label {
+                text: root.german ? "Andere Farben" : "Other colors";
+                font-size: 18px;
+                height: 22px;
+            }
+
+            SwatchGrid {
+                colors: root.swatches;
+                selected: root.selected;
+                enabled: root.enabled && !root.busy;
+                choose(hex) => { root.choose(hex); }
+            }
+        }
+    }
+}

@@ -1,0 +1,374 @@
+import { ScrollView, Spinner } from "std-widgets.slint";
+import { Icons } from "icons.slint";
+import { Label, Mdi, Palette, Row, Tile } from "widgets.slint";
+
+component Meta inherits HorizontalLayout {
+    in property <string> icon;
+    in property <string> value;
+    horizontal-stretch: 0;
+    spacing: 6px;
+
+    Mdi { text: root.icon; width: 16px; font-size: 16px; color: Palette.muted; }
+    Label { text: root.value == "" ? "--" : root.value; color: Palette.muted; }
+}
+
+component Action inherits Tile {
+    in property <color> tint: Palette.accent;
+    min-height: 36px;
+    fill: tint.transparentize(86%);
+    ink: tint;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+}
+
+export struct PrintTool {
+    name: string,
+    color: color,
+    lane: string,
+    lane-color: color,
+    lane-ink: color,
+}
+
+export component PrintDialog inherits Rectangle {
+    in property <bool> german;
+    in property <bool> folder;
+    in property <bool> printing;
+    in property <bool> ready;
+    in property <bool> busy;
+    in property <bool> loading;
+    in property <bool> can-move;
+    in property <bool> timelapse-available;
+    in property <bool> timelapse-enabled;
+    in property <[PrintTool]> tools;
+    in property <string> title;
+    in property <string> detail;
+    in property <string> time;
+    in property <string> weight;
+    in property <string> mode;
+    in property <string> destination;
+    in property <string> filename;
+    in property <image> preview;
+    callback action(string, string);
+    callback close;
+    private property <bool> compact: root.width < 700px;
+
+    background: #00000052;
+    TouchArea { clicked => { if !root.busy { root.close(); } } }
+
+    card := Rectangle {
+        width: min(root.width - 48px, 1200px);
+        height: min(root.height - 48px, root.compact ? 620px : 360px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        background: Palette.surface;
+        border-radius: 8px;
+        clip: true;
+
+        TouchArea {}
+
+        image-panel := Rectangle {
+            x: 0px; y: 0px;
+            width: root.compact ? card.width : card.width * 0.5556;
+            height: root.compact ? card.height * 0.45 : card.height;
+            background: root.folder ? Palette.ink.transparentize(96%) : Palette.surface;
+            clip: true;
+
+            if root.preview.width > 0: Image { source: root.preview; image-fit: cover; }
+            if root.preview.width == 0 && root.loading: Spinner { width: 40px; height: 40px; }
+            if root.preview.width == 0 && !root.loading: Mdi {
+                text: root.folder ? Icons.folder-outline : Icons.printer-3d;
+                font-size: root.folder ? 130px : 72px;
+                color: Palette.ink.transparentize(45%);
+            }
+
+            Rectangle {
+                x: 0px; y: parent.height - self.height;
+                width: parent.width;
+                height: meta.preferred-height;
+                background: Palette.header;
+
+                meta := VerticalLayout {
+                    padding-top: 12px; padding-bottom: 12px;
+                    padding-left: 14px; padding-right: 14px;
+                    spacing: 8px;
+                    Label {
+                        text: root.title;
+                        font-size: 16px; font-weight: 700;
+                        wrap: word-wrap;
+                    }
+                    if !root.folder: HorizontalLayout {
+                        alignment: start;
+                        spacing: 12px;
+                        Meta { icon: Icons.clock-outline; value: root.time; }
+                        Meta { icon: Icons.scale-balance; value: root.weight; }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            x: root.compact ? 0px : image-panel.width;
+            y: root.compact ? image-panel.height : 0px;
+            width: card.width - self.x;
+            height: card.height - self.y;
+            background: Palette.ink.transparentize(92%);
+
+            VerticalLayout {
+                padding: 8px;
+                spacing: 9px;
+
+                if root.mode == "print" && root.tools.length > 0: ScrollView {
+                    vertical-stretch: 1;
+
+                    grid := Rectangle {
+                        height: ceil(root.tools.length / 4) * 132px;
+                        private property <length> tile-width: (self.width - 36px) / 4;
+
+                        for tool[index] in root.tools: Rectangle {
+                            x: mod(index, 4) * (grid.tile-width + 12px);
+                            y: floor(index / 4) * 132px;
+                            width: grid.tile-width;
+                            height: 124px;
+                            border-radius: 16px;
+                            background: tool.color;
+                            clip: true;
+
+                            Rectangle {
+                                y: parent.height - self.height;
+                                height: 40px;
+                                background: tool.lane-color;
+                                Label { text: tool.lane; color: tool.lane-ink; horizontal-alignment: center; font-weight: 700; font-size: 14px; }
+                            }
+                            TouchArea { enabled: !root.busy; clicked => { root.action("print-tool", tool.name); } }
+                        }
+                    }
+                }
+
+                if root.mode == "print" && root.timelapse-available: HorizontalLayout {
+                    height: 42px;
+                    padding-left: 4px;
+                    padding-right: 8px;
+                    Label { text: root.german ? "Zeitraffer" : "Timelapse"; font-weight: 600; horizontal-stretch: 1; }
+                    Rectangle {
+                        width: 44px; height: 24px; border-radius: 12px;
+                        background: root.timelapse-enabled ? Palette.accent.transparentize(58%) : Palette.ink.transparentize(82%);
+                        Rectangle {
+                            width: 16px; height: 16px; border-radius: 8px;
+                            x: root.timelapse-enabled ? parent.width - self.width - 4px : 4px;
+                            background: root.timelapse-enabled ? Palette.accent : Palette.muted;
+                        }
+                        TouchArea { enabled: !root.busy; clicked => { root.action("print-timelapse", ""); } }
+                    }
+                }
+
+                if root.mode == "file-context": VerticalLayout {
+                    spacing: 14px;
+                    Label {
+                        text: root.folder ? (root.german ? "Ordneraktionen" : "Folder actions") : (root.german ? "Dateiaktionen" : "File actions");
+                        font-size: 18px; font-weight: 600; height: 32px;
+                    }
+                    Rectangle { height: 7px; }
+                    Tile {
+                        icon: Icons.folder-move-outline; label: root.german ? "Datei verschieben" : "Move file";
+                        height: 44px; enabled: !root.busy;
+                        clicked => { root.action("move-selected", ""); }
+                    }
+                    Tile {
+                        icon: Icons.delete-outline; label: root.german ? "Datei löschen" : "Delete file";
+                        height: 44px; fill: Palette.error.transparentize(85%); ink: Palette.error; enabled: !root.busy;
+                        clicked => { root.action("delete-selected", ""); }
+                    }
+                }
+
+                if root.mode == "file-move": VerticalLayout {
+                    spacing: 9px;
+                    HorizontalLayout {
+                        spacing: 10px; height: 34px;
+                        Mdi { text: Icons.folder-move-outline; width: 24px; }
+                        Label { text: root.german ? "Datei verschieben" : "Move file"; font-size: 18px; font-weight: 600; horizontal-stretch: 1; }
+                    }
+                    Label { text: root.german ? "Zielordner" : "Destination folder"; color: Palette.muted; }
+                    Tile {
+                        icon: Icons.folder-outline; label: root.destination;
+                        height: 48px; enabled: !root.busy;
+                        clicked => { root.action("browse-destination", ""); }
+                    }
+                    Label { text: root.german ? "Dateiname" : "Filename"; color: Palette.muted; }
+                    Tile {
+                        icon: Icons.file-code-outline; label: root.filename;
+                        height: 48px; enabled: !root.busy;
+                        clicked => { root.action("filename-keyboard", ""); }
+                    }
+                }
+
+                if root.mode == "file-delete": VerticalLayout {
+                    spacing: 16px;
+                    HorizontalLayout {
+                        spacing: 9px;
+                        Mdi { text: Icons.delete-outline; width: 24px; color: Palette.error; }
+                        Label {
+                            text: root.folder ? (root.german ? "Ordner löschen?" : "Delete folder?") : (root.german ? "G-Code-Datei löschen?" : "Delete G-code file?");
+                            font-size: 17px; font-weight: 600; horizontal-stretch: 1;
+                        }
+                    }
+                    Rectangle {
+                        min-height: 70px;
+                        border-radius: 7px;
+                        background: Palette.warning.transparentize(84%);
+                        HorizontalLayout {
+                            padding: 10px;
+                            spacing: 10px;
+                            Mdi { text: Icons.alert-outline; width: 24px; color: Palette.warning; }
+                            Text {
+                                text: root.folder ? (root.german ? "Dieser Ordner wird gelöscht. Er muss leer sein." : "This folder will be deleted. It must be empty.")
+                                                  : (root.german ? "Diese Datei wird dauerhaft gelöscht" : "This file will be permanently deleted");
+                                color: Palette.ink; wrap: word-wrap; vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { vertical-stretch: root.mode == "print" && root.tools.length > 0 ? 0 : 1; }
+
+                if root.detail != "": Text {
+                    text: root.detail; color: Palette.error;
+                    font-size: 13px; wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    height: 40px;
+                    padding-top: 4px;
+                    spacing: 10px;
+                    alignment: end;
+
+                    if root.mode == "print" && !root.printing: Tile {
+                        icon: Icons.playlist-plus; fill: transparent; enabled: !root.busy;
+                        accessible-role: button;
+                        accessible-label: root.german ? "Anreihen" : "Add to queue";
+                        clicked => { root.action("queue-file", ""); }
+                    }
+                    Tile {
+                        label: root.german ? "Abbrechen" : "Cancel";
+                        min-width: 84px;
+                        fill: transparent;
+                        enabled: !root.busy;
+                        clicked => {
+                            if root.mode == "file-move" || root.mode == "file-delete" { root.action("file-context-back", ""); }
+                            else { root.close(); }
+                        }
+                    }
+                    if root.mode == "print": Action {
+                        label: root.printing ? (root.german ? "Anreihen" : "Add to queue") : (root.german ? "Drucken" : "Print");
+                        min-width: 91px;
+                        enabled: !root.busy && (root.printing || root.ready);
+                        clicked => { root.action(root.printing ? "queue-file" : "print-file", ""); }
+                    }
+                    if root.mode == "file-move": Action {
+                        label: root.german ? "Verschieben" : "Move"; min-width: 107px;
+                        enabled: root.can-move && !root.busy;
+                        clicked => { root.action("apply-move", ""); }
+                    }
+                    if root.mode == "file-delete": Action {
+                        label: root.german ? "Löschen" : "Delete"; min-width: 90px;
+                        tint: Palette.error; enabled: !root.busy;
+                        clicked => { root.action("apply-delete", ""); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component FolderPicker inherits Rectangle {
+    in property <bool> german;
+    in property <bool> loading;
+    in property <bool> busy;
+    in property <bool> creating;
+    in property <bool> create-valid;
+    in property <bool> at-root;
+    in property <string> path;
+    in property <string> folder-name;
+    in property <string> error;
+    in property <[Row]> folders;
+    callback action(string, string);
+
+    background: #00000052;
+    TouchArea { clicked => { if !root.busy { root.action("close-folder-picker", ""); } } }
+
+    Rectangle {
+        width: min(root.width - 48px, 700px);
+        height: min(root.height * 0.82, 580px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        background: Palette.surface;
+        border-radius: 8px;
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 15px;
+            spacing: 9px;
+            HorizontalLayout {
+                height: 28px;
+                spacing: 10px;
+                Mdi { text: Icons.folder-open-outline; width: 26px; }
+                Label { text: root.german ? "Zielordner" : "Destination folder"; font-size: 18px; font-weight: 600; horizontal-stretch: 1; }
+            }
+            HorizontalLayout {
+                height: 49px;
+                spacing: 9px;
+                Tile { icon: Icons.arrow-up; enabled: !root.at-root && !root.loading && !root.busy; clicked => { root.action("browse-folder-up", ""); } }
+                Label { text: root.path; horizontal-stretch: 1; }
+            }
+            if root.loading: Spinner { width: 28px; height: 28px; }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 4px;
+                    for folder in root.folders: Rectangle {
+                        height: 58px;
+                        border-radius: 6px;
+                        background: hit.has-hover ? Palette.raised : transparent;
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 8px; spacing: 12px;
+                            Mdi { text: Icons.folder-outline; width: 28px; }
+                            Label { text: folder.title; horizontal-stretch: 1; }
+                            Mdi { text: Icons.chevron-right; width: 24px; }
+                        }
+                        hit := TouchArea {
+                            enabled: !root.loading && !root.busy && !folder.active;
+                            clicked => { root.action("browse-folder", folder.argument); }
+                        }
+                    }
+                }
+            }
+            if root.error != "": Label { text: root.error; color: Palette.error; }
+            HorizontalLayout {
+                height: 44px;
+                spacing: 7px;
+                if root.creating: Tile {
+                    icon: Icons.folder-plus-outline;
+                    label: root.folder-name == "" ? (root.german ? "Ordnername" : "Folder name") : root.folder-name;
+                    horizontal-stretch: 1; enabled: !root.busy;
+                    clicked => { root.action("new-folder-keyboard", ""); }
+                }
+                if !root.creating: Rectangle { horizontal-stretch: 1; }
+                Tile {
+                    label: root.german ? "Abbrechen" : "Cancel"; min-width: 86px; fill: transparent; enabled: !root.busy;
+                    clicked => { root.action(root.creating ? "cancel-new-folder" : "close-folder-picker", ""); }
+                }
+                Action {
+                    label: root.german ? (root.creating ? "Erstellen" : "Neuen Ordner erstellen") : (root.creating ? "Create" : "Create new folder");
+                    min-width: root.creating ? 90px : 166px;
+                    enabled: !root.busy && !root.loading && (!root.creating || root.create-valid);
+                    clicked => { root.action(root.creating ? "apply-new-folder" : "start-new-folder", ""); }
+                }
+                if !root.creating: Action {
+                    label: root.german ? "Diesen Ordner wählen" : "Select this folder";
+                    min-width: 162px;
+                    enabled: !root.loading && !root.busy;
+                    clicked => { root.action("select-this-folder", ""); }
+                }
+            }
+        }
+    }
+}

@@ -2,6 +2,38 @@ import { ScrollView, LineEdit } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
 
+export struct FilamentSensor {
+    key: string,
+    name: string,
+    enabled: bool,
+    detected: bool,
+}
+
+component FilamentSensorButton inherits Tile {
+    in property <FilamentSensor> sensor;
+    in property <bool> german;
+    height: 56px;
+    border-radius: 0px;
+    fill: !root.sensor.enabled ? Palette.ink.transparentize(82%) :
+        root.sensor.detected ? Palette.accent : Palette.warning.transparentize(88%);
+    ink: !root.sensor.enabled ? Palette.muted : root.sensor.detected ? #ffffff : Palette.warning;
+    accessible-role: button;
+    accessible-label: root.sensor.name + (root.sensor.enabled
+        ? (root.german ? ", aktiviert" : ", enabled")
+        : (root.german ? ", deaktiviert" : ", disabled"));
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+
+    Label {
+        x: 6px; width: parent.width - 12px;
+        text: root.sensor.name;
+        font-size: 13px;
+        font-weight: 500;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+        color: root.enabled ? root.ink : root.ink.transparentize(40%);
+    }
+}
+
 component Move inherits Tile {
     in property <bool> compact;
     width: compact ? 55px : 72px;
@@ -14,6 +46,7 @@ component Move inherits Tile {
 export component MotionPanel inherits Rectangle {
     in property <bool> german;
     in property <bool> enabled;
+    in property <bool> sensors-enabled;
     in property <bool> x-homed;
     in property <bool> y-homed;
     in property <bool> z-homed;
@@ -21,7 +54,7 @@ export component MotionPanel inherits Rectangle {
     in property <bool> has-qgl;
     in property <float> step;
     in property <[Row]> controls;
-    in property <[Row]> sensors;
+    in property <[FilamentSensor]> sensors;
     callback action(string, string);
     private property <bool> compact: root.width < 650px || root.height < 330px;
 
@@ -128,20 +161,43 @@ export component MotionPanel inherits Rectangle {
         }
 
         Rectangle {
-            width: root.compact ? 82px : 118px;
-            background: Palette.raised; border-radius: 6px;
-            clip: true;
-            VerticalLayout {
-                Tile { label: root.german ? "Laden" : "Load"; height: 50px; enabled: root.enabled; clicked => { root.action("load-filament", ""); } }
-                Rectangle { height: 1px; background: Palette.divider; }
-                Tile { label: root.german ? "Entladen" : "Unload"; height: 50px; enabled: root.enabled; clicked => { root.action("unload-filament", ""); } }
-                Rectangle { height: 1px; background: Palette.divider; }
-                for sensor in root.sensors: VerticalLayout {
-                    padding: 6px;
-                    Label { text: sensor.title; horizontal-alignment: center; font-size: 12px; }
-                    Label { text: sensor.detail; horizontal-alignment: center; font-size: 12px; color: sensor.tone; }
+            width: root.compact ? 82px : 112px;
+
+            Rectangle {
+                y: 0px;
+                height: min(parent.height, (root.sensors.length + 2) * 57px);
+                background: Palette.surface;
+                border-radius: 4px;
+                clip: true;
+
+                ScrollView {
+                    VerticalLayout {
+                        alignment: start;
+                        Tile {
+                            label: root.german ? "Laden" : "Load";
+                            height: 56px; border-radius: 0px; fill: transparent;
+                            enabled: root.enabled;
+                            clicked => { root.action("load-filament", ""); }
+                        }
+                        Rectangle { height: 1px; background: Palette.divider; }
+                        Tile {
+                            label: root.german ? "Entladen" : "Unload";
+                            height: 56px; border-radius: 0px; fill: transparent;
+                            enabled: root.enabled;
+                            clicked => { root.action("unload-filament", ""); }
+                        }
+                        Rectangle { height: 1px; background: Palette.divider; }
+                        for sensor in root.sensors: VerticalLayout {
+                            FilamentSensorButton {
+                                sensor: sensor;
+                                german: root.german;
+                                enabled: root.sensors-enabled;
+                                clicked => { root.action("toggle-filament-sensor", sensor.key); }
+                            }
+                            Rectangle { height: 1px; background: Palette.divider; }
+                        }
+                    }
                 }
-                Rectangle { vertical-stretch: 1; }
             }
         }
     }

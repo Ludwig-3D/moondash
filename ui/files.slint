@@ -1,3 +1,4 @@
+import { Spinner, ScrollView } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
 
@@ -5,9 +6,21 @@ component FileCard inherits Rectangle {
     in property <Row> item;
     callback selected;
     callback context;
-    border-radius: 7px;
-    background: Palette.surface;
+    border-radius: 8px;
+    background: Palette.ink.transparentize(94%);
     clip: true;
+    private property <bool> held;
+    private property <bool> tracking;
+
+    Timer {
+        interval: 550ms;
+        running: root.tracking;
+        triggered => {
+            root.tracking = false;
+            root.held = true;
+            root.context();
+        }
+    }
 
     if root.item.preview.width > 0: Image {
         source: root.item.preview;
@@ -25,56 +38,65 @@ component FileCard inherits Rectangle {
         Label { text: root.item.title; horizontal-alignment: center; font-weight: 600; wrap: word-wrap; }
     }
 
-    if root.item.action != "folder": Rectangle {
-        if root.item.preview.width == 0: Mdi { text: Icons.printer-3d; font-size: 48px; color: Palette.muted; }
+    if root.item.action == "file": Rectangle {
+        if root.item.preview.width == 0 && !root.item.active: Mdi { text: Icons.printer-3d; font-size: 48px; }
+        if root.item.preview.width == 0 && root.item.active: Spinner { width: 32px; height: 32px; }
 
         Rectangle {
             y: 0px;
-            height: 31px;
+            height: title.preferred-height + 16px;
             background: Palette.header;
-            Label { x: 10px; width: parent.width - 44px; text: root.item.title; font-size: 13px; font-weight: 600; }
+            title := Label {
+                x: 10px; y: 8px; width: parent.width - 20px;
+                text: root.item.title; font-size: 13px; font-weight: 600; wrap: word-wrap;
+            }
         }
 
-        if root.item.detail != "": Rectangle {
-            height: 31px;
+        Rectangle {
+            height: 33px;
             y: parent.height - self.height;
             background: Palette.header;
             HorizontalLayout {
-                padding-left: 9px;
-                spacing: 6px;
-                Mdi { text: Icons.clock-outline; font-size: 14px; width: 14px; color: Palette.muted; }
-                Label { text: root.item.detail; font-size: 13px; color: Palette.muted; horizontal-stretch: 1; }
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 4px;
+                if root.item.detail != "": Mdi { text: Icons.clock-outline; font-size: 14px; width: 14px; color: Palette.muted; }
+                Label { text: root.item.detail; font-size: 14px; color: Palette.muted; horizontal-stretch: 1; }
+                if root.item.icon != "": Mdi { text: root.item.icon; font-size: 16px; width: 16px; color: root.item.tone; }
+                if root.item.icon != "": Label { text: root.item.button; font-size: 14px; color: root.item.tone; }
             }
         }
     }
 
-    TouchArea {
+    touch := TouchArea {
         mouse-cursor: pointer;
-        clicked => { root.selected(); }
-        pointer-event(event) => {
-            if event.kind == PointerEventKind.down && event.button == PointerEventButton.right {
-                root.context();
+        clicked => { if !root.held { root.selected(); } }
+        moved => {
+            if abs(self.mouse-x - self.pressed-x) > 12px || abs(self.mouse-y - self.pressed-y) > 12px {
+                if root.tracking { root.held = true; }
+                root.tracking = false;
             }
         }
-    }
-
-    if root.item.alternate != "": Tile {
-        x: parent.width - self.width - 2px;
-        y: 2px;
-        width: 30px;
-        height: 29px;
-        min-width: 30px;
-        min-height: 29px;
-        icon: Icons.dots-vertical;
-        fill: Palette.header;
-        clicked => { root.context(); }
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down {
+                root.held = false;
+                if event.button == PointerEventButton.right && root.item.alternate != "" {
+                    root.context();
+                } else if event.button == PointerEventButton.left && root.item.alternate != "" {
+                    root.tracking = true;
+                }
+            } else if event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel {
+                root.tracking = false;
+            }
+        }
     }
 }
 
 export component FileBrowser inherits Rectangle {
     in property <bool> german;
+    in property <bool> loading;
     in property <[Row]> entries;
-    in property <string> folder;
+    in property <[Row]> crumbs;
     in property <string> filter;
     in property <int> columns: 4;
     in property <int> rows: 3;
@@ -84,61 +106,90 @@ export component FileBrowser inherits Rectangle {
     callback action(string, string);
 
     VerticalLayout {
+        x: 0px; y: 0px; width: root.width; height: root.height;
         padding: 8px;
-        spacing: 9px;
+        spacing: 12px;
 
         Rectangle {
-            height: 44px;
-            background: Palette.surface; border-radius: 5px;
+            height: 48px;
+            background: Palette.ink.transparentize(94%); border-radius: 4px;
             HorizontalLayout {
-                padding-left: 6px;
-                padding-right: 6px;
-                spacing: 3px;
-                for button[index] in [Icons.sort-clock-descending-outline, Icons.sort-clock-ascending-outline, Icons.sort-alphabetical-ascending, Icons.sort-alphabetical-descending]: Tile {
-                    icon: button; active: root.sort == index; fill: self.active ? Palette.accent : transparent;
-                    width: 48px; min-height: 34px;
-                    clicked => { root.action("file-sort", "\{index}"); }
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 10px;
+                Rectangle {
+                    width: 200px; height: 44px;
+                    border-radius: 4px;
+                    border-width: 1px;
+                    border-color: Palette.ink.transparentize(88%);
+                    clip: true;
+
+                    HorizontalLayout {
+                        for button[index] in [Icons.sort-clock-descending-outline, Icons.sort-clock-ascending-outline, Icons.sort-alphabetical-ascending, Icons.sort-alphabetical-descending]: HorizontalLayout {
+                            Tile {
+                                icon: button; active: root.sort == index;
+                                ink: self.active ? Palette.accent : Palette.ink;
+                                fill: self.active ? Palette.accent.transparentize(88%) : transparent;
+                                border-radius: 0px; width: 49px; icon-size: 24px;
+                                clicked => { root.action("file-sort", "\{index}"); }
+                            }
+                            if index < 3: Rectangle { width: 1px; background: Palette.ink.transparentize(88%); }
+                        }
+                    }
                 }
                 Rectangle { horizontal-stretch: 1; }
-                Tile {
-                    icon: Icons.filter-outline;
-                    min-width: 125px;
-                    max-width: 225px;
-                    label: root.filter == "" ? (root.german ? "Filtern" : "Filter") : root.filter;
-                    fill: transparent;
-                    clicked => { root.action("file-filter", ""); }
+                Rectangle {
+                    width: min(320px, root.width * 0.42);
+                    height: 36px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Mdi { text: Icons.filter-outline; width: 24px; color: Palette.muted; }
+                        Label {
+                            horizontal-stretch: 1;
+                            text: root.filter == "" ? "Filter" : root.filter;
+                            color: root.filter == "" ? Palette.muted : Palette.ink;
+                        }
+                    }
+                    TouchArea { mouse-cursor: pointer; clicked => { root.action("file-filter", ""); } }
                 }
-                Tile {
-                    icon: Icons.folder-plus-outline; fill: transparent; width: 44px;
-                    clicked => { root.action("new-folder", ""); }
-                }
-                Tile { icon: Icons.reload; fill: transparent; width: 44px; clicked => { root.action("refresh", ""); } }
             }
         }
 
-        if root.folder != "": HorizontalLayout {
+        if root.crumbs.length > 0: ScrollView {
             height: 36px;
-            spacing: 4px;
-            Tile { icon: Icons.arrow-left; fill: transparent; clicked => { root.action("up", ""); } }
-            Tile { icon: Icons.home-outline; fill: transparent; clicked => { root.action("folder", ""); } }
-            Mdi { text: Icons.chevron-right; font-size: 16px; width: 16px; }
-            Label { text: root.folder; horizontal-stretch: 1; }
+            HorizontalLayout {
+                alignment: start;
+                spacing: 2px;
+                Tile { icon: Icons.arrow-left; fill: transparent; clicked => { root.action("up", ""); } }
+                Tile { icon: Icons.home-outline; fill: transparent; clicked => { root.action("folder", ""); } }
+                for crumb in root.crumbs: HorizontalLayout {
+                    Mdi { text: Icons.chevron-right; font-size: 16px; width: 16px; }
+                    Tile { label: crumb.title; min-width: 80px; fill: transparent; clicked => { root.action("folder", crumb.argument); } }
+                }
+            }
         }
 
         grid := Rectangle {
             vertical-stretch: 1;
-            private property <length> gap: 14px;
+            private property <length> gap: 16px;
             private property <length> card-width: (self.width - (root.columns - 1) * gap) / root.columns;
             private property <length> card-height: (self.height - (root.rows - 1) * gap) / root.rows;
             private property <int> offset: root.page * root.capacity;
 
-            if root.entries.length == 0: Label {
-                text: root.german ? "Keine Dateien gefunden" : "No files found";
-                horizontal-alignment: center;
-                color: Palette.muted;
+            if root.loading: Spinner { width: 40px; height: 40px; }
+            if !root.loading && root.entries.length == 0: Rectangle {
+                width: root.german ? 250px : 215px;
+                height: 50px;
+                border-radius: 5px;
+                background: Palette.info.transparentize(86%);
+                Label {
+                    text: root.german ? "Keine Druckdateien gefunden" : "No print files found";
+                    horizontal-alignment: center;
+                }
             }
 
-            for index in clamp(root.entries.length - grid.offset, 0, root.capacity): FileCard {
+            for index in !root.loading ? clamp(root.entries.length - grid.offset, 0, root.capacity) : 0: FileCard {
                 item: root.entries[grid.offset + index];
                 width: grid.card-width;
                 height: grid.card-height;
@@ -150,13 +201,13 @@ export component FileBrowser inherits Rectangle {
         }
     }
 
-    if root.page > 0 || (root.page + 1) * root.capacity < root.entries.length: VerticalLayout {
-        x: parent.width - 53px;
+    if !root.loading && (root.page > 0 || (root.page + 1) * root.capacity < root.entries.length): VerticalLayout {
+        x: parent.width - 56px;
         y: parent.height - self.height - 8px;
-        width: 44px;
+        width: 48px;
         height: self.preferred-height;
         spacing: 8px;
-        if root.page > 0: Tile { icon: Icons.chevron-up; active: true; clicked => { root.page -= 1; } }
-        if (root.page + 1) * root.capacity < root.entries.length: Tile { icon: Icons.chevron-down; active: true; clicked => { root.page += 1; } }
+        if root.page > 0: Tile { icon: Icons.chevron-up; height: 48px; border-radius: 24px; clicked => { root.page -= 1; } }
+        if (root.page + 1) * root.capacity < root.entries.length: Tile { icon: Icons.chevron-down; height: 48px; border-radius: 24px; clicked => { root.page += 1; } }
     }
 }

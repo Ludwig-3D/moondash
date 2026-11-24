@@ -1,0 +1,154 @@
+import { Spinner } from "std-widgets.slint";
+import { NumberPad } from "number-pad.slint";
+import { Label, Mdi, Palette, Tile } from "widgets.slint";
+
+component TemperatureReadout inherits Rectangle {
+    in property <string> caption;
+    in property <string> value;
+    in property <bool> setpoint;
+    in property <bool> compact;
+    height: root.setpoint ? (root.compact ? 62px : 79px) : (root.compact ? 53px : 69px);
+    border-radius: 12px;
+    background: Palette.ink.transparentize(94%);
+
+    VerticalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-top: root.compact ? 8px : 12px;
+        padding-bottom: root.compact ? 8px : 12px;
+        spacing: 4px;
+
+        Label {
+            text: root.caption;
+            height: 20px;
+            font-size: 14px;
+            color: Palette.ink.transparentize(30%);
+        }
+
+        Label {
+            text: root.value;
+            font-size: root.setpoint ? 29px : 18px;
+            font-weight: root.setpoint ? 700 : 600;
+        }
+    }
+}
+
+export component TemperatureDialog inherits Rectangle {
+    in property <bool> german;
+    in property <bool> busy;
+    in property <bool> ready;
+    in property <string> title;
+    in property <string> icon;
+    in property <string> current;
+    in property <string> error;
+    in property <int> target;
+    in property <int> maximum;
+    in-out property <string> entry;
+    callback save(string);
+    callback close;
+    callback erase;
+
+    private property <bool> compact: root.height < 410px;
+    private property <length> inset: root.width < 620px ? 16px : 24px;
+    private property <length> gap: root.width < 620px ? 14px : 24px;
+    private property <length> key-height: root.compact ? 41px : 52px;
+    private property <int> setpoint: root.entry == "" ? max(0, root.target) : root.entry.to-float();
+
+    background: #00000052;
+    TouchArea {}
+
+    card := Rectangle {
+        width: min(root.width - 48px, 760px);
+        height: (root.compact ? 288px : 381px) + (root.error == "" ? 0px : 21px);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        background: Palette.surface;
+        border-radius: 8px;
+        clip: true;
+
+        HorizontalLayout {
+            x: root.inset; y: root.compact ? 12px : 24px;
+            width: card.width - 2 * root.inset; height: 32px;
+            spacing: 12px;
+            Mdi { text: root.icon; width: 30px; font-size: 29px; }
+            Label { text: root.title; font-size: 24px; horizontal-stretch: 1; }
+        }
+
+        body := Rectangle {
+            x: root.inset; y: root.compact ? 57px : 72px;
+            width: card.width - 2 * root.inset;
+            height: root.compact ? 189px : 241px;
+
+            readings := VerticalLayout {
+                x: 0px; y: 0px;
+                width: min(280px, body.width * 0.40);
+                height: self.preferred-height;
+                spacing: root.compact ? 8px : 12px;
+                TemperatureReadout {
+                    caption: root.german ? "Ziel" : "Target";
+                    value: root.setpoint + "°C";
+                    setpoint: true;
+                    compact: root.compact;
+                }
+                TemperatureReadout {
+                    caption: root.german ? "Aktuell" : "Current";
+                    value: root.current;
+                    compact: root.compact;
+                }
+                TemperatureReadout {
+                    caption: "Max";
+                    value: root.maximum + "°C";
+                    compact: root.compact;
+                }
+            }
+
+            NumberPad {
+                x: readings.width + root.gap; y: 0px;
+                width: body.width - self.x;
+                height: 4 * root.key-height + 24px;
+                german: root.german;
+                enabled: !root.busy;
+                digit(digit) => { root.entry = min((root.entry + digit).to-float(), root.maximum); }
+                clear => { root.entry = ""; }
+                erase => { root.erase(); }
+            }
+        }
+
+        if root.error != "": Label {
+            x: root.inset; y: card.height - (root.compact ? 58px : 72px);
+            width: card.width - 2 * root.inset; height: 20px;
+            text: root.error;
+            color: Palette.error;
+            font-size: 13px;
+        }
+
+        HorizontalLayout {
+            x: 8px; y: card.height - (root.compact ? 39px : 52px);
+            width: card.width - 16px; height: root.compact ? 35px : 52px;
+            padding-right: 0px;
+            spacing: 8px;
+            alignment: end;
+
+            Tile {
+                width: root.german ? 99px : 78px; height: 36px;
+                fill: transparent;
+                enabled: !root.busy;
+                label: root.german ? "Abbrechen" : "Cancel";
+                clicked => { root.close(); }
+            }
+            Rectangle {
+                width: root.german ? 82px : 64px;
+                height: 36px;
+
+                Tile {
+                    fill: Palette.accent.transparentize(86%);
+                    ink: Palette.accent;
+                    enabled: root.ready && !root.busy;
+                    label: root.busy ? "" : root.german ? "Setzen" : "Set";
+                    clicked => { root.save("" + clamp(root.setpoint, 0, root.maximum)); }
+                }
+                if root.busy: Spinner { width: 20px; height: 20px; }
+            }
+        }
+    }
+}

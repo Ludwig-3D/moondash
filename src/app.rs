@@ -1,6 +1,8 @@
 use crate::icons;
+use crate::print_files::{self, array};
 use crate::{
-    Lane, Moondash, Palette, Row, config, input_idle,
+    ColorSwatch, FilamentSensor, Lane, Moondash, Notification, Palette, PrintTool, Row, config,
+    input_idle,
     moonraker::{self, Call, Event},
     network, theme, version, wayland_power,
 };
@@ -25,6 +27,7 @@ use tokio::{
 };
 
 const DEFAULT_CONFIG: &str = "[websocket]\nip: 127.0.0.1:7125\n\n[styling]\ndarkmode: true\n\n[system]\nlanguage: en\nuse_idle_timeout: true\nidle_timeout: 900\nidle_unlock: 500\n";
+const NOTIFICATION_DISMISSALS: &str = "notification_dismissals";
 
 pub struct App {
     _timer: Timer,
@@ -56,13 +59,21 @@ struct State {
     manual_sleep: Arc<AtomicBool>,
     online: bool,
     status: Map<String, Value>,
+    moonraker_warnings: Value,
+    dismissed_notifications: HashSet<String>,
     page: String,
     tab: String,
     folder: String,
-    directory: Value,
+    file_listing: Value,
+    file_history: Value,
+    file_history_checked: Option<Instant>,
+    browsing_folder: String,
+    browse_entries: Vec<String>,
+    destination_folder: String,
+    print_mapping: Option<String>,
     filter: String,
     file_sort: u8,
-    file_details: HashMap<String, String>,
+    file_details: HashMap<String, Value>,
     file_previews: HashMap<String, Image>,
     requested_files: HashSet<String>,
     motion_busy: bool,
@@ -73,6 +84,8 @@ struct State {
     updates: Value,
     host: Value,
     dialog: Dialog,
+    edited_speed_percent: Option<i32>,
+    initial_speed_acceleration: Option<f64>,
     filename: String,
     metadata: Value,
     jog_step: f64,
@@ -109,10 +122,18 @@ pub fn start(
         manual_sleep: manual_sleep.clone(),
         online: false,
         status: Map::new(),
+        moonraker_warnings: Value::Null,
+        dismissed_notifications: HashSet::new(),
         page: "home".into(),
         tab: String::new(),
         folder: String::new(),
-        directory: Value::Null,
+        file_listing: Value::Null,
+        file_history: Value::Null,
+        file_history_checked: None,
+        browsing_folder: String::new(),
+        browse_entries: Vec::new(),
+        destination_folder: String::new(),
+        print_mapping: None,
         filter: String::new(),
         file_sort: 0,
         file_details: HashMap::new(),
@@ -126,6 +147,8 @@ pub fn start(
         updates: Value::Null,
         host: Value::Null,
         dialog: Dialog::default(),
+        edited_speed_percent: None,
+        initial_speed_acceleration: None,
         filename: String::new(),
         metadata: Value::Null,
         jog_step: 10.,
@@ -173,9 +196,24 @@ pub fn start(
         }
     });
     let weak = ui.as_weak();
-    ui.on_dialog_close(move || {
+    let shared = state.clone();
+    ui.on_adjust_speed(move |step| {
         if let Some(ui) = weak.upgrade() {
+            let percent = ui.get_speed_target().saturating_add(step).max(1);
+            shared.borrow_mut().edited_speed_percent = Some(percent);
+            ui.set_speed_target(percent);
+        }
+    });
+    ui.on_format_speed_percent(|percent| format_speed_percent(percent).into());
+    let weak = ui.as_weak();
+    ui.on_dialog_close(move || {
+        if let Some(ui) = weak.upgrade()
+            && !ui.get_file_busy()
+        {
+            ui.set_keyboard_target("".into());
             ui.set_dialog_mode("".into());
+            ui.set_folder_picker(false);
+            ui.set_print_lane_picker(false);
         }
     });
     let weak = ui.as_weak();
@@ -184,6 +222,37 @@ pub fn start(
             let mut value = ui.get_dialog_value().to_string();
             value.pop();
             ui.set_dialog_value(value.into());
+        }
+    });
+
+    let weak = ui.as_weak();
+    let shared = state.clone();
+    ui.on_filter_edited(move |value| {
+        if let Some(ui) = weak.upgrade() {
+            shared.borrow_mut().filter_files(&ui, value.as_str());
+        }
+    });
+    let weak = ui.as_weak();
+    let shared = state.clone();
+    ui.on_keyboard_erase(move |target| {
+        let Some(ui) = weak.upgrade() else {
+            return;
+        };
+        let mut state = shared.borrow_mut();
+        match target.as_str() {
+            "filter" => state.filter_files(&ui, &without_last(ui.get_filter())),
+            "move-name" => ui.set_move_name(without_last(ui.get_move_name()).into()),
+            "folder-name" => ui.set_folder_name(without_last(ui.get_folder_name()).into()),
+            _ => return,
+        }
+        state.validate_picker(&ui);
+    });
+    ui.on_remove_acceleration_digit(|value| without_last(value).into());
+    let weak = ui.as_weak();
+    let shared = state.clone();
+    ui.on_picker_edited(move || {
+        if let Some(ui) = weak.upgrade() {
+            shared.borrow().validate_picker(&ui);
         }
     });
 
@@ -264,27 +333,34 @@ impl State {
             .as_str()
             .unwrap_or("127.0.0.1:7125")
             .to_owned();
-        self.endpoint.send_if_modified(|endpoint| {
+        if self.endpoint.send_if_modified(|endpoint| {
             if *endpoint == host {
                 return false;
             }
             *endpoint = host;
             true
-        });
+        }) {
+            self.dismissed_notifications.clear();
+        }
 
         let dark = self.config["styling"]["darkmode"].as_bool().unwrap_or(true);
         ui.set_dark(dark);
         let palette = ui.global::<Palette>();
         palette.set_dark(dark);
-        palette.set_accent(config_color(&self.config["styling"]["primary"], 0x2196f3));
+        let [primary, secondary] = theme::theme_defaults(dark);
+        palette.set_accent(config_color(&self.config["styling"]["primary"], primary));
         ui.set_german(self.config["system"]["language"].as_str() == Some("de"));
         ui.set_debug(self.config["dev"]["debug"].as_bool().unwrap_or(false));
         if let Some(logo) = theme::custom_logo(&self.config_path) {
             ui.set_logo(logo);
         }
-        palette.set_secondary(config_color(&self.config["styling"]["secondary"], 0x48a9a6));
-        let profile = self.config["styling"]["display_profile"]
+        palette.set_secondary(config_color(
+            &self.config["styling"]["secondary"],
+            secondary,
+        ));
+        let profile = self.config["system"]["display_profile"]
             .as_str()
+            .or_else(|| self.config["styling"]["display_profile"].as_str())
             .unwrap_or("auto");
         let (rows, cols) = match profile {
             "small" => (2, 3),
@@ -299,6 +375,7 @@ impl State {
             config_int(&self.config["styling"]["printfiles_grid_columns"], 8).unwrap_or(cols),
         );
         self.update_shortcuts(ui);
+        self.update_notifications(ui);
         self.render_rows(ui);
     }
 
@@ -312,6 +389,9 @@ impl State {
         }
         if self.refresh_at.elapsed() >= Duration::from_secs(10) {
             self.refresh_at = Instant::now();
+            if self.online {
+                self.request_moonraker_warnings();
+            }
             match (self.page.as_str(), self.tab.as_str()) {
                 ("settings", "network") => self.network_action("network", "", ""),
                 ("settings", "host") if self.online => {
@@ -353,14 +433,26 @@ impl State {
     fn refresh(&mut self, ui: &Moondash) {
         self.refresh_at = Instant::now();
         match (self.page.as_str(), self.tab.as_str()) {
-            ("files", _) if self.online => self.call(
-                ui,
-                "server.files.get_directory",
-                json!({
-                    "path": gcode_path(&self.folder), "extended": true
-                }),
-                format!("directory:{}", self.folder),
-            ),
+            ("files", _) if self.online => {
+                if self.file_listing.is_null() {
+                    ui.set_file_loading(true);
+                }
+                if !self.try_call(ui, "server.files.list", json!({}), "file-list") {
+                    ui.set_file_loading(false);
+                }
+                if self
+                    .file_history_checked
+                    .is_none_or(|checked| checked.elapsed() >= Duration::from_secs(30))
+                {
+                    self.file_history_checked = Some(Instant::now());
+                    self.call(
+                        ui,
+                        "server.history.list",
+                        json!({"limit":100,"order":"desc"}),
+                        "file-history",
+                    );
+                }
+            }
             ("home", _) | ("tune", "queue") if self.online => {
                 self.call(ui, "server.job_queue.status", json!({}), "queue")
             }
@@ -381,15 +473,51 @@ impl State {
     }
 
     fn call(&self, ui: &Moondash, method: &'static str, params: Value, tag: impl Into<String>) {
+        self.try_call(ui, method, params, tag);
+    }
+
+    fn request_moonraker_warnings(&self) {
+        let _ = self.calls.try_send(Call::new(
+            "server.info",
+            json!({}),
+            "notification-server-info",
+        ));
+    }
+
+    fn request_update_notifications(&self) {
+        let _ = self.calls.try_send(Call::new(
+            "machine.update.status",
+            json!({"refresh": false}),
+            "notification-updates",
+        ));
+    }
+
+    fn try_call(
+        &self,
+        ui: &Moondash,
+        method: &'static str,
+        params: Value,
+        tag: impl Into<String>,
+    ) -> bool {
         if !self.online {
             ui.set_message("Moonraker is disconnected".into());
         } else if self.calls.try_send(Call::new(method, params, tag)).is_err() {
             ui.set_message("Moonraker request queue is busy".into());
+        } else {
+            return true;
         }
+        false
     }
 
     fn motion(&mut self, ui: &Moondash, script: impl Into<String>) {
-        if !ui.get_ready() || ui.get_printing() || ui.get_paused() || self.motion_busy {
+        if ui.get_printing() || ui.get_paused() {
+            return;
+        }
+        self.submit_control(ui, script);
+    }
+
+    fn submit_control(&mut self, ui: &Moondash, script: impl Into<String>) {
+        if !ui.get_ready() || self.motion_busy {
             return;
         }
         let call = Call::new(
@@ -422,16 +550,31 @@ impl State {
         match event {
             Event::Connected => {
                 self.online = true;
+                self.dismissed_notifications
+                    .retain(|id| is_persistent_warning(id));
                 ui.set_online(true);
-                ui.set_connection("Moonraker connected".into());
+                ui.set_connection("".into());
                 ui.set_message("".into());
+                let _ = self.calls.try_send(Call::new(
+                    "server.database.get_item",
+                    json!({"namespace": "moondash", "key": NOTIFICATION_DISMISSALS}),
+                    "notification-dismissals",
+                ));
+                self.request_moonraker_warnings();
+                self.request_update_notifications();
                 self.refresh(ui);
             }
             Event::Disconnected(reason) => {
+                ui.set_connection(reason.into());
                 if self.online {
                     self.online = false;
                     self.status.clear();
-                    self.directory = Value::Null;
+                    self.moonraker_warnings = Value::Null;
+                    self.updates = Value::Null;
+                    self.file_listing = Value::Null;
+                    self.file_history = Value::Null;
+                    self.file_history_checked = None;
+                    ui.set_file_loading(false);
                     self.queue = Value::Null;
                     self.requested_files.clear();
                     self.file_details.clear();
@@ -442,9 +585,27 @@ impl State {
                     self.set_status(ui, Map::new());
                 }
                 self.online = false;
+                if ui.get_file_busy() {
+                    ui.set_file_busy(false);
+                    ui.set_dialog_detail("Moonraker disconnected".into());
+                    ui.set_folder_picker_error("Moonraker disconnected".into());
+                }
+                if ui.get_printer_setting_busy() {
+                    ui.set_printer_setting_busy(false);
+                    ui.set_dialog_detail(
+                        if ui.get_german() {
+                            "Verbindung zu Moonraker unterbrochen"
+                        } else {
+                            "Moonraker disconnected"
+                        }
+                        .into(),
+                    );
+                }
+                ui.set_folder_picker_loading(false);
+                ui.set_file_dialog_loading(false);
                 ui.set_online(false);
                 ui.set_ready(false);
-                ui.set_connection(format!("Moonraker • {reason}").into());
+                self.update_notifications(ui);
             }
             Event::Status(status) => self.set_status(ui, status),
             Event::Reply(tag, result) => self.reply(ui, &tag, result),
@@ -465,10 +626,11 @@ impl State {
                     if let Some(message) = value["message"].as_str() {
                         ui.set_message(message.into());
                     }
-                    if value["complete"].as_bool() == Some(true) && self.tab == "updates" {
-                        self.refresh(ui);
+                    if value["complete"].as_bool() == Some(true) {
+                        self.request_update_notifications();
                     }
                 }
+                "notify_update_refreshed" => self.set_updates(ui, value),
                 "notify_gcode_response"
                     if value.as_str().is_some_and(|text| text.starts_with("!!")) =>
                 {
@@ -481,12 +643,18 @@ impl State {
 
     fn set_status(&mut self, ui: &Moondash, status: Map<String, Value>) {
         self.status = status;
+        if ui.get_dialog_mode() == "temperature" {
+            self.update_temperature_dialog(ui, &self.dialog.argument);
+        }
+        if ui.get_dialog_mode() == "speed"
+            && self.edited_speed_percent.is_none()
+            && let Some(percent) = self.speed_percent()
+        {
+            ui.set_speed_target(percent);
+        }
         let webhooks = self.object("webhooks");
         let klippy = webhooks["state"].as_str().unwrap_or("connecting");
         ui.set_ready(self.online && klippy == "ready");
-        if self.online {
-            ui.set_connection(format!("Moonraker • Klipper {klippy}").into());
-        }
         let stats = self.object("print_stats");
         let state = stats["state"].as_str().unwrap_or("standby");
         let filename = stats["filename"].as_str().unwrap_or_default().to_owned();
@@ -582,6 +750,7 @@ impl State {
             }
         }
         self.update_shortcuts(ui);
+        self.update_notifications(ui);
         if self.page == "tune" && self.tab == "afc" {
             self.update_afc(ui);
         }
@@ -596,6 +765,197 @@ impl State {
             || (self.page == "settings" && self.tab == "tools")
         {
             self.render_rows(ui);
+        }
+    }
+
+    fn set_updates(&mut self, ui: &Moondash, updates: Value) {
+        self.updates = updates;
+        self.update_notifications(ui);
+        if self.page == "settings" && self.tab == "updates" {
+            self.render_rows(ui);
+        }
+    }
+
+    fn update_notifications(&self, ui: &Moondash) {
+        let german = ui.get_german();
+        let text = |en, de| if german { de } else { en };
+        let palette = ui.global::<Palette>();
+        let warning = palette.get_warning();
+        let info_color = palette.get_info();
+        let error_color = if ui.get_dark() {
+            palette.get_error()
+        } else {
+            rgb(0xb00020)
+        };
+        let mut rows = Vec::new();
+        let mut push = |id: String, entry, icon, tone: slint::Color| {
+            if !self.dismissed_notifications.contains(&id) {
+                let brightness = 299 * u32::from(tone.red())
+                    + 587 * u32::from(tone.green())
+                    + 114 * u32::from(tone.blue());
+                rows.push(Notification {
+                    id: id.into(),
+                    action_ink: if brightness > 145_000 {
+                        rgb(0x000000)
+                    } else {
+                        rgb(0xffffff)
+                    },
+                    entry: Row {
+                        icon: icons::glyph(icon),
+                        tone,
+                        ..entry
+                    },
+                });
+            }
+        };
+
+        if !self.online {
+            let reason = ui.get_connection();
+            push(
+                "moonraker-connection".into(),
+                row(
+                    "Moonraker",
+                    if reason.is_empty() {
+                        text(
+                            "Connecting to Moonraker…",
+                            "Verbindung zu Moonraker wird aufgebaut…",
+                        )
+                    } else {
+                        reason.as_str()
+                    },
+                    "reconnect-moonraker",
+                    "",
+                    text("Reconnect", "Wiederverbinden"),
+                ),
+                "information",
+                info_color,
+            );
+        } else {
+            for message in warning_messages(&self.moonraker_warnings) {
+                push(
+                    format!("moonraker-warning/{message}"),
+                    info("Moonraker", message),
+                    "alert-circle",
+                    warning,
+                );
+            }
+
+            let webhooks = self.object("webhooks");
+            let state = webhooks["state"].as_str().unwrap_or("startup");
+            let message = klipper_message(&webhooks["state_message"])
+                .or_else(|| klipper_message(&self.object("print_stats")["message"]));
+            if state != "ready" || message.is_some() {
+                let (title, fallback, tone) = match state {
+                    "error" => (
+                        text("Klipper error", "Klipper-Fehler"),
+                        text("Klipper reported an error.", "Klipper meldet einen Fehler."),
+                        error_color,
+                    ),
+                    "shutdown" => (
+                        text("Klipper shutdown", "Klipper heruntergefahren"),
+                        text("Klipper has shut down.", "Klipper wurde abgeschaltet."),
+                        error_color,
+                    ),
+                    "disconnected" => (
+                        "Klipper",
+                        text(
+                            "Klipper is disconnected.",
+                            "Verbindung zu Klipper unterbrochen.",
+                        ),
+                        info_color,
+                    ),
+                    "ready" => ("Klipper", "", error_color),
+                    _ => (
+                        text("Klipper starting", "Klipper startet"),
+                        text("Klipper is starting up.", "Klipper wird gestartet."),
+                        info_color,
+                    ),
+                };
+                let mut entry = info(title, message.unwrap_or(fallback));
+                if !ui.get_printing() && !ui.get_paused() {
+                    entry.action = "restart-klipper".into();
+                    entry.button = text("Restart", "Neustart").into();
+                    entry = alternate(
+                        entry,
+                        "restart-firmware",
+                        text("Firmware Restart", "Firmware-Neustart"),
+                    );
+                }
+                push(
+                    format!("klipper-status/{state}/{}", message.unwrap_or_default()),
+                    entry,
+                    if tone == error_color {
+                        "close-circle"
+                    } else {
+                        "information"
+                    },
+                    tone,
+                );
+            }
+            for warning_message in warning_messages(&self.object("configfile")["warnings"]) {
+                if Some(warning_message) != message {
+                    push(
+                        format!("klipper-warning/{warning_message}"),
+                        info(text("Klipper warning", "Klipper-Warnung"), warning_message),
+                        "alert-circle",
+                        warning,
+                    );
+                }
+            }
+
+            if let Some(message) = afc_notification(self.object("AFC")) {
+                push(
+                    format!("afc/{message}"),
+                    row("AFC", message, "afc-reset", "", text("Clear", "Löschen")),
+                    "alert-circle",
+                    warning,
+                );
+            }
+            let count = self.updates["version_info"]
+                .as_object()
+                .into_iter()
+                .flat_map(|components| components.values())
+                .filter(|component| update_available(component))
+                .count();
+            if count > 0 {
+                push(
+                    format!("updates/{count}"),
+                    row(
+                        "Updates",
+                        if count == 1 {
+                            text("1 update available", "1 Update verfügbar").to_owned()
+                        } else if german {
+                            format!("{count} Updates verfügbar")
+                        } else {
+                            format!("{count} updates available")
+                        },
+                        "show-updates",
+                        "",
+                        text("Open Settings", "Einstellungen öffnen"),
+                    ),
+                    "update",
+                    palette.get_accent(),
+                );
+            }
+        }
+
+        set_model(&ui.get_notifications(), &rows, |model| {
+            ui.set_notifications(model)
+        });
+    }
+
+    fn dismiss_notification(&mut self, ui: &Moondash, id: &str) {
+        if !self.dismissed_notifications.insert(id.to_owned()) {
+            return;
+        }
+        self.update_notifications(ui);
+        if self.online && is_persistent_warning(id) {
+            self.call(
+                ui,
+                "server.database.post_item",
+                json!({"namespace": "moondash", "key": [NOTIFICATION_DISMISSALS, id], "value": true}),
+                "notification-dismissal-save",
+            );
         }
     }
 
@@ -733,29 +1093,24 @@ impl State {
             })
             .collect();
 
-        let sensors: Vec<Row> = self
+        let mut sensors: Vec<_> = self
             .status
             .iter()
             .filter_map(|(key, data)| {
-                let name = key
-                    .strip_prefix("filament_switch_sensor ")
-                    .or_else(|| key.strip_prefix("filament_motion_sensor "))?;
-                if name.to_ascii_lowercase().starts_with("afc") {
-                    return None;
-                }
-                let detected = data["filament_detected"].as_bool().unwrap_or_default();
-                let label = match (detected, german) {
-                    (true, true) => "Erkannt",
-                    (true, false) => "Detected",
-                    (false, true) => "Leer",
-                    (false, false) => "Empty",
-                };
-                Some(Row {
-                    tone: if detected { rgb(0x4caf50) } else { ink },
-                    ..info(name, label)
+                let name = filament_sensor_name(key)?;
+                Some(FilamentSensor {
+                    key: key.as_str().into(),
+                    name: name.replace('_', " ").into(),
+                    enabled: filament_sensor_enabled(data),
+                    detected: data["filament_detected"]
+                        .as_bool()
+                        .or_else(|| data["detected"].as_bool())
+                        .or_else(|| data["state"].as_bool())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
+        sensors.sort_by_cached_key(|sensor| sensor.name.to_lowercase());
         let mut details = Vec::new();
         if self.config["styling"]["advanced_states"].as_bool() == Some(true) {
             let position = &self.object("gcode_move")["gcode_position"];
@@ -963,8 +1318,96 @@ fn number(value: &Value) -> Option<f64> {
     value.as_f64().filter(|value| value.is_finite())
 }
 
-fn array(value: &Value) -> &[Value] {
-    value.as_array().map(Vec::as_slice).unwrap_or_default()
+fn filament_sensor_name(key: &str) -> Option<&str> {
+    let name = key
+        .strip_prefix("filament_switch_sensor ")
+        .or_else(|| key.strip_prefix("filament_motion_sensor "))?;
+    (!name.is_empty() && !name.to_ascii_lowercase().starts_with("afc")).then_some(name)
+}
+
+fn filament_sensor_enabled(data: &Value) -> bool {
+    data["enabled"]
+        .as_bool()
+        .or_else(|| data["sensor_enabled"].as_bool())
+        .unwrap_or(true)
+}
+
+fn warning_messages(warnings: &Value) -> impl Iterator<Item = &str> {
+    let mut seen = HashSet::new();
+    array(warnings)
+        .iter()
+        .filter_map(|warning| warning.as_str().or_else(|| warning["message"].as_str()))
+        .map(str::trim)
+        .filter(move |message| !message.is_empty() && seen.insert(*message))
+}
+
+fn is_persistent_warning(id: &str) -> bool {
+    id.starts_with("klipper-warning/") || id.starts_with("moonraker-warning/")
+}
+
+fn klipper_message(value: &Value) -> Option<&str> {
+    value.as_str().map(str::trim).filter(|message| {
+        !message.is_empty()
+            && !message.eq_ignore_ascii_case("ready")
+            && !message.eq_ignore_ascii_case("printer is ready")
+    })
+}
+
+fn afc_notification(value: &Value) -> Option<&str> {
+    let object = value.as_object()?;
+    [
+        "message",
+        "error",
+        "alert",
+        "current_message",
+        "last_message",
+        "state_message",
+        "stateMessage",
+    ]
+    .into_iter()
+    .filter_map(|key| object.get(key)?.as_str().map(str::trim))
+    .find(|message| !message.is_empty())
+    .or_else(|| object.values().find_map(afc_notification))
+}
+
+fn update_available(component: &Value) -> bool {
+    let version = |field| component[field].as_str().filter(|value| !value.is_empty());
+    let dirty = component["is_dirty"].as_bool() == Some(true)
+        || component["dirty"].as_bool() == Some(true)
+        || ["version", "remote_version", "full_version_string"]
+            .into_iter()
+            .filter_map(version)
+            .any(|value| value.to_ascii_lowercase().contains("dirty"));
+    if dirty {
+        return false;
+    }
+    if component["configured_type"].as_str() == Some("system") {
+        return component["package_count"].as_u64().unwrap_or_default() > 0;
+    }
+    component["commits_behind_count"]
+        .as_u64()
+        .unwrap_or_default()
+        > 0
+        || version("current_hash")
+            .zip(version("remote_hash"))
+            .is_some_and(|(current, remote)| current != remote)
+        || version("version")
+            .zip(version("remote_version"))
+            .is_some_and(|(current, remote)| current != remote)
+}
+
+fn format_speed_percent(percent: i32) -> String {
+    if percent < 1_000 {
+        return format!("{percent}%");
+    }
+
+    let thousands = percent / 1_000;
+    let hundredths = percent % 1_000 / 10;
+    match hundredths {
+        0 => format!("{thousands}k"),
+        n if n % 10 == 0 => format!("{thousands}.{}k", n / 10),
+        n => format!("{thousands}.{n:02}k"),
+    }
 }
 
 fn gcode_path(path: &str) -> String {
@@ -997,15 +1440,7 @@ fn rgb(color: u32) -> slint::Color {
 }
 
 fn config_color(value: &Value, default: u32) -> slint::Color {
-    let color = value
-        .as_str()
-        .unwrap_or_default()
-        .trim()
-        .trim_start_matches('#');
-    rgb(u32::from_str_radix(color, 16)
-        .ok()
-        .filter(|_| color.len() == 6)
-        .unwrap_or(default))
+    rgb(value.as_str().and_then(theme::parse_rgb).unwrap_or(default))
 }
 
 fn config_int(value: &Value, max: i32) -> Option<i32> {
@@ -1041,6 +1476,47 @@ fn web_qr(url: &str) -> Image {
     Image::from_rgb8(pixels)
 }
 
+fn valid_leaf(name: &str) -> bool {
+    print_files::valid_path(name)
+        && !name.contains('/')
+        && !name.starts_with('.')
+        && name == name.trim()
+}
+
+fn without_last(value: slint::SharedString) -> String {
+    let mut value = value.to_string();
+    value.pop();
+    value
+}
+
+fn folder_label<'a>(ui: &Moondash, path: &'a str) -> &'a str {
+    if path.is_empty() {
+        if ui.get_german() {
+            "Hauptverzeichnis"
+        } else {
+            "Root folder"
+        }
+    } else {
+        path
+    }
+}
+
+fn folder_entries(listing: &Value) -> Vec<String> {
+    let mut entries: Vec<_> = array(&listing["dirs"])
+        .iter()
+        .filter_map(|item| {
+            item.as_str()
+                .or_else(|| item["dirname"].as_str())
+                .or_else(|| item["name"].as_str())
+        })
+        .filter(|name| valid_leaf(name))
+        .map(str::to_owned)
+        .collect();
+    entries.sort_by_cached_key(|name| name.to_lowercase());
+    entries.dedup();
+    entries
+}
+
 fn display_size(bytes: u64) -> String {
     if bytes >= 1_048_576 {
         format!("{:.1} MB", bytes as f64 / 1_048_576.)
@@ -1053,74 +1529,164 @@ fn parent_dir(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(parent, _)| parent)
 }
 
-fn directory_rows(directory: &Value, folder: &str, filter: &str, sort: u8) -> Vec<Row> {
-    let filter = filter.to_lowercase();
-    let mut rows = Vec::new();
-    for (key, name_key, action, remove, button) in [
-        ("dirs", "dirname", "folder", "remove-dir", "Open"),
-        ("files", "filename", "file", "remove-file", "Details"),
-    ] {
-        let mut entries: Vec<_> = array(&directory[key])
-            .iter()
-            .filter_map(|item| {
-                let name = item
-                    .as_str()
-                    .or_else(|| item[name_key].as_str())
-                    .or_else(|| item["name"].as_str())?;
-                (valid_path(name)
-                    && !name.contains('/')
-                    && !name.starts_with('.')
-                    && name.to_lowercase().contains(&filter))
-                .then_some((name, item))
-            })
-            .collect();
-        entries.sort_by_cached_key(|(name, _)| name.to_lowercase());
-        if sort == 3 {
-            entries.reverse();
-        }
-        if sort < 2 {
-            entries.sort_by(|(_, first), (_, second)| {
-                let order = number(&first["modified"])
-                    .unwrap_or_default()
-                    .total_cmp(&number(&second["modified"]).unwrap_or_default());
-                if sort == 0 { order.reverse() } else { order }
-            });
-        }
-        for (name, item) in entries {
-            let path = join_path(folder, name);
-            let detail = item["size"].as_u64().map(display_size).unwrap_or_default();
-            let mut entry = row(name, detail, action, &path, button);
-            if item["permissions"]
-                .as_str()
-                .is_none_or(|permissions| permissions.contains('w'))
-            {
-                entry = alternate(entry, remove, "Delete");
-            }
-            rows.push(entry);
-        }
-    }
-    rows
-}
-
 impl State {
     fn heater_limit(&self, heater: &str) -> f64 {
         let settings = &self.object("configfile")["settings"][heater];
-        number(&settings["max_temp"]).unwrap_or_else(|| match heater {
-            "heater_bed" => 120.,
-            name if name.starts_with("extruder") => 300.,
-            _ => 150.,
-        })
+        number(&settings["max_temp"])
+            .filter(|limit| *limit > 0.)
+            .unwrap_or_else(|| match heater {
+                "heater_bed" => 120.,
+                name if name.starts_with("temperature_fan ") => 120.,
+                name if name.starts_with("extruder") => 300.,
+                _ => 150.,
+            })
+    }
+
+    fn update_temperature_dialog(&self, ui: &Moondash, heater: &str) {
+        let state = self.object(heater);
+        let maximum = self.heater_limit(heater).floor() as i32;
+        let target = number(&state["target"]).unwrap_or_default().round() as i32;
+        ui.set_temperature_max(maximum);
+        ui.set_temperature_target(target);
+        ui.set_dialog_current(
+            number(&state["temperature"])
+                .map(|temperature| format!("{temperature:.0}°C"))
+                .unwrap_or_else(|| "--°C".into())
+                .into(),
+        );
+    }
+
+    fn set_temperature(&self, ui: &Moondash, heater: &str, input: &str) {
+        let Ok(requested) = input.parse::<i32>() else {
+            return;
+        };
+        let target = requested.clamp(0, self.heater_limit(heater).floor() as i32);
+        let (kind, name) = heater.split_once(' ').unwrap_or(("", heater));
+        let name = gcode_arg(name);
+        let script = if kind == "temperature_fan" {
+            format!("SET_TEMPERATURE_FAN_TARGET TEMPERATURE_FAN={name} TARGET={target}")
+        } else {
+            format!("SET_HEATER_TEMPERATURE HEATER={name} TARGET={target}")
+        };
+        self.submit_printer_setting(ui, script);
+    }
+
+    fn set_fan(&self, ui: &Moondash, fan: &str, input: &str) {
+        let Ok(target) = input.parse::<u32>() else {
+            return;
+        };
+        let target = target.min(100);
+        let script = if fan == "fan" {
+            format!("M106 S{}", (target * 255 + 50) / 100)
+        } else if let Some(name) = fan.strip_prefix("fan_generic ") {
+            format!(
+                "SET_FAN_SPEED FAN={} SPEED={:.2}",
+                gcode_arg(name),
+                f64::from(target) / 100.
+            )
+        } else {
+            return;
+        };
+        self.submit_printer_setting(ui, script);
+    }
+
+    fn speed_percent(&self) -> Option<i32> {
+        number(&self.object("gcode_move")["speed_factor"])
+            .map(|factor| ((factor * 100.).round() as i32).max(1))
+    }
+
+    fn speed_acceleration(&self) -> Option<f64> {
+        number(&self.object("toolhead")["max_accel"]).filter(|value| *value > 0.)
+    }
+
+    fn save_speed_settings(&self, ui: &Moondash) {
+        let input = ui.get_speed_acceleration();
+        let input = input.trim();
+        let acceleration = input
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite() && *value > 0.);
+        if acceleration.is_none()
+            && (!input.is_empty() || self.initial_speed_acceleration.is_some())
+        {
+            ui.set_dialog_detail(
+                if ui.get_german() {
+                    "Beschleunigung größer als 0 eingeben."
+                } else {
+                    "Enter an acceleration greater than 0."
+                }
+                .into(),
+            );
+            return;
+        }
+
+        let mut commands = Vec::with_capacity(2);
+        if let Some(acceleration) = acceleration
+            && Some(acceleration) != self.initial_speed_acceleration
+            && Some(acceleration) != self.speed_acceleration()
+        {
+            commands.push(format!("SET_VELOCITY_LIMIT ACCEL={acceleration}"));
+        }
+        if let Some(percent) = self.edited_speed_percent
+            && Some(percent) != self.speed_percent()
+        {
+            commands.push(format!("M220 S{percent}"));
+        }
+        if commands.is_empty() {
+            ui.set_dialog_mode("".into());
+        } else {
+            self.submit_printer_setting(ui, commands.join("\n"));
+        }
+    }
+
+    fn submit_printer_setting(&self, ui: &Moondash, script: String) {
+        if ui.get_printer_setting_busy() || !ui.get_ready() {
+            return;
+        }
+        ui.set_dialog_detail("".into());
+        if self.try_call(
+            ui,
+            "printer.gcode.script",
+            json!({"script": script}),
+            "printer-setting",
+        ) {
+            ui.set_printer_setting_busy(true);
+        }
     }
 
     fn render_rows(&self, ui: &Moondash) {
         let mut rows = Vec::new();
         match (self.page.as_str(), self.tab.as_str()) {
             ("files", _) => {
-                ui.set_folder(self.folder.clone().into());
-                rows = directory_rows(&self.directory, &self.folder, &self.filter, self.file_sort);
+                let mut path = String::new();
+                let crumbs: Vec<_> = self
+                    .folder
+                    .split('/')
+                    .filter(|part| !part.is_empty())
+                    .map(|part| {
+                        path = join_path(&path, part);
+                        row(part, "", "folder", &path, "")
+                    })
+                    .collect();
+                set_model(&ui.get_breadcrumbs(), &crumbs, |model| {
+                    ui.set_breadcrumbs(model)
+                });
+                rows = print_files::entries(
+                    &self.file_listing,
+                    &self.folder,
+                    &self.filter,
+                    self.file_sort,
+                );
                 for row in &mut rows {
                     if let Some(detail) = self.file_details.get(row.argument.as_str()) {
-                        row.detail = detail.clone().into();
+                        row.detail = print_files::estimated_time(detail)
+                            .unwrap_or_default()
+                            .into();
+                    }
+                    if row.action == "file" {
+                        print_files::history(row, array(&self.file_history["jobs"]));
+                        row.active = self.requested_files.contains(row.argument.as_str())
+                            && !self.file_details.contains_key(row.argument.as_str());
                     }
                     if let Some(preview) = self.file_previews.get(row.argument.as_str()) {
                         row.preview = preview.clone();
@@ -1185,7 +1751,7 @@ impl State {
                     row(
                         text("Colors", "Farben"),
                         "",
-                        "config-edit",
+                        "config-color",
                         "styling.primary",
                         text("Primary", "Primär"),
                     ),
@@ -1220,7 +1786,10 @@ impl State {
                     "",
                     "config-profile",
                     "",
-                    styling["display_profile"].as_str().unwrap_or("Auto"),
+                    system["display_profile"]
+                        .as_str()
+                        .or_else(|| styling["display_profile"].as_str())
+                        .unwrap_or("Auto"),
                 ));
                 let mut idle = row(
                     text("Display idle timeout", "Bildschirm-Ruhezeit"),
@@ -1573,6 +2142,231 @@ impl State {
         set_model(&ui.get_rows(), &rows, |model| ui.set_rows(model));
     }
 
+    fn show_file_details(&mut self, ui: &Moondash, path: &str) {
+        self.metadata = self.file_details.get(path).cloned().unwrap_or_default();
+        self.update_print_details(ui);
+        if let Some(image) = self.file_previews.get(path) {
+            ui.set_dialog_image(image.clone());
+        }
+        ui.set_file_dialog_loading(ui.get_dialog_image().size().width == 0);
+        if !self.try_call(
+            ui,
+            "server.files.metadata",
+            json!({"filename":path}),
+            format!("file:{path}"),
+        ) {
+            ui.set_file_dialog_loading(false);
+        }
+    }
+
+    fn update_print_details(&self, ui: &Moondash) {
+        ui.set_dialog_time(
+            print_files::estimated_time(&self.metadata)
+                .unwrap_or_default()
+                .into(),
+        );
+        ui.set_dialog_weight(
+            print_files::filament_weight(&self.metadata)
+                .unwrap_or_default()
+                .into(),
+        );
+        let tools: Vec<_> = if self.status.contains_key("AFC") {
+            array(&self.metadata["filament_weights"])
+                .iter()
+                .enumerate()
+                .filter_map(|(index, weight)| {
+                    let used = number(weight)
+                        .or_else(|| weight.as_str()?.parse().ok())
+                        .is_some_and(|weight| weight > 0.);
+                    if !used {
+                        return None;
+                    }
+                    let name = format!("T{index}");
+                    let selected = self.status.iter().find_map(|(key, lane)| {
+                        let key = key.strip_prefix("AFC_stepper ")?;
+                        lane["map"]
+                            .as_str()
+                            .is_some_and(|mapped| mapped.eq_ignore_ascii_case(&name))
+                            .then_some((key, lane))
+                    });
+                    let lane_color = selected.map_or(rgb(0x434343), |(_, lane)| {
+                        config_color(&lane["color"], 0x434343)
+                    });
+                    let luminance = u32::from(lane_color.red()) * 213
+                        + u32::from(lane_color.green()) * 715
+                        + u32::from(lane_color.blue()) * 72;
+                    Some(PrintTool {
+                        name: name.into(),
+                        color: config_color(&self.metadata["filament_colors"][index], 0x434343),
+                        lane: selected.map_or("—", |(key, _)| key).into(),
+                        lane_color,
+                        lane_ink: if luminance > 165_000 {
+                            rgb(0)
+                        } else {
+                            rgb(0xffffff)
+                        },
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        set_model(&ui.get_print_tools(), &tools, |model| {
+            ui.set_print_tools(model)
+        });
+
+        let timelapse_keys = [
+            "timelapse_settings",
+            "gcode_macro TIMELAPSE_TAKE_FRAME",
+            "gcode_macro timelapse_take_frame",
+            "timelapse",
+            "timelapse_mode",
+        ];
+        ui.set_timelapse_available(
+            timelapse_keys
+                .iter()
+                .any(|key| self.status.contains_key(*key)),
+        );
+        if let Some(enabled) = timelapse_keys.iter().find_map(|key| {
+            let object = self.object(key);
+            ["enabled", "enable", "variable_enable"]
+                .iter()
+                .find_map(|field| {
+                    object[field]
+                        .as_bool()
+                        .or_else(|| object[field].as_i64().map(|value| value != 0))
+                })
+        }) {
+            ui.set_timelapse_enabled(enabled);
+        }
+    }
+
+    fn open_print_lanes(&mut self, ui: &Moondash, tool: &str) {
+        let lanes: Vec<Row> = self
+            .status
+            .iter()
+            .filter_map(|(key, lane)| {
+                let name = key.strip_prefix("AFC_stepper ")?;
+                let detail = lane["material"].as_str().unwrap_or_default();
+                Some(row(
+                    name,
+                    detail,
+                    "apply-print-lane",
+                    name,
+                    if ui.get_german() { "Wählen" } else { "Select" },
+                ))
+            })
+            .collect();
+        if !lanes.is_empty() {
+            self.print_mapping = Some(tool.into());
+            set_model(&ui.get_dialog_options(), &lanes, |model| {
+                ui.set_dialog_options(model)
+            });
+            ui.set_print_lane_picker(true);
+        }
+    }
+
+    fn browse_to(&mut self, ui: &Moondash, path: String) {
+        if !ui.get_folder_picker() || self.invalid_folder_target(ui, &path) {
+            return;
+        }
+        self.browsing_folder = path;
+        self.browse_entries.clear();
+        ui.set_folder_picker_loading(true);
+        ui.set_folder_picker_at_root(self.browsing_folder.is_empty());
+        ui.set_folder_picker_path(folder_label(ui, &self.browsing_folder).into());
+        ui.set_folder_picker_error("".into());
+        ui.set_folder_picker_rows(ModelRc::default());
+        self.validate_picker(ui);
+        if !self.try_call(
+            ui,
+            "server.files.get_directory",
+            json!({"path":gcode_path(&self.browsing_folder)}),
+            format!("browse:{}", self.browsing_folder),
+        ) {
+            ui.set_folder_picker_loading(false);
+        }
+    }
+
+    fn invalid_folder_target(&self, ui: &Moondash, path: &str) -> bool {
+        ui.get_dialog_folder()
+            && (path == self.dialog.argument
+                || path.starts_with(&format!("{}/", self.dialog.argument)))
+    }
+
+    fn move_target(&self, ui: &Moondash) -> Option<String> {
+        let name = ui.get_move_name();
+        if !valid_leaf(name.as_str()) || self.invalid_folder_target(ui, &self.destination_folder) {
+            return None;
+        }
+        if !ui.get_dialog_folder()
+            && !name.rsplit_once('.').is_some_and(|(_, extension)| {
+                extension.eq_ignore_ascii_case("gcode") || extension.eq_ignore_ascii_case("gco")
+            })
+        {
+            return None;
+        }
+        let target = join_path(&self.destination_folder, name.as_str());
+        let prefix = format!("{target}/");
+        if target == self.dialog.argument
+            || print_files::files(&self.file_listing)
+                .iter()
+                .filter_map(print_files::filename)
+                .any(|path| path == target || ui.get_dialog_folder() && path.starts_with(&prefix))
+            || (ui.get_dialog_folder()
+                && self.browsing_folder == self.destination_folder
+                && self
+                    .browse_entries
+                    .iter()
+                    .any(|entry| entry == name.as_str()))
+        {
+            return None;
+        }
+        Some(target)
+    }
+
+    fn validate_picker(&self, ui: &Moondash) {
+        ui.set_move_valid(ui.get_dialog_mode() == "file-move" && self.move_target(ui).is_some());
+        let name = ui.get_folder_name();
+        ui.set_folder_create_valid(
+            valid_leaf(name.as_str())
+                && !self
+                    .browse_entries
+                    .iter()
+                    .any(|entry| entry == name.as_str()),
+        );
+    }
+
+    fn file_feedback(&self, ui: &Moondash, message: &'static str) {
+        ui.set_file_feedback(message.into());
+        let weak = ui.as_weak();
+        Timer::single_shot(Duration::from_secs(4), move || {
+            if let Some(ui) = weak.upgrade()
+                && ui.get_file_feedback() == message
+            {
+                ui.set_file_feedback("".into());
+            }
+        });
+    }
+
+    fn file_operation(&self, ui: &Moondash, method: &'static str, params: Value, tag: &str) {
+        if ui.get_file_busy() {
+            return;
+        }
+        ui.set_dialog_detail("".into());
+        ui.set_folder_picker_error("".into());
+        if self.try_call(ui, method, params, tag) {
+            ui.set_file_busy(true);
+        }
+    }
+
+    fn filter_files(&mut self, ui: &Moondash, value: &str) {
+        self.filter = value.into();
+        ui.set_filter(value.into());
+        ui.set_file_page(0);
+        self.render_rows(ui);
+    }
+
     fn dialog(
         &mut self,
         ui: &Moondash,
@@ -1590,20 +2384,73 @@ impl State {
         ui.set_dialog_detail(detail.into());
         ui.set_dialog_value("".into());
         ui.set_dialog_image(Image::default());
-        ui.set_dialog_queue(false);
-        ui.set_dialog_move(false);
         ui.set_dialog_folder(false);
+        ui.set_dialog_time("".into());
+        ui.set_dialog_weight("".into());
+        ui.set_file_dialog_loading(false);
+        ui.set_folder_picker(false);
+        ui.set_print_lane_picker(false);
         ui.set_dialog_icon("".into());
         ui.set_dialog_unit("".into());
         ui.set_dialog_current("".into());
         ui.set_dialog_limit("".into());
         ui.set_dialog_secret(false);
+        ui.set_keyboard_target(if mode == "text" {
+            "dialog".into()
+        } else {
+            "".into()
+        });
         ui.set_dialog_mode(mode.into());
+    }
+
+    fn show_color_picker(
+        &mut self,
+        ui: &Moondash,
+        title: &str,
+        action: &str,
+        argument: &str,
+        selected: u32,
+        mut extras: Vec<u32>,
+    ) {
+        let theme_color = action == "theme-color";
+        let colors = if theme_color {
+            &theme::SWATCHES[4..]
+        } else {
+            &theme::SWATCHES[..]
+        };
+        let mut seen = HashSet::new();
+        extras.retain(|color| seen.insert(*color));
+        if !colors.contains(&selected) && !extras.contains(&selected) {
+            extras.push(selected);
+        }
+        let swatch = |color: &u32| ColorSwatch {
+            hex: format!("#{color:06X}").into(),
+            fill: rgb(*color),
+        };
+        let extra_title = match (theme_color, ui.get_german()) {
+            (true, true) => "Standardfarben",
+            (true, false) => "Default Colors",
+            (false, true) => "Farben anderer Spuren",
+            (false, false) => "Other lane colors",
+        };
+        ui.set_picker_swatches(ModelRc::new(VecModel::from(
+            colors.iter().map(swatch).collect::<Vec<_>>(),
+        )));
+        ui.set_picker_extras(ModelRc::new(VecModel::from(
+            extras.iter().map(swatch).collect::<Vec<_>>(),
+        )));
+        ui.set_picker_selected(rgb(selected));
+        ui.set_picker_extras_title(extra_title.into());
+        ui.set_picker_enabled(theme_color);
+        self.dialog(ui, title, "", "color", action, argument);
     }
 
     fn action(&mut self, ui: &Moondash, action: &str, argument: &str) {
         match action {
             "dismiss" => ui.set_message("".into()),
+            "dismiss-notification" => self.dismiss_notification(ui, argument),
+            "reconnect-moonraker" if !self.online => self.endpoint.send_modify(|_| {}),
+            "show-updates" => self.navigate(ui, "settings", "updates"),
             "refresh" => self.refresh(ui),
             "tool-mesh" | "tool-pid" | "tool-camera" => {
                 let (view, title) = match action {
@@ -1661,21 +2508,7 @@ impl State {
                 ui.set_file_page(0);
                 self.render_rows(ui);
             }
-            "file-filter" => {
-                self.dialog(
-                    ui,
-                    if ui.get_german() {
-                        "Dateien filtern"
-                    } else {
-                        "Filter files"
-                    },
-                    "",
-                    "text",
-                    action,
-                    "",
-                );
-                ui.set_dialog_value(self.filter.clone().into());
-            }
+            "file-filter" => ui.set_keyboard_target("filter".into()),
             "file-context" => {
                 use slint::Model;
                 let model = ui.get_rows();
@@ -1686,19 +2519,148 @@ impl State {
                     self.dialog(
                         ui,
                         entry.title.as_str(),
-                        entry.detail.as_str(),
+                        "",
                         "file-context",
                         entry.alternate.as_str(),
                         argument,
                     );
                     ui.set_dialog_folder(entry.action == "folder");
                     ui.set_dialog_image(entry.preview);
-                    ui.set_dialog_move(true);
+                    if entry.action == "file" {
+                        self.show_file_details(ui, argument);
+                    }
                 }
             }
             "delete-selected" => {
-                let (action, path) = (self.dialog.action.clone(), self.dialog.argument.clone());
-                self.action(ui, &action, &path);
+                ui.set_dialog_detail("".into());
+                ui.set_dialog_mode("file-delete".into());
+            }
+            "apply-delete" => {
+                let method = if ui.get_dialog_folder() {
+                    "server.files.delete_directory"
+                } else {
+                    "server.files.delete_file"
+                };
+                self.file_operation(
+                    ui,
+                    method,
+                    json!({"path":gcode_path(&self.dialog.argument)}),
+                    "file-deleted",
+                );
+            }
+            "file-context-back" => {
+                ui.set_dialog_detail("".into());
+                ui.set_dialog_mode("file-context".into());
+            }
+            "move-selected" => {
+                let path = self.dialog.argument.as_str();
+                self.destination_folder = parent_dir(path).to_owned();
+                ui.set_move_destination(folder_label(ui, &self.destination_folder).into());
+                ui.set_move_name(print_files::leaf(path).into());
+                ui.set_dialog_detail("".into());
+                ui.set_dialog_mode("file-move".into());
+                self.validate_picker(ui);
+            }
+            "browse-destination" => {
+                ui.set_folder_picker(true);
+                ui.set_folder_create(false);
+                self.browse_to(ui, self.destination_folder.clone());
+            }
+            "close-folder-picker" => ui.set_folder_picker(false),
+            "browse-folder" => self.browse_to(ui, argument.to_owned()),
+            "browse-folder-up" => self.browse_to(ui, parent_dir(&self.browsing_folder).to_owned()),
+            "select-this-folder" => {
+                self.destination_folder.clone_from(&self.browsing_folder);
+                ui.set_move_destination(folder_label(ui, &self.destination_folder).into());
+                ui.set_folder_picker(false);
+                self.validate_picker(ui);
+            }
+            "start-new-folder" => {
+                ui.set_folder_name("".into());
+                ui.set_folder_create(true);
+                ui.set_keyboard_target("folder-name".into());
+                self.validate_picker(ui);
+            }
+            "cancel-new-folder" => ui.set_folder_create(false),
+            "new-folder-keyboard" => ui.set_keyboard_target("folder-name".into()),
+            "filename-keyboard" => ui.set_keyboard_target("move-name".into()),
+            "apply-new-folder" if ui.get_folder_create_valid() => {
+                let name = ui.get_folder_name();
+                if valid_leaf(name.as_str())
+                    && !self
+                        .browse_entries
+                        .iter()
+                        .any(|existing| existing == name.as_str())
+                {
+                    let path = join_path(&self.browsing_folder, name.as_str());
+                    self.file_operation(
+                        ui,
+                        "server.files.post_directory",
+                        json!({"path":gcode_path(&path)}),
+                        &format!("folder-created:{path}"),
+                    );
+                }
+            }
+            "apply-move" => {
+                if let Some(path) = self.move_target(ui) {
+                    self.file_operation(
+                        ui,
+                        "server.files.move",
+                        json!({
+                            "source": gcode_path(&self.dialog.argument), "dest": gcode_path(&path)
+                        }),
+                        "file-moved",
+                    );
+                }
+            }
+            "print-file"
+                if ui.get_dialog_mode() == "print"
+                    && ui.get_ready()
+                    && !ui.get_printing()
+                    && !ui.get_paused() =>
+            {
+                self.file_operation(
+                    ui,
+                    "printer.print.start",
+                    json!({"filename": self.dialog.argument}),
+                    "file-printed",
+                );
+            }
+            "queue-file" if ui.get_dialog_mode() == "print" => {
+                self.file_operation(
+                    ui,
+                    "server.job_queue.post_job",
+                    json!({"filenames": [self.dialog.argument]}),
+                    "file-queued",
+                );
+            }
+            "print-tool" => self.open_print_lanes(ui, argument),
+            "close-print-lanes" => {
+                self.print_mapping = None;
+                ui.set_print_lane_picker(false);
+            }
+            "apply-print-lane" => {
+                if let Some(tool) = self
+                    .print_mapping
+                    .take()
+                    .filter(|_| self.status.contains_key(&format!("AFC_stepper {argument}")))
+                {
+                    self.file_operation(ui, "printer.gcode.script", json!({"script": format!("SET_MAP LANE={} MAP={}", gcode_arg(argument), gcode_arg(&tool))}), &format!("print-map:{tool}:{argument}"));
+                    ui.set_print_lane_picker(false);
+                }
+            }
+            "print-timelapse" if ui.get_timelapse_available() => {
+                let enabled = !ui.get_timelapse_enabled();
+                self.file_operation(
+                    ui,
+                    "machine.timelapse.post_settings",
+                    json!({"enabled":enabled}),
+                    if enabled {
+                        "timelapse:on"
+                    } else {
+                        "timelapse:off"
+                    },
+                );
             }
             "config-raw" => ui.set_config_view("raw".into()),
             "config-form" => ui.set_config_view("".into()),
@@ -1714,15 +2676,37 @@ impl State {
                 }
             }
             "config-profile" => {
-                let next = match self.config["styling"]["display_profile"].as_str() {
+                let next = match self.config["system"]["display_profile"]
+                    .as_str()
+                    .or_else(|| self.config["styling"]["display_profile"].as_str())
+                {
                     Some("small") => "normal",
                     Some("normal") => "highres",
                     Some("highres") => "auto",
                     _ => "small",
                 };
-                self.change_setting(ui, "styling.display_profile", next);
+                self.change_setting(ui, "system.display_profile", next);
             }
-            "config-secondary" => self.action(ui, "config-edit", "styling.secondary"),
+            "config-color" | "config-secondary" => {
+                let key = if action == "config-secondary" {
+                    "secondary"
+                } else {
+                    "primary"
+                };
+                let defaults = theme::theme_defaults(ui.get_dark());
+                let default = defaults[usize::from(key == "secondary")];
+                let selected = self.config["styling"][key]
+                    .as_str()
+                    .and_then(theme::parse_rgb)
+                    .unwrap_or(default);
+                let title = match (key, ui.get_german()) {
+                    ("primary", true) => "Primärfarbe auswählen",
+                    ("primary", false) => "Choose primary color",
+                    (_, true) => "Sekundärfarbe auswählen",
+                    _ => "Choose secondary color",
+                };
+                self.show_color_picker(ui, title, "theme-color", key, selected, defaults.to_vec());
+            }
             "config-edit" => {
                 let Some((section, key)) = argument.split_once('.') else {
                     return;
@@ -1732,8 +2716,6 @@ impl State {
                     .as_str()
                     .map_or_else(|| value.to_string(), str::to_owned);
                 let (title, detail) = match argument {
-                    "styling.primary" => ("Primary color", "Hex color, e.g. #2196f3"),
-                    "styling.secondary" => ("Secondary color", "Hex color, e.g. #48a9a6"),
                     "system.idle_timeout" => ("Idle timeout", "Seconds"),
                     _ => ("Moonraker", "Host and port or URL"),
                 };
@@ -1768,57 +2750,19 @@ impl State {
                 } else {
                     argument.to_owned()
                 };
-                self.directory = Value::Null;
                 ui.set_file_page(0);
-                self.refresh(ui);
+                self.render_rows(ui);
             }
             "file" => {
                 self.dialog(
                     ui,
-                    argument.rsplit('/').next().unwrap_or(argument),
-                    "Loading file details…",
-                    "confirm",
+                    print_files::display_name(argument),
+                    "",
+                    "print",
                     action,
                     argument,
                 );
-                ui.set_dialog_queue(true);
-                ui.set_dialog_move(true);
-                if let Some(image) = self.file_previews.get(argument) {
-                    ui.set_dialog_image(image.clone());
-                }
-                self.metadata = Value::Null;
-                self.call(
-                    ui,
-                    "server.files.metadata",
-                    json!({"filename": argument}),
-                    format!("file:{argument}"),
-                );
-            }
-            "new-folder" => self.dialog(
-                ui,
-                "New folder",
-                "Name within the current folder",
-                "text",
-                action,
-                argument,
-            ),
-            "rename" => {
-                self.dialog(
-                    ui,
-                    "Move or rename",
-                    "New path relative to gcodes",
-                    "text",
-                    action,
-                    argument,
-                );
-                ui.set_dialog_value(argument.into());
-            }
-            "move-selected" => {
-                let path = self.dialog.argument.clone();
-                self.action(ui, "rename", &path);
-            }
-            "remove-dir" | "remove-file" => {
-                self.dialog(ui, "Delete?", argument, "confirm", action, argument)
+                self.show_file_details(ui, argument);
             }
             action if action.starts_with("queue-remove:") => {
                 self.dialog(
@@ -1841,6 +2785,20 @@ impl State {
             }
             "load-filament" => self.motion(ui, "LOAD_FILAMENT"),
             "unload-filament" => self.motion(ui, "UNLOAD_FILAMENT"),
+            "toggle-filament-sensor" => {
+                if let Some(name) = filament_sensor_name(argument)
+                    && let Some(data) = self.status.get(argument)
+                {
+                    let enable = u8::from(!filament_sensor_enabled(data));
+                    self.submit_control(
+                        ui,
+                        format!(
+                            "SET_FILAMENT_SENSOR SENSOR={} ENABLE={enable}",
+                            gcode_arg(name)
+                        ),
+                    );
+                }
+            }
             "z-tilt" => self.motion(ui, "Z_TILT_ADJUST"),
             "qgl" => self.motion(
                 ui,
@@ -1887,27 +2845,50 @@ impl State {
                     }
                 ),
             ),
-            "step" | "extrude" | "retract" | "heater" | "fan" | "temperature-fan" | "speed"
-            | "flow" | "pid" => {
+            "heater" | "temperature-fan" => {
+                let (title, icon) = if action == "temperature-fan" {
+                    (
+                        argument
+                            .strip_prefix("temperature_fan ")
+                            .unwrap_or(argument),
+                        "fan",
+                    )
+                } else if argument.starts_with("extruder") {
+                    (argument, "printer-3d-nozzle-heat")
+                } else {
+                    (
+                        argument.strip_prefix("heater_generic ").unwrap_or(argument),
+                        "radiator",
+                    )
+                };
+                self.dialog(ui, title, "", "temperature", action, argument);
+                ui.set_dialog_icon(icons::glyph(icon));
+                self.update_temperature_dialog(ui, argument);
+            }
+            "speed" => {
+                self.edited_speed_percent = None;
+                self.initial_speed_acceleration = self.speed_acceleration();
+                self.dialog(ui, "", "", "speed", action, argument);
+                ui.set_speed_target(self.speed_percent().unwrap_or(100));
+                ui.set_speed_acceleration(
+                    self.initial_speed_acceleration
+                        .map(|value| value.to_string())
+                        .unwrap_or_default()
+                        .into(),
+                );
+            }
+            "fan" => {
+                let name = argument.strip_prefix("fan_generic ").unwrap_or(argument);
+                let title = name.trim_matches('_').replace('_', " ");
+                let target = number(&self.object(argument)["speed"]).unwrap_or_default() * 100.;
+                ui.set_fan_target(target.round().clamp(0., 100.) as i32);
+                self.dialog(ui, &title, "", "fan", action, argument);
+            }
+            "step" | "extrude" | "retract" | "flow" | "pid" => {
                 let (title, detail, initial) = match action {
                     "step" => ("Jog distance", "Millimetres", self.jog_step),
                     "extrude" => ("Extrude", "Millimetres", 5.),
                     "retract" => ("Retract", "Millimetres", 5.),
-                    "heater" | "temperature-fan" => (
-                        argument,
-                        "Target temperature in °C",
-                        number(&self.object(argument)["target"]).unwrap_or_default(),
-                    ),
-                    "fan" => (
-                        argument,
-                        "Fan speed in percent",
-                        number(&self.object(argument)["speed"]).unwrap_or_default() * 100.,
-                    ),
-                    "speed" => (
-                        "Print speed",
-                        "Percent",
-                        number(&self.object("gcode_move")["speed_factor"]).unwrap_or(1.) * 100.,
-                    ),
                     "flow" => (
                         "Extrusion factor",
                         "Percent",
@@ -1921,27 +2902,14 @@ impl State {
                 };
                 self.dialog(ui, title, detail, "number", action, argument);
                 let (label, icon, unit, limit, current) = match action {
-                    "heater" | "temperature-fan" | "pid" => {
-                        let is_bed = argument == "heater_bed";
+                    "pid" => {
                         let limit = self.heater_limit(argument);
                         let current = number(&self.object(argument)["temperature"])
                             .map(|temp| format!("{temp:.0}°C"))
                             .unwrap_or_else(|| "--°C".into());
                         (
-                            if action == "pid" {
-                                title
-                            } else if is_bed {
-                                if ui.get_german() {
-                                    "Heizbett"
-                                } else {
-                                    "Heater Bed"
-                                }
-                            } else if argument.starts_with("extruder") {
-                                "Extruder"
-                            } else {
-                                title
-                            },
-                            if is_bed {
+                            title,
+                            if argument == "heater_bed" {
                                 "radiator"
                             } else {
                                 "printer-3d-nozzle-heat"
@@ -1951,13 +2919,9 @@ impl State {
                             current,
                         )
                     }
-                    "speed" | "flow" | "fan" => (
+                    "flow" => (
                         title,
-                        if action == "fan" {
-                            "fan"
-                        } else {
-                            "speedometer-medium"
-                        },
+                        "speedometer-medium",
                         "%",
                         String::new(),
                         format!("{initial:.0}%"),
@@ -2009,11 +2973,32 @@ impl State {
                 action,
                 argument,
             ),
-            "afc-material" | "afc-color" | "afc-map" | "afc-runout" | "afc-weight" => self.dialog(
+            "afc-color" => {
+                let lane = format!("AFC_stepper {argument}");
+                if let Some(data) = self.status.get(&lane) {
+                    let selected = data["color"]
+                        .as_str()
+                        .and_then(theme::parse_rgb)
+                        .unwrap_or(0x434343);
+                    let extras = self
+                        .status
+                        .iter()
+                        .filter(|(key, _)| key.starts_with("AFC_stepper ") && **key != lane)
+                        .filter_map(|(_, data)| data["color"].as_str().and_then(theme::parse_rgb))
+                        .filter(|color| *color != 0x434343)
+                        .collect();
+                    let title = if ui.get_german() {
+                        "Farbe auswählen"
+                    } else {
+                        "Choose color"
+                    };
+                    self.show_color_picker(ui, title, action, argument, selected, extras);
+                }
+            }
+            "afc-material" | "afc-map" | "afc-runout" | "afc-weight" => self.dialog(
                 ui,
                 match action {
                     "afc-material" => "Material",
-                    "afc-color" => "Color",
                     "afc-map" => "Tool mapping",
                     "afc-weight" => "Weight (g)",
                     _ => "Runout destination",
@@ -2145,21 +3130,52 @@ impl State {
         }
     }
 
-    fn submit(&mut self, ui: &Moondash, input: &str, queue: bool) {
+    fn apply_picked_color(&mut self, ui: &Moondash, action: &str, argument: &str, value: &str) {
+        let Some(color) = theme::parse_rgb(value) else {
+            return;
+        };
+        if action == "theme-color" && matches!(argument, "primary" | "secondary") {
+            let hex = format!("#{color:06X}");
+            match self.save_setting(ui, &format!("styling.{argument}"), &hex) {
+                Ok(()) => ui.set_dialog_mode("".into()),
+                Err(error) => ui.set_dialog_detail(error.into()),
+            }
+        } else if action == "afc-color"
+            && self.status.contains_key(&format!("AFC_stepper {argument}"))
+        {
+            self.submit_printer_setting(
+                ui,
+                format!("SET_COLOR LANE={} COLOR={color:06X}", gcode_arg(argument)),
+            );
+        }
+    }
+
+    fn submit(&mut self, ui: &Moondash, input: &str, _queue: bool) {
         let action = self.dialog.action.clone();
         let argument = self.dialog.argument.clone();
         let value = input.trim();
 
+        if ui.get_dialog_mode() == "speed" {
+            self.save_speed_settings(ui);
+            return;
+        }
+        if ui.get_dialog_mode() == "temperature" {
+            self.set_temperature(ui, &argument, value);
+            return;
+        }
+        if ui.get_dialog_mode() == "fan" {
+            self.set_fan(ui, &argument, value);
+            return;
+        }
         if ui.get_dialog_mode() == "number" {
             let limit = match action.as_str() {
                 "step" | "extrude" | "retract" => 100.,
-                "fan" => 100.,
-                "speed" | "flow" => 500.,
-                "heater" | "temperature-fan" | "pid" => self.heater_limit(&argument),
+                "flow" => 500.,
+                "pid" => self.heater_limit(&argument),
                 _ => return,
             };
             let minimum = match action.as_str() {
-                "step" | "extrude" | "retract" | "speed" | "flow" => 0.01,
+                "step" | "extrude" | "retract" | "flow" => 0.01,
                 "pid" => 1.,
                 _ => 0.,
             };
@@ -2183,14 +3199,13 @@ impl State {
                 ui.set_file_page(0);
                 self.render_rows(ui);
             }
+            "theme-color" | "afc-color" => {
+                self.apply_picked_color(ui, &action, &argument, value);
+                return;
+            }
             "config-edit" => {
                 let valid = match argument.as_str() {
                     "system.idle_timeout" => value.parse::<u64>().is_ok_and(|seconds| seconds > 0),
-                    "styling.primary" | "styling.secondary" => {
-                        let hex = value.trim_start_matches('#');
-                        value.is_empty()
-                            || hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
-                    }
                     "websocket.ip" => moonraker::endpoint(value).is_ok(),
                     _ => false,
                 };
@@ -2230,26 +3245,6 @@ impl State {
                 };
                 self.store_config(ui, &text);
             }
-            "file" if queue => self.call(
-                ui,
-                "server.job_queue.post_job",
-                json!({"filenames": [argument]}),
-                "queue",
-            ),
-            "file" if ui.get_ready() && !ui.get_printing() && !ui.get_paused() => {
-                self.call(
-                    ui,
-                    "printer.print.start",
-                    json!({"filename": argument}),
-                    "start",
-                );
-            }
-            "file" => {
-                ui.set_dialog_detail(
-                    "Printer is busy or unavailable. Add this file to the queue instead.".into(),
-                );
-                return;
-            }
             "cancel" => self.call(ui, "printer.print.cancel", json!({}), "cancel"),
             "queue-start" => self.call(ui, "server.job_queue.start", json!({}), "queue"),
             "queue-remove" => self.call(
@@ -2258,51 +3253,18 @@ impl State {
                 json!({"job_ids": [argument]}),
                 "queue",
             ),
-            "new-folder" if valid_path(value) && !value.contains('/') => {
-                self.call(
-                    ui,
-                    "server.files.post_directory",
-                    json!({"path": gcode_path(&join_path(&self.folder, value))}),
-                    "files-changed",
-                );
-            }
-            "rename" if valid_path(value) && value != argument => {
-                self.call(
-                    ui,
-                    "server.files.move",
-                    json!({"source": gcode_path(&argument), "dest": gcode_path(value)}),
-                    "files-changed",
-                );
-            }
-            "new-folder" | "rename" => {
-                ui.set_dialog_detail("Enter a valid name or relative path.".into());
-                return;
-            }
-            "remove-dir" => self.call(
-                ui,
-                "server.files.delete_directory",
-                json!({"path": gcode_path(&argument)}),
-                "files-changed",
-            ),
-            "remove-file" => self.call(
-                ui,
-                "server.files.delete_file",
-                json!({"path": gcode_path(&argument)}),
-                "files-changed",
-            ),
             "disable-motors" => self.motion(ui, "M84"),
             "macro" => self.script(ui, argument),
             "exclude" => self.script(ui, format!("EXCLUDE_OBJECT NAME={}", gcode_arg(&argument))),
             "afc-load" => self.script(ui, format!("TOOL_LOAD LANE={}", gcode_arg(&argument))),
             "afc-unload" => self.script(ui, format!("LANE_UNLOAD LANE={}", gcode_arg(&argument))),
-            "afc-material" | "afc-color" | "afc-map" | "afc-runout" | "afc-weight" => {
+            "afc-material" | "afc-map" | "afc-runout" | "afc-weight" => {
                 if value.is_empty() || value.contains(['\n', '\r']) {
                     ui.set_dialog_detail("Enter a value.".into());
                     return;
                 }
                 let parameter = match action.as_str() {
                     "afc-material" => "MATERIAL",
-                    "afc-color" => "COLOR",
                     "afc-map" => "MAP",
                     "afc-weight" => "WEIGHT",
                     _ => "RUNOUT",
@@ -2376,21 +3338,6 @@ impl State {
                     "SAVE_GCODE_STATE NAME=moondash_extrude\nM83\nG1 E{movement} F240\nRESTORE_GCODE_STATE NAME=moondash_extrude"
                 )
             }
-            "heater" => format!(
-                "SET_HEATER_TEMPERATURE HEATER={} TARGET={value}",
-                gcode_arg(name)
-            ),
-            "temperature-fan" => format!(
-                "SET_TEMPERATURE_FAN_TARGET TEMPERATURE_FAN={} TARGET={value}",
-                gcode_arg(name)
-            ),
-            "fan" if argument == "fan" => format!("M106 S{}", (value * 2.55).round()),
-            "fan" => format!(
-                "SET_FAN_SPEED FAN={} SPEED={}",
-                gcode_arg(name),
-                value / 100.
-            ),
-            "speed" => format!("M220 S{value}"),
             "flow" => format!("M221 S{value}"),
             "pid" => format!(
                 "PID_CALIBRATE HEATER={} TARGET={}",
@@ -2402,43 +3349,163 @@ impl State {
         self.script(ui, script);
     }
 
+    fn persist_config(&mut self, ui: &Moondash, text: &str) -> Result<(), String> {
+        config::parse(text)?;
+        save_config(&self.config_path, text).map_err(|error| error.to_string())?;
+        self.load_config(ui, true);
+        Ok(())
+    }
+
     fn store_config(&mut self, ui: &Moondash, text: &str) {
-        let result = config::parse(text)
-            .and_then(|_| save_config(&self.config_path, text).map_err(|error| error.to_string()));
-        match result {
-            Ok(()) => self.load_config(ui, true),
-            Err(error) => ui.set_message(error.into()),
+        if let Err(error) = self.persist_config(ui, text) {
+            ui.set_message(error.into());
         }
     }
 
+    fn save_setting(&mut self, ui: &Moondash, path: &str, value: &str) -> Result<(), String> {
+        let (section, key) = path.split_once('.').ok_or("Invalid setting path")?;
+        let existing = match fs::read_to_string(&self.config_path) {
+            Ok(text) => text.into(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => ui.get_config_text(),
+            Err(error) => return Err(error.to_string()),
+        };
+        let text = config::with_value(existing.as_str(), section, key, value);
+        self.persist_config(ui, &text)
+    }
+
     fn change_setting(&mut self, ui: &Moondash, path: &str, value: &str) {
-        if let Some((section, key)) = path.split_once('.') {
-            let existing = fs::read_to_string(&self.config_path)
-                .ok()
-                .map(slint::SharedString::from)
-                .unwrap_or_else(|| ui.get_config_text());
-            let text = config::with_value(existing.as_str(), section, key, value);
-            self.store_config(ui, &text);
+        if let Err(error) = self.save_setting(ui, path, value) {
+            ui.set_message(error.into());
         }
     }
 
     fn reply(&mut self, ui: &Moondash, tag: &str, reply: Result<Value, String>) {
+        match tag {
+            "notification-dismissals" => {
+                if let Ok(result) = reply
+                    && let Some(dismissals) = result["value"].as_object()
+                {
+                    self.dismissed_notifications.extend(
+                        dismissals
+                            .iter()
+                            .filter(|(id, value)| {
+                                value.as_bool() == Some(true) && is_persistent_warning(id)
+                            })
+                            .map(|(id, _)| id.clone()),
+                    );
+                    self.update_notifications(ui);
+                }
+                return;
+            }
+            "notification-server-info" => {
+                if let Ok(result) = reply {
+                    self.moonraker_warnings = result["warnings"].clone();
+                    self.update_notifications(ui);
+                }
+                return;
+            }
+            "notification-updates" => {
+                if let Ok(result) = reply {
+                    self.set_updates(ui, result);
+                }
+                return;
+            }
+            _ => {}
+        }
+        if tag == "printer-setting" {
+            ui.set_printer_setting_busy(false);
+            match reply {
+                Ok(_) => ui.set_dialog_mode("".into()),
+                Err(error) => ui.set_dialog_detail(error.into()),
+            }
+            return;
+        }
         if tag == "motion" {
             self.motion_busy = false;
             ui.set_motion_busy(false);
+        }
+        if tag == "file-list" {
+            ui.set_file_loading(false);
+        }
+        let mutation = matches!(
+            tag,
+            "file-deleted" | "file-moved" | "file-printed" | "file-queued"
+        ) || tag.starts_with("folder-created:")
+            || tag.starts_with("print-map:")
+            || tag.starts_with("timelapse:");
+        if mutation {
+            ui.set_file_busy(false);
+        }
+        if let Some(path) = tag.strip_prefix("browse:") {
+            if ui.get_folder_picker() && path == self.browsing_folder {
+                ui.set_folder_picker_loading(false);
+                match reply {
+                    Ok(listing) => {
+                        self.browse_entries = folder_entries(&listing);
+                        let folders: Vec<_> = self
+                            .browse_entries
+                            .iter()
+                            .map(|name| {
+                                let path = join_path(&self.browsing_folder, name);
+                                Row {
+                                    active: self.invalid_folder_target(ui, &path),
+                                    ..row(name.as_str(), "", "browse-folder", &path, "")
+                                }
+                            })
+                            .collect();
+                        set_model(&ui.get_folder_picker_rows(), &folders, |model| {
+                            ui.set_folder_picker_rows(model)
+                        });
+                        self.validate_picker(ui);
+                    }
+                    Err(error) => ui.set_folder_picker_error(error.into()),
+                }
+            }
+            return;
+        }
+        if mutation && let Err(error) = &reply {
+            if ui.get_folder_picker() {
+                ui.set_folder_picker_error(error.as_str().into());
+            } else {
+                ui.set_dialog_detail(error.as_str().into());
+            }
+            return;
+        }
+
+        if reply.is_err()
+            && let Some(path) = tag.strip_prefix("card:")
+        {
+            self.file_details.insert(path.into(), Value::Null);
+            self.call(
+                ui,
+                "server.files.thumbnails",
+                json!({"filename": path}),
+                format!("thumb:card:{path}"),
+            );
+            if self.page == "files" {
+                self.render_rows(ui);
+            }
+            return;
         }
         let result = match reply {
             Ok(result) => result,
             Err(error) => {
                 if let Some(path) = tag.strip_prefix("file:") {
-                    if self.dialog.argument == path && !ui.get_dialog_mode().is_empty() {
-                        ui.set_dialog_detail(error.into());
-                        ui.set_dialog_queue(true);
-                        ui.set_dialog_move(true);
-                        ui.set_dialog_mode("confirm".into());
+                    if self.dialog.argument == path
+                        && (ui.get_dialog_mode().starts_with("file-")
+                            || ui.get_dialog_mode() == "print")
+                    {
+                        ui.set_file_dialog_loading(false);
+                        self.call(
+                            ui,
+                            "server.files.thumbnails",
+                            json!({"filename": path}),
+                            format!("thumb:file:{path}"),
+                        );
                     }
                 } else if !tag.starts_with("preview:")
-                    && !tag.starts_with("card:")
+                    && !tag.starts_with("thumb:")
+                    && tag != "file-history"
                     && !(tag == "queue" && self.page == "home")
                 {
                     ui.set_message(error.into());
@@ -2446,24 +3513,26 @@ impl State {
                 return;
             }
         };
-        if let Some(folder) = tag.strip_prefix("directory:") {
-            if self.folder == folder {
-                self.directory = result;
-                if self.page == "files" {
-                    self.render_rows(ui);
-                }
-            }
-            return;
-        }
         if let Some(path) = tag.strip_prefix("card:") {
-            let detail = number(&result["estimated_time"])
-                .map(duration)
-                .unwrap_or_default();
-            self.file_details.insert(path.to_owned(), detail);
             self.thumbnail(tag, path, &result);
+            if array(&result["thumbnails"]).is_empty() {
+                self.call(
+                    ui,
+                    "server.files.thumbnails",
+                    json!({"filename": path}),
+                    format!("thumb:card:{path}"),
+                );
+            }
+            self.file_details.insert(path.to_owned(), result);
             if self.page == "files" {
                 self.render_rows(ui);
             }
+            return;
+        }
+        if let Some(tag) = tag.strip_prefix("thumb:")
+            && let Some((_, path)) = tag.split_once(':')
+        {
+            self.thumbnail(tag, path, &json!({"thumbnails": result}));
             return;
         }
         if let Some(path) = tag.strip_prefix("preview:") {
@@ -2473,31 +3542,106 @@ impl State {
             return;
         }
         if let Some(path) = tag.strip_prefix("file:") {
-            if self.dialog.action == "file"
-                && self.dialog.argument == path
-                && !ui.get_dialog_mode().is_empty()
+            if self.dialog.argument == path
+                && (ui.get_dialog_mode() == "print" || ui.get_dialog_mode().starts_with("file-"))
             {
                 self.metadata = result;
-                let mut detail = Vec::new();
-                if let Some(time) = number(&self.metadata["estimated_time"]) {
-                    detail.push(duration(time));
-                }
-                if let Some(weight) = number(&self.metadata["filament_weight_total"]) {
-                    detail.push(format!("{weight:.1} g"));
-                }
-                if let Some(size) = self.metadata["size"].as_u64() {
-                    detail.push(display_size(size));
-                }
-                ui.set_dialog_detail(detail.join(" · ").into());
-                ui.set_dialog_mode("confirm".into());
-                ui.set_dialog_queue(true);
-                ui.set_dialog_move(true);
+                self.update_print_details(ui);
+                ui.set_file_dialog_loading(false);
                 self.thumbnail(tag, path, &self.metadata);
+                if array(&self.metadata["thumbnails"]).is_empty() {
+                    self.call(
+                        ui,
+                        "server.files.thumbnails",
+                        json!({"filename":path}),
+                        format!("thumb:file:{path}"),
+                    );
+                }
             }
             return;
         }
 
+        if let Some(path) = tag.strip_prefix("folder-created:") {
+            ui.set_folder_create(false);
+            ui.set_keyboard_target("".into());
+            self.file_feedback(
+                ui,
+                if ui.get_german() {
+                    "Ordner erstellt"
+                } else {
+                    "Folder created"
+                },
+            );
+            self.browse_to(ui, path.into());
+            return;
+        }
+        if let Some((tool, selected)) = tag
+            .strip_prefix("print-map:")
+            .and_then(|tag| tag.split_once(':'))
+        {
+            for (key, lane) in &mut self.status {
+                if let Some(name) = key.strip_prefix("AFC_stepper ")
+                    && let Some(lane) = lane.as_object_mut()
+                {
+                    if name == selected {
+                        lane.insert("map".into(), json!(tool));
+                    } else if lane.get("map").and_then(Value::as_str) == Some(tool) {
+                        lane.insert("map".into(), json!("NONE"));
+                    }
+                }
+            }
+            self.update_print_details(ui);
+            return;
+        }
+        if let Some(value) = tag.strip_prefix("timelapse:") {
+            let enabled = value == "on";
+            if let Some(settings) = self
+                .status
+                .get_mut("timelapse_settings")
+                .and_then(Value::as_object_mut)
+            {
+                settings.insert("enabled".into(), json!(enabled));
+            } else {
+                self.status
+                    .insert("timelapse_settings".into(), json!({"enabled":enabled}));
+            }
+            ui.set_timelapse_enabled(enabled);
+            return;
+        }
+
         match tag {
+            "file-deleted" | "file-moved" => {
+                ui.set_dialog_mode("".into());
+                let message = match (tag, ui.get_german()) {
+                    ("file-deleted", true) => "Datei erfolgreich gelöscht",
+                    ("file-deleted", false) => "File deleted successfully",
+                    (_, true) => "Datei erfolgreich verschoben",
+                    _ => "File moved successfully",
+                };
+                self.file_feedback(ui, message);
+                self.refresh(ui);
+            }
+            "file-printed" => ui.set_dialog_mode("".into()),
+            "file-queued" => {
+                ui.set_dialog_mode("".into());
+                if result["queued_jobs"].is_array() {
+                    self.queue = result;
+                    self.update_jobs(ui);
+                }
+            }
+            "file-list" => {
+                self.file_listing = result;
+                self.validate_picker(ui);
+                if self.page == "files" {
+                    self.render_rows(ui);
+                }
+            }
+            "file-history" => {
+                self.file_history = result;
+                if self.page == "files" {
+                    self.render_rows(ui);
+                }
+            }
             "queue" => {
                 self.queue = result;
                 self.update_jobs(ui);
@@ -2520,7 +3664,7 @@ impl State {
                 }
                 self.network = result;
             }
-            "updates" => self.updates = result,
+            "updates" => self.set_updates(ui, result),
             "host-info" => {
                 if self.host.is_null() {
                     self.host = json!({});
@@ -2533,7 +3677,7 @@ impl State {
                 }
                 self.host["stats"] = result;
             }
-            "files-changed" | "update-finished" => self.refresh(ui),
+            "update-finished" => self.refresh(ui),
             "storage" => {
                 let usage = &result["disk_usage"];
                 let space = format!(
@@ -2576,27 +3720,13 @@ impl State {
             | "shutdown" | "reboot" => {}
             _ => {}
         }
-        if matches!(
-            tag,
-            "queue" | "network" | "updates" | "host-info" | "host-stats"
-        ) {
+        if matches!(tag, "queue" | "network" | "host-info" | "host-stats") {
             self.render_rows(ui);
         }
     }
 
     fn thumbnail(&self, tag: &str, path: &str, metadata: &Value) {
-        let thumbnails = array(&metadata["thumbnails"]);
-        let thumb = if tag.starts_with("card:") {
-            thumbnails
-                .iter()
-                .min_by_key(|item| item["width"].as_u64().unwrap_or_default().abs_diff(350))
-        } else {
-            thumbnails
-                .iter()
-                .max_by_key(|item| item["width"].as_u64().unwrap_or_default())
-        };
-        if let Some(relative) = thumb.and_then(|item| item["relative_path"].as_str()) {
-            let path = join_path(parent_dir(path), relative);
+        if let Some(path) = print_files::thumbnail_path(path, array(&metadata["thumbnails"])) {
             let mut segments = vec!["server", "files", "gcodes"];
             segments.extend(path.split('/'));
             if let Ok(url) = moonraker::http_endpoint(self.endpoint.borrow().as_str(), &segments) {
@@ -2647,7 +3777,8 @@ impl State {
                     }
                     Ok(image)
                         if tag.strip_prefix("file:") == Some(self.dialog.argument.as_str())
-                            && self.dialog.action == "file" =>
+                            && (ui.get_dialog_mode() == "print"
+                                || ui.get_dialog_mode().starts_with("file-")) =>
                     {
                         ui.set_dialog_image(image)
                     }
@@ -2694,13 +3825,6 @@ impl State {
             let _ = tx.send(Background::Reply("network".into(), Ok(data)));
         });
     }
-}
-
-fn valid_path(value: &str) -> bool {
-    !value.contains(['\r', '\n', '\0'])
-        && value
-            .split('/')
-            .all(|part| !matches!(part, "" | "." | ".."))
 }
 
 fn gcode_arg(value: &str) -> String {
@@ -2897,20 +4021,43 @@ fn start_display_watcher(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{format_speed_percent, klipper_message, warning_messages};
+    use serde_json::json;
 
     #[test]
-    fn lists_moonraker_files_and_directories_in_nested_folders() {
-        let directory = json!({
-            "dirs": [{"dirname": "Parts"}, {"dirname": ".thumbs"}],
-            "files": [{"filename": "Part A.gcode", "size": 2048, "permissions": "r"}],
+    fn extracts_klipper_runtime_and_moonraker_warnings() {
+        let runtime_warning = "MCU configured for 20Mhz but running at 1Mhz!";
+        let klipper = json!({
+            "webhooks": {"state": "ready", "state_message": "Printer is ready"},
+            "configfile": {"warnings": [
+                {"type": "runtime_warning", "message": runtime_warning},
+                {"type": "runtime_warning", "message": runtime_warning},
+            ]},
         });
-        let rows = directory_rows(&directory, "Models", "part", 2);
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].argument, "Models/Parts");
-        assert_eq!(rows[0].action, "folder");
-        assert_eq!(rows[1].argument, "Models/Part A.gcode");
-        assert_eq!(rows[1].action, "file");
-        assert!(rows[1].alternate.is_empty());
+        let moonraker = json!({"warnings": [" Server warning ", "", null]});
+
+        assert_eq!(klipper_message(&klipper["webhooks"]["state_message"]), None);
+        assert_eq!(
+            warning_messages(&klipper["configfile"]["warnings"]).collect::<Vec<_>>(),
+            [runtime_warning]
+        );
+        assert_eq!(
+            warning_messages(&moonraker["warnings"]).collect::<Vec<_>>(),
+            ["Server warning"]
+        );
+    }
+
+    #[test]
+    fn speed_percent_uses_truncated_thousands_above_999() {
+        for (percent, expected) in [
+            (999, "999%"),
+            (1_000, "1k"),
+            (1_099, "1.09k"),
+            (1_250, "1.25k"),
+            (1_266, "1.26k"),
+            (1_999, "1.99k"),
+        ] {
+            assert_eq!(format_speed_percent(percent), expected);
+        }
     }
 }

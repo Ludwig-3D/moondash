@@ -1,12 +1,18 @@
 import { LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile, Tab, RailButton } from "widgets.slint";
-import { Dashboard } from "home.slint";
-import { MotionPanel, PrintOptions } from "tune.slint";
+import { Dashboard, Notification } from "home.slint";
+import { FilamentSensor, MotionPanel, PrintOptions } from "tune.slint";
 import { FileBrowser } from "files.slint";
 import { AfcPanel, Lane } from "afc.slint";
+import { SpeedDialog } from "speed-dialog.slint";
+import { TemperatureDialog } from "temperature-dialog.slint";
+import { FanDialog } from "fan-dialog.slint";
+import { Keyboard } from "keyboard.slint";
+import { PrintDialog, FolderPicker, PrintTool } from "print-dialogs.slint";
 import { ConfigForm } from "settings.slint";
-export { Palette, Row, Lane }
+import { ColorPicker, ColorSwatch } from "color-picker.slint";
+export { Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor }
 
 component RowList inherits ScrollView {
     in property <[Row]> rows;
@@ -67,7 +73,7 @@ export component Moondash inherits Window {
     in property <bool> paused;
     in property <bool> sleeping;
     in property <bool> debug;
-    in property <string> connection: "Connecting to Moonraker…";
+    in property <string> connection;
     in property <string> message;
     in property <string> print-name;
     in property <bool> finished;
@@ -85,7 +91,7 @@ export component Moondash inherits Window {
     in property <string> advance: "0";
     in property <string> smooth: "0";
     in property <[Row]> motion-controls;
-    in property <[Row]> sensors;
+    in property <[FilamentSensor]> sensors;
     in property <[Lane]> afc-lanes;
     in property <[Row]> afc-units;
     in property <[Row]> macros;
@@ -112,25 +118,57 @@ export component Moondash inherits Window {
     in property <[Row]> rows;
     in-out property <string> page: "home";
     in-out property <string> tab: "motion";
-    in property <string> folder;
+    in property <[Row]> breadcrumbs;
+    in property <bool> file-loading;
+    in-out property <string> file-feedback;
     in-out property <string> filter;
     in-out property <string> config-text;
     in property <bool> config-dirty;
     in property <string> diagnostics;
+    in property <color> picker-selected;
+    in property <string> picker-extras-title;
+    in property <[ColorSwatch]> picker-swatches;
+    in property <[ColorSwatch]> picker-extras;
+    in property <bool> picker-enabled: true;
     in property <string> dialog-title;
     in property <string> dialog-detail;
     in property <string> dialog-mode;
     in property <bool> dialog-secret;
     in-out property <string> dialog-value;
     in property <image> dialog-image;
-    in property <bool> dialog-queue;
-    in property <bool> dialog-move;
+    in property <string> dialog-time;
+    in property <string> dialog-weight;
+    in property <bool> file-busy;
+    in property <bool> file-dialog-loading;
+    in property <bool> move-valid;
+    in property <string> move-destination;
+    in-out property <string> move-name;
+    in property <bool> folder-picker;
+    in property <bool> folder-picker-loading;
+    in property <bool> folder-picker-at-root;
+    in property <string> folder-picker-path;
+    in property <string> folder-picker-error;
+    in property <[Row]> folder-picker-rows;
+    in property <bool> folder-create;
+    in property <bool> folder-create-valid;
+    in-out property <string> folder-name;
+    in property <[PrintTool]> print-tools;
+    in property <bool> timelapse-available;
+    in property <bool> timelapse-enabled;
+    in property <bool> print-lane-picker;
     in property <bool> dialog-folder;
     in property <string> dialog-icon;
     in property <[Row]> dialog-options;
+    in property <[Notification]> notifications;
     in property <string> dialog-unit;
     in property <string> dialog-current;
     in property <string> dialog-limit;
+    in property <bool> printer-setting-busy;
+    in property <int> speed-target: 100;
+    in-out property <string> speed-acceleration;
+    in property <int> temperature-target;
+    in property <int> temperature-max;
+    in property <int> fan-target;
     private property <bool> first-number-key;
     changed dialog-mode => { root.first-number-key = root.dialog-mode == "number"; }
 
@@ -138,8 +176,21 @@ export component Moondash inherits Window {
     callback action(string, string);
     callback config-edited;
     callback dialog-submit(string, bool);
+    callback adjust-speed(int);
+    pure callback format-speed-percent(int) -> string;
     callback dialog-close;
     callback erase-key;
+    callback filter-edited(string);
+    callback keyboard-erase(string);
+    callback remove-acceleration-digit(string) -> string;
+    callback picker-edited;
+    in-out property <string> keyboard-target;
+
+    function close-keyboard() {
+        root.keyboard-target = "";
+    }
+
+    private property <bool> file-dialog: root.dialog-mode == "print" || root.dialog-mode.starts-with("file-");
 
 
     HorizontalLayout {
@@ -175,7 +226,6 @@ export component Moondash inherits Window {
             paused: root.paused;
             finished: root.finished;
             can-skip: root.can-skip;
-            connection: root.connection;
             error: root.message;
             message: root.display-message;
             filename: root.print-name;
@@ -188,6 +238,8 @@ export component Moondash inherits Window {
             controls: root.shortcuts;
             jobs: root.jobs;
             details: root.details;
+            notifications: root.notifications;
+            notification-width: root.width * 0.4;
             action(name, argument) => { root.action(name, argument); }
         }
 
@@ -237,6 +289,7 @@ export component Moondash inherits Window {
                 vertical-stretch: 1;
                 german: root.german;
                 enabled: root.ready && !root.printing && !root.paused && !root.motion-busy;
+                sensors-enabled: root.ready && !root.motion-busy;
                 x-homed: root.x-homed;
                 y-homed: root.y-homed;
                 z-homed: root.z-homed;
@@ -271,7 +324,8 @@ export component Moondash inherits Window {
                 vertical-stretch: 1;
                 german: root.german;
                 entries: root.rows;
-                folder: root.folder;
+                crumbs: root.breadcrumbs;
+                loading: root.file-loading;
                 filter: root.filter;
                 columns: root.file-columns;
                 rows: root.file-rows;
@@ -386,56 +440,119 @@ export component Moondash inherits Window {
         }
     }
 
-    if root.dialog-queue || root.dialog-mode == "file-context": Rectangle {
-        visible: root.dialog-mode != "";
-        background: #00000099;
-        TouchArea {}
+    if root.file-dialog: PrintDialog {
+        german: root.german;
+        folder: root.dialog-folder;
+        printing: root.printing || root.paused;
+        ready: root.ready;
+        busy: root.file-busy;
+        loading: root.file-dialog-loading;
+        can-move: root.move-valid;
+        title: root.dialog-title;
+        detail: root.dialog-detail;
+        time: root.dialog-time;
+        weight: root.dialog-weight;
+        mode: root.dialog-mode;
+        destination: root.move-destination;
+        filename: root.move-name;
+        preview: root.dialog-image;
+        tools: root.print-tools;
+        timelapse-available: root.timelapse-available;
+        timelapse-enabled: root.timelapse-enabled;
+        action(name, argument) => { root.action(name, argument); }
+        close => { root.dialog-close(); }
+    }
+
+    if root.folder-picker: FolderPicker {
+        german: root.german;
+        loading: root.folder-picker-loading;
+        busy: root.file-busy;
+        creating: root.folder-create;
+        create-valid: root.folder-create-valid;
+        at-root: root.folder-picker-at-root;
+        path: root.folder-picker-path;
+        folder-name: root.folder-name;
+        error: root.folder-picker-error;
+        folders: root.folder-picker-rows;
+        action(name, argument) => { root.action(name, argument); }
+    }
+
+    if root.print-lane-picker: Rectangle {
+        background: #00000052;
+        TouchArea { clicked => { root.action("close-print-lanes", ""); } }
         Rectangle {
-            width: min(parent.width - 20px, 760px);
-            height: min(parent.height - 30px, 370px);
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
+            width: min(root.width - 48px, 470px);
+            height: min(root.height - 48px, 340px);
             background: Palette.surface;
             border-radius: 8px;
-            clip: true;
-            HorizontalLayout {
-                Rectangle {
-                    horizontal-stretch: 3;
-                    if root.dialog-image.width == 0: Mdi {
-                        text: root.dialog-folder ? Icons.folder : Icons.printer-3d; font-size: 96px; color: Palette.muted;
-                    }
-                    if root.dialog-image.width > 0: Image { source: root.dialog-image; image-fit: cover; }
-                    Rectangle {
-                        y: parent.height - self.height;
-                        height: file-info.preferred-height;
-                        background: Palette.header;
-                        file-info := VerticalLayout {
-                            padding: 13px;
-                            spacing: 7px;
-                            Label { text: root.dialog-title; font-size: 16px; font-weight: 700; wrap: word-wrap; }
-                            if root.dialog-detail != "": Label { text: root.dialog-detail; color: Palette.muted; }
-                        }
-                    }
-                }
-
-                Rectangle {
-                    horizontal-stretch: 2;
-                    background: Palette.raised;
-                    VerticalLayout {
-                        padding: 14px;
-                        spacing: 8px;
-                        Label { text: root.dialog-queue ? (root.german ? "Drucken" : "Print") : (root.german ? "Dateiaktionen" : "File actions"); font-size: 19px; font-weight: 600; }
-                        if root.dialog-queue: Tile { icon: Icons.printer; label: root.german ? "Drucken" : "Print"; active: true; clicked => { root.dialog-submit("", false); } }
-                        if root.dialog-queue: Tile { icon: Icons.play; label: root.german ? "Einreihen" : "Queue"; clicked => { root.dialog-submit("", true); } }
-                        if root.dialog-move: Tile { icon: Icons.folder; label: root.german ? "Verschieben" : "Move"; clicked => { root.action("move-selected", ""); } }
-                        if root.dialog-mode == "file-context": Tile { icon: Icons.trash-can-outline; label: root.german ? "Löschen" : "Delete"; clicked => { root.action("delete-selected", ""); } }
-                        Rectangle { vertical-stretch: 1; }
-                        Tile { icon: Icons.close; label: root.german ? "Schließen" : "Close"; clicked => { root.dialog-close(); } }
-                    }
+            TouchArea {}
+            VerticalLayout {
+                padding: 14px;
+                spacing: 8px;
+                Label { text: root.german ? "Spurauswahl" : "Select Lane"; font-size: 19px; font-weight: 600; }
+                RowList { rows: root.dialog-options; vertical-stretch: 1; action(name, argument) => { root.action(name, argument); } }
+                HorizontalLayout {
+                    alignment: end;
+                    Tile { label: root.german ? "Abbrechen" : "Cancel"; min-width: 90px; fill: transparent; clicked => { root.action("close-print-lanes", ""); } }
                 }
             }
         }
     }
+    if root.dialog-mode == "color": ColorPicker {
+        german: root.german;
+        title: root.dialog-title;
+        extras-title: root.picker-extras-title;
+        error: root.dialog-detail;
+        selected: root.picker-selected;
+        swatches: root.picker-swatches;
+        extras: root.picker-extras;
+        enabled: root.picker-enabled || root.ready;
+        busy: root.printer-setting-busy;
+        choose(hex) => { root.dialog-submit(hex, false); }
+        close => { root.dialog-close(); }
+    }
+
+    if root.dialog-mode == "speed": SpeedDialog {
+        german: root.german;
+        busy: root.printer-setting-busy;
+        ready: root.ready;
+        target: root.speed-target;
+        readout: root.format-speed-percent(root.speed-target);
+        adjust(step) => { root.adjust-speed(step); }
+        acceleration <=> root.speed-acceleration;
+        error: root.dialog-detail;
+        remove-last(value) => { return root.remove-acceleration-digit(value); }
+        save => { root.dialog-submit("", false); }
+        close => { root.dialog-close(); }
+    }
+
+    if root.dialog-mode == "temperature": TemperatureDialog {
+        german: root.german;
+        busy: root.printer-setting-busy;
+        ready: root.ready;
+        title: root.dialog-title;
+        icon: root.dialog-icon;
+        current: root.dialog-current;
+        target: root.temperature-target;
+        maximum: root.temperature-max;
+        error: root.dialog-detail;
+        entry <=> root.dialog-value;
+        erase => { root.erase-key(); }
+        save(value) => { root.dialog-submit(value, false); }
+        close => { root.dialog-close(); }
+    }
+
+    if root.dialog-mode == "fan": FanDialog {
+        german: root.german;
+        busy: root.printer-setting-busy;
+        ready: root.ready;
+        title: root.dialog-title;
+        error: root.dialog-detail;
+        initial: root.fan-target;
+        save(value) => { root.dialog-submit("" + value, false); }
+        close => { root.dialog-close(); }
+    }
+
     if root.dialog-mode == "number": Rectangle {
         background: #00000099;
         TouchArea {}
@@ -545,7 +662,7 @@ export component Moondash inherits Window {
         }
     }
 
-    if root.dialog-mode != "" && root.dialog-mode != "power" && root.dialog-mode != "number" && !root.dialog-queue && root.dialog-mode != "file-context": Rectangle {
+    if root.dialog-mode != "" && root.dialog-mode != "power" && root.dialog-mode != "number" && root.dialog-mode != "temperature" && root.dialog-mode != "fan" && root.dialog-mode != "speed" && root.dialog-mode != "color" && !root.file-dialog: Rectangle {
         background: #00000099;
         TouchArea {}
         Rectangle {
@@ -570,48 +687,88 @@ export component Moondash inherits Window {
                         clicked => { root.action(option.action, option.argument); }
                     }
                 }
-                if root.dialog-mode == "text": LineEdit {
-                    text <=> root.dialog-value;
-                    input-type: root.dialog-secret ? InputType.password : InputType.text;
-                    accepted => { root.dialog-submit(root.dialog-value, false); }
-                }
-                if root.dialog-mode == "text" || root.dialog-mode == "number": HorizontalLayout {
-                    spacing: 3px;
-                    for key in ["1","2","3","4","5","6","7","8","9","0",".","-",";",":","#"]: Tile {
-                        min-width: 20px; min-height: 29px; label: key;
-                        clicked => { root.dialog-value += key; }
+                if root.dialog-mode == "text": Rectangle {
+                    height: 48px;
+                    border-width: 1px;
+                    border-color: Palette.divider;
+                    border-radius: 5px;
+                    clip: true;
+                    if root.dialog-secret: TextInput {
+                        x: 12px; width: parent.width - 24px;
+                        text: root.dialog-value; input-type: password; read-only: true;
+                        color: Palette.ink; vertical-alignment: center;
                     }
-                }
-                if root.dialog-mode == "text": VerticalLayout {
-                  spacing: 3px;
-                  for letters in [["q","w","e","r","t","y","u","i","o","p"], ["a","s","d","f","g","h","j","k","l"], ["z","x","c","v","b","n","m","_","/","="]]: HorizontalLayout {
-                    spacing: 3px;
-                    for letter in letters: Tile {
-                        min-width: 20px; min-height: 29px;
-                        label: root.shift ? letter.to-uppercase() : letter;
-                        clicked => { root.dialog-value += self.label; }
+                    if !root.dialog-secret: Label {
+                        x: 12px; width: parent.width - 24px;
+                        text: root.dialog-value == "" ? "…" : root.dialog-value;
                     }
-                }
-                }
-                if root.dialog-mode == "text": HorizontalLayout {
-                    spacing: 3px;
-                    if root.dialog-mode == "text": Tile { min-height: 29px; label: "Shift"; active: root.shift; clicked => { root.shift = !root.shift; } }
-                    if root.dialog-mode == "text": Tile { min-height: 29px; label: "Space"; horizontal-stretch: 1; clicked => { root.dialog-value += " "; } }
-                    Tile { min-height: 29px; label: "Clear"; clicked => { root.dialog-value = ""; } }
-                    Tile { min-height: 29px; label: "⌫"; clicked => { root.erase-key(); } }
+                    TouchArea { clicked => { root.keyboard-target = "dialog"; } }
                 }
                 HorizontalLayout {
                     spacing: 6px;
                     Tile { label: root.german ? "Zurück" : "Back"; clicked => { root.dialog-close(); } }
-                    if root.dialog-move: Tile { label: root.german ? "Verschieben" : "Move"; clicked => { root.action("move-selected", ""); } }
-                    if root.dialog-queue: Tile { label: root.german ? "Einreihen" : "Queue"; clicked => { root.dialog-submit(root.dialog-value, true); } }
-                    if root.dialog-mode != "info" && root.dialog-mode != "menu": Tile { label: root.dialog-queue ? (root.german ? "Drucken" : "Print") : "OK"; active: true; clicked => { root.dialog-submit(root.dialog-value, false); } }
+                    if root.dialog-mode != "info" && root.dialog-mode != "menu": Tile { label: "OK"; active: true; clicked => { root.dialog-submit(root.dialog-value, false); } }
                 }
             }
         }
     }
 
-    private property <bool> shift;
+    if root.page == "files" && root.file-feedback != "" && !root.folder-picker: Rectangle {
+        width: min(root.width - 100px, 356px);
+        height: 46px;
+        x: (root.width - self.width) / 2;
+        y: root.height - self.height - 8px;
+        border-radius: 5px;
+        background: Palette.success;
+        HorizontalLayout {
+            padding-left: 12px;
+            Label { text: root.file-feedback; color: #111111; horizontal-stretch: 1; }
+            Tile {
+                label: root.german ? "Schließen" : "Close"; ink: #111111; fill: transparent;
+                clicked => { root.file-feedback = ""; }
+            }
+        }
+    }
+
+    if root.keyboard-target == "filter": Keyboard {
+        german: root.german;
+        title: root.german ? "Filter Druckdateien nach Namen" : "Filter print files by name";
+        value <=> root.filter;
+        edited(value) => { root.filter-edited(value); }
+        erase => { root.keyboard-erase("filter"); }
+        accepted => { root.close-keyboard(); }
+        dismissed => { root.close-keyboard(); }
+    }
+
+    if root.keyboard-target == "dialog" && root.dialog-mode == "text": Keyboard {
+        german: root.german;
+        secret: root.dialog-secret;
+        title: root.dialog-title;
+        value <=> root.dialog-value;
+        erase => { root.erase-key(); }
+        accepted => { root.close-keyboard(); }
+        dismissed => { root.close-keyboard(); }
+    }
+
+    if root.keyboard-target == "move-name": Keyboard {
+        german: root.german;
+        title: root.german ? "Dateiname" : "Filename";
+        value <=> root.move-name;
+        edited(_) => { root.picker-edited(); }
+        erase => { root.keyboard-erase("move-name"); }
+        accepted => { root.close-keyboard(); }
+        dismissed => { root.close-keyboard(); }
+    }
+
+    if root.keyboard-target == "folder-name": Keyboard {
+        german: root.german;
+        title: root.german ? "Ordnername" : "Folder name";
+        value <=> root.folder-name;
+        edited(_) => { root.picker-edited(); }
+        erase => { root.keyboard-erase("folder-name"); }
+        accepted => { root.close-keyboard(); }
+        dismissed => { root.close-keyboard(); }
+    }
 
     if root.sleeping: Rectangle {
         background: black;

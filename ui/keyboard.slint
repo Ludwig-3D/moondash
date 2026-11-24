@@ -1,0 +1,161 @@
+import { Icons } from "icons.slint";
+import { Palette, Label, Tile } from "widgets.slint";
+
+component KeyButton inherits Tile {
+    in property <bool> action-key;
+    fill: self.active ? Palette.accent : action-key ? Palette.accent.transparentize(86%) : Palette.ink.transparentize(94%);
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+}
+
+export component Keyboard inherits Rectangle {
+    in property <bool> german;
+    in property <bool> secret;
+    in property <string> title;
+    in property <bool> numeric;
+    in-out property <string> value;
+    callback edited(string);
+    callback erase;
+    callback accepted;
+    callback dismissed;
+
+    private property <int> mode: numeric ? 1 : 0;
+    private property <bool> shifted;
+    private property <length> gap: self.width > 720px ? 8px : 6px;
+    private property <length> inset: self.width > 720px ? 12px : 8px;
+    private property <length> key-width: min(self.width > 720px ? 52px : 36px, (root.width - 2 * root.inset - 9 * root.gap) / 10);
+    private property <length> key-height: min(self.width > 720px ? 52px : 46px, (root.height - 106px) / 4);
+    private property <length> wide: min(self.width > 720px ? 84px : 58px, root.key-width * 1.62);
+    private property <length> space-width: min(self.width > 720px ? 180px : 120px, root.key-width * 3.47);
+    private property <[[string]]> keys: mode == 0 ? [
+        ["q", "w", "e", "r", "t", german ? "z" : "y", "u", "i", "o", "p"],
+        ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
+        ["shift", german ? "y" : "z", "x", "c", "v", "b", "n", "m", "erase"],
+    ] : mode == 1 ? [
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+        ["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""],
+        [".", ",", "?", "!", "'", "erase"],
+    ] : [
+        ["[", "]", "{", "}", "#", "%", "^", "*", "+", "="],
+        ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"],
+        [".", ",", "?", "!", "`", "erase"],
+    ];
+
+    function append(input: string) {
+        root.value += input;
+        root.edited(root.value);
+        root.shifted = false;
+    }
+
+    background: #0000002e;
+    init => { physical.focus(); }
+
+    physical := FocusScope {
+        key-pressed(event) => {
+            if event.modifiers.control || event.modifiers.alt || event.modifiers.meta {
+                return reject;
+            }
+            if event.text == Key.Escape { root.dismissed(); }
+            else if event.text == Key.Return || event.text == "\n" { root.accepted(); }
+            else if event.text == Key.Backspace { root.erase(); }
+            else if event.text == Key.Delete { root.value = ""; root.edited(""); }
+            else if event.text == Key.Tab { root.append("\u{9}"); }
+            else if event.text.character-count == 1 && !event.text.starts-with("\u{f7}") && event.text != Key.UpArrow && event.text != Key.DownArrow && event.text != Key.LeftArrow && event.text != Key.RightArrow {
+                root.append(event.text);
+            } else { return reject; }
+            return accept;
+        }
+    }
+
+    TouchArea { clicked => { root.dismissed(); } }
+
+    panel := Rectangle {
+        y: root.height - self.height;
+        width: root.width;
+        height: 2 * root.inset + 4 * root.key-height + 3 * root.gap + 54px + (root.title != "" ? 29px : 0px);
+        background: Palette.surface;
+        border-width: 1px;
+        border-color: Palette.ink.transparentize(90%);
+
+        TouchArea {}
+        VerticalLayout {
+            padding: root.inset;
+            spacing: 10px;
+
+            if root.title != "": Label {
+                height: 19px; text: root.title; font-size: 15px; font-weight: 700;
+                color: Palette.ink.transparentize(10%);
+            }
+
+            Rectangle {
+                height: 44px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Palette.ink.transparentize(92%);
+                background: Palette.ink.transparentize(95%);
+                clip: true;
+
+                if !root.secret || root.value == "": Label {
+                    x: 12px; width: parent.width - 24px;
+                    text: root.value == "" ? "…" : root.value;
+                    font-size: 16px;
+                    color: root.value == "" ? Palette.ink.transparentize(55%) : Palette.ink;
+                }
+                if root.secret && root.value != "": TextInput {
+                    x: 12px; width: parent.width - 24px;
+                    text: root.value; color: Palette.ink; font-size: 16px;
+                    input-type: password; read-only: true; vertical-alignment: center;
+                }
+            }
+
+            VerticalLayout {
+                spacing: root.gap;
+
+                for row in root.keys: HorizontalLayout {
+                    alignment: center;
+                    spacing: root.gap;
+                    for key in row: KeyButton {
+                        width: self.action-key ? root.wide : root.key-width;
+                        height: root.key-height;
+                        border-radius: root.key-width < 50px ? 12px : 14px;
+                        action-key: key == "shift" || key == "erase";
+                        active: key == "shift" && root.shifted;
+                        icon: key == "shift" ? Icons.apple-keyboard-shift : key == "erase" ? Icons.backspace-outline : "";
+                        icon-size: 24px;
+                        label: self.action-key ? "" : root.shifted ? key.to-uppercase() : key;
+                        clicked => {
+                            if key == "shift" { root.shifted = !root.shifted; }
+                            else if key == "erase" { root.erase(); }
+                            else { root.append(self.label); }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: root.gap;
+
+                    KeyButton { width: root.wide; height: root.key-height; border-radius: 14px; action-key: true;
+                        label: root.mode == 0 ? "123" : root.mode == 1 ? "#+=" : "ABC";
+                        clicked => { root.mode = mod(root.mode + 1, 3); root.shifted = false; }
+                    }
+                    KeyButton { width: root.wide; height: root.key-height; border-radius: 14px; action-key: true;
+                        label: root.german ? "Löschen" : "Clear";
+                        clicked => { root.value = ""; root.edited(""); }
+                    }
+                    KeyButton { width: root.space-width; height: root.key-height; border-radius: 14px; action-key: true;
+                        label: root.german ? "Leerzeichen" : "Space";
+                        clicked => { root.append(" "); }
+                    }
+                    KeyButton { width: root.wide; height: root.key-height; border-radius: 14px; action-key: true;
+                        label: root.german ? "Eingabe" : "Enter";
+                        clicked => { root.accepted(); }
+                    }
+                    KeyButton { width: root.wide; height: root.key-height; border-radius: 14px; action-key: true;
+                        icon: Icons.chevron-down; icon-size: 24px; clicked => { root.dismissed(); }
+                    }
+                }
+            }
+        }
+    }
+}

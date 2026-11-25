@@ -113,6 +113,7 @@ export component Moondash inherits Window {
     in property <[Row]> network-wired;
     in property <[Row]> network-can;
     in property <[WifiEntry]> network-scanned;
+    in property <bool> network-scan-cached;
     in property <[WifiEntry]> network-saved;
     in property <string> network-job;
     in property <string> network-job-target;
@@ -765,6 +766,7 @@ export component Moondash inherits Window {
         password: root.network-password;
         password-title: root.network-password-title;
         scanned: root.network-scanned;
+        scan-cached: root.network-scan-cached;
         saved: root.network-saved;
         action(name, argument) => { root.action(name, argument); }
         edit(field) => { root.keyboard-target = field; }

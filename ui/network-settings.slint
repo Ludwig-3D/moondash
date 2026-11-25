@@ -120,7 +120,7 @@ export component NetworkPanel inherits Rectangle {
                                 icon: root.job == "wifi-scan" ? "" : Icons.magnify;
                                 busy: root.job == "wifi-scan";
                                 description: I18n.text("scan");
-                                enabled: root.wifi-enabled && root.job == "";
+                                enabled: root.wifi-enabled && (root.job == "" || root.job == "network");
                                 clicked => { root.action("wifi-scan", ""); }
                             }
                             IconButton {
@@ -264,6 +264,7 @@ export component WifiDialogs inherits Rectangle {
     in property <string> password;
     in property <string> password-title;
     in property <[WifiEntry]> scanned;
+    in property <bool> scan-cached;
     in property <[WifiEntry]> saved;
     callback action(string, string);
     callback edit(string);
@@ -271,6 +272,9 @@ export component WifiDialogs inherits Rectangle {
     private property <bool> saved-list: root.mode == "saved";
     private property <bool> list: root.mode == "scan" || root.saved-list;
     private property <bool> busy: root.job != "" && root.job != "network";
+    private property <bool> scanning: root.mode == "scan" && root.job == "wifi-scan";
+    private property <string> scan-notice: root.scanning ? I18n.text("wifi_scanning")
+        : root.mode == "scan" && root.scan-cached ? I18n.text("wifi_scan_cached") : "";
     private property <[WifiEntry]> networks: root.saved-list ? root.saved : root.scanned;
     private property <length> form-height: (root.mode == "hidden" ? 215px : 151px) + (root.error == "" ? 0px : 34px);
     private property <string> title: root.list
@@ -283,7 +287,8 @@ export component WifiDialogs inherits Rectangle {
     card := Rectangle {
         width: min(root.width - 48px, root.list ? 720px : 460px);
         height: min(root.height - 48px, root.list
-            ? max(151px, min(640px, 103px + root.networks.length * 54px)) + (root.error == "" ? 0px : 34px)
+            ? max(151px, min(640px, 103px + root.networks.length * 54px))
+                + (root.error == "" ? 0px : 34px) + (root.scan-notice == "" ? 0px : 34px)
             : root.form-height);
         x: (root.width - self.width) / 2;
         y: (root.height - self.height) / 2;
@@ -298,12 +303,23 @@ export component WifiDialogs inherits Rectangle {
             padding-bottom: 8px;
             spacing: 8px;
 
-            Label { text: root.title; height: 32px; font-size: 20px; font-weight: 500; }
+            HorizontalLayout {
+                height: 32px;
+                spacing: 10px;
+                Label { text: root.title; font-size: 20px; font-weight: 500; horizontal-stretch: 1; }
+                if root.scanning: BusyCircle { width: 24px; height: 24px; }
+            }
+            if root.scan-notice != "": Label {
+                height: 26px;
+                text: root.scan-notice;
+                color: Palette.info;
+                wrap: word-wrap;
+            }
             if root.list: ScrollView {
                 vertical-stretch: 1;
                 VerticalLayout {
                     alignment: start;
-                    if root.networks.length == 0: Rectangle {
+                    if root.networks.length == 0 && !root.scanning && root.error == "": Rectangle {
                         height: 43px;
                         background: Palette.info.transparentize(88%);
                         border-radius: 4px;
@@ -405,8 +421,19 @@ export component WifiDialogs inherits Rectangle {
                     label: I18n.text(root.list ? "close" : "cancel").to-uppercase();
                     width: 106px;
                     fill: transparent;
-                    enabled: !root.busy;
+                    enabled: !root.busy || root.scanning;
                     clicked => { root.action("wifi-close", ""); }
+                }
+                if root.mode == "scan": Tile {
+                    label: I18n.text("scan").to-uppercase();
+                    width: 112px;
+                    fill: Palette.accent.transparentize(88%);
+                    ink: Palette.accent;
+                    enabled: !root.busy;
+                    accessible-role: button;
+                    accessible-label: I18n.text("scan");
+                    accessible-action-default => { if self.enabled { self.clicked(); } }
+                    clicked => { root.action("wifi-scan", ""); }
                 }
                 if !root.list: Rectangle {
                     width: 112px;

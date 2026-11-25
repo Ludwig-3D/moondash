@@ -241,6 +241,8 @@
   "weight": "Gewicht",
   "weight_g": "Gewicht (g)",
   "wi_fi": "WLAN",
+  "wifi_scan_cached": "Die letzten Suchergebnisse werden angezeigt. Bitte versuche es gleich erneut.",
+  "wifi_scanning": "WLAN-Netzwerke werden gesucht…",
   "wired": "Kabelgebunden",
   "z_tilt": "Z-Neigung"
 }

@@ -3062,11 +3062,11 @@ impl State {
                 let ssid = ui.get_network_ssid();
                 let password = ui.get_network_password();
                 match ui.get_network_dialog().as_str() {
-                    "hidden" if !ssid.trim().is_empty() => {
+                    "hidden" if !ssid.is_empty() => {
                         self.network_action(
                             ui,
                             "wifi-hidden-password",
-                            ssid.trim(),
+                            ssid.as_str(),
                             password.as_str(),
                         );
                     }
@@ -3078,7 +3078,7 @@ impl State {
             }
             "wifi-close" => {
                 let job = ui.get_network_job();
-                if job.is_empty() || job == "network" {
+                if job.is_empty() || job == "network" || job == "wifi-scan" {
                     let back = if ui.get_network_dialog() == "password" {
                         "scan"
                     } else {
@@ -3880,15 +3880,29 @@ impl State {
     }
 
     fn network_reply(&mut self, ui: &Moondash, action: &str, reply: Result<Value, String>) {
+        if action == "network" && ui.get_network_job() != "network" {
+            return;
+        }
         ui.set_network_job("".into());
         ui.set_network_job_target("".into());
         let result = match reply {
             Ok(result) => result,
             Err(error) => {
+                if action == "wifi-scan" {
+                    self.network["wifi"]["scannedNetworks"] = json!([]);
+                    self.update_network_models(ui);
+                }
                 ui.set_network_error(error.into());
                 return;
             }
         };
+        if action == "wifi-scan" {
+            self.network["wifi"]["scannedNetworks"] = result["scanned"].clone();
+            self.network["wifi"]["savedNetworks"] = result["saved"].clone();
+            self.update_network_models(ui);
+            ui.set_network_scan_cached(result["cached"].as_bool().unwrap_or_default());
+            return;
+        }
         if self.network["ip"] != result["ip"] {
             let url = result["ip"].as_str().map(|ip| {
                 if ip.contains(':') {
@@ -3904,9 +3918,6 @@ impl State {
         self.update_network_models(ui);
 
         match action {
-            "wifi-scan" if self.page == "settings" && self.tab == "network" => {
-                ui.set_network_dialog("scan".into());
-            }
             "wifi-connect" | "wifi-hidden-password" => {
                 ui.set_network_dialog("".into());
                 ui.set_network_password("".into());
@@ -3917,13 +3928,18 @@ impl State {
     }
 
     fn network_action(&self, ui: &Moondash, action: &str, argument: &str, password: &str) {
-        if !ui.get_network_job().is_empty()
+        let job = ui.get_network_job();
+        if !(job.is_empty() || (job == "network" && action == "wifi-scan"))
             || (action == "network" && !ui.get_network_dialog().is_empty())
         {
             return;
         }
         if action != "network" {
             ui.set_network_error("".into());
+        }
+        if action == "wifi-scan" {
+            ui.set_network_scan_cached(false);
+            ui.set_network_dialog("scan".into());
         }
         ui.set_network_job(action.into());
         ui.set_network_job_target(argument.into());
@@ -3932,7 +3948,11 @@ impl State {
         let tx = self.background.clone();
         self.runtime.spawn(async move {
             let tag = format!("network:{action}");
-            let mut scan = None;
+            if action == "wifi-scan" {
+                let result = network::scan_wifi_networks().await.map(|scan| json!(scan));
+                let _ = tx.send(Background::Reply(tag, result));
+                return;
+            }
             let result = match action.as_str() {
                 "network" => Ok(()),
                 "wifi-on" | "wifi-off" => network::set_wifi_enabled(action == "wifi-on").await,
@@ -3940,7 +3960,6 @@ impl State {
                 "wifi-connect" => network::connect_to_wifi(argument, password).await,
                 "wifi-hidden-password" => network::connect_hidden_wifi(argument, password).await,
                 "wifi-forget" => network::forget_saved_wifi(argument).await,
-                "wifi-scan" => network::scan_wifi_networks().await.map(|networks| { scan = Some(networks); }),
                 _ => return,
             };
             if let Err(error) = result {
@@ -3950,12 +3969,7 @@ impl State {
             let (ip, wifi, wired, can, status) = tokio::join!(network::get_primary_ip_address(), network::get_wifi_settings(),
                 network::get_wired_settings(), network::get_canbus_settings(), network::get_network_status());
             let wifi_error = wifi.as_ref().err().cloned();
-            let mut data = json!({"ip": ip.ok(), "wifi": wifi.ok(), "wifi-error": wifi_error, "wired": wired.ok(), "can": can.ok(), "status": status.ok()});
-            if let Some(scan) = scan
-                && data["wifi"].is_object()
-            {
-                data["wifi"]["scannedNetworks"] = json!(scan);
-            }
+            let data = json!({"ip": ip.ok(), "wifi": wifi.ok(), "wifi-error": wifi_error, "wired": wired.ok(), "can": can.ok(), "status": status.ok()});
             let _ = tx.send(Background::Reply(tag, Ok(data)));
         });
     }

@@ -28,5 +28,8 @@ wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5"
+
 [build-dependencies]
 slint-build = "=1.19.0"

@@ -241,6 +241,8 @@
   "weight": "Weight",
   "weight_g": "Weight (g)",
   "wi_fi": "Wi-Fi",
+  "wifi_scan_cached": "Showing the last scan results. Try again shortly to refresh.",
+  "wifi_scanning": "Scanning for Wi-Fi networks…",
   "wired": "Wired",
   "z_tilt": "Z Tilt"
 }

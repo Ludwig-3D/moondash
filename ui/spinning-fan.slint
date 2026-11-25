@@ -1,0 +1,74 @@
+component FanBlade inherits Path {
+    in property <angle> angle;
+    viewbox-width: 512;
+    viewbox-height: 512;
+
+    private property <float> cosine: cos(root.angle);
+    private property <float> sine: sin(root.angle);
+
+    function rotated-x(x: float, y: float) -> float {
+        return 256 + (x - 256) * root.cosine - (y - 256) * root.sine;
+    }
+
+    function rotated-y(x: float, y: float) -> float {
+        return 256 + (x - 256) * root.sine + (y - 256) * root.cosine;
+    }
+
+    // The top blade follows the fan glyph in the bundled icon font.
+    MoveTo { x: root.rotated-x(216, 206); y: root.rotated-y(216, 206); }
+    QuadraticTo {
+        control-x: root.rotated-x(195, 167); control-y: root.rotated-y(195, 167);
+        x: root.rotated-x(193.5, 129); y: root.rotated-y(193.5, 129);
+    }
+    QuadraticTo {
+        control-x: root.rotated-x(192, 91); control-y: root.rotated-y(192, 91);
+        x: root.rotated-x(211, 67); y: root.rotated-y(211, 67);
+    }
+    QuadraticTo {
+        control-x: root.rotated-x(230, 43); control-y: root.rotated-y(230, 43);
+        x: root.rotated-x(267, 43); y: root.rotated-y(267, 43);
+    }
+    QuadraticTo {
+        control-x: root.rotated-x(301, 43); control-y: root.rotated-y(301, 43);
+        x: root.rotated-x(322, 55); y: root.rotated-y(322, 55);
+    }
+    QuadraticTo {
+        control-x: root.rotated-x(340, 66); control-y: root.rotated-y(340, 66);
+        x: root.rotated-x(345, 83.5); y: root.rotated-y(345, 83.5);
+    }
+    QuadraticTo {
+        control-x: root.rotated-x(350, 101); control-y: root.rotated-y(350, 101);
+        x: root.rotated-x(341.5, 118); y: root.rotated-y(341.5, 118);
+    }
+    QuadraticTo {
+        control-x: root.rotated-x(333, 135); control-y: root.rotated-y(333, 135);
+        x: root.rotated-x(315, 144); y: root.rotated-y(315, 144);
+    }
+    QuadraticTo {
+        control-x: root.rotated-x(288, 157); control-y: root.rotated-y(288, 157);
+        x: root.rotated-x(280, 197); y: root.rotated-y(280, 197);
+    }
+    Close {}
+}
+
+export component SpinningFan inherits Rectangle {
+    in property <color> ink;
+    private property <angle> phase: 360deg * (mod(animation-tick(), 1200ms) / 1200ms);
+
+    for blade in 4: FanBlade {
+        width: root.width;
+        height: root.height;
+        angle: root.phase + blade * 90deg;
+        fill: root.ink;
+    }
+
+    Rectangle {
+        width: root.width * 0.25;
+        height: self.width;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        border-radius: self.width / 2;
+        border-width: root.width * 0.084;
+        border-color: root.ink;
+    }
+}

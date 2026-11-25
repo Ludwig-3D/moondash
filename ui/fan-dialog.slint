@@ -1,33 +1,9 @@
 import { I18n } from "i18n.slint";
 import { Spinner } from "std-widgets.slint";
+import { GaugeSteps, PercentGauge } from "percent-gauge.slint";
 import { Label, Palette, Tile } from "widgets.slint";
 
-component FanStep inherits Rectangle {
-    in property <string> caption;
-    in property <bool> enabled;
-    callback clicked;
-
-    background: hit.pressed ? #ffffff12 : hit.has-hover ? #ffffff0c : #ffffff05;
-    accessible-role: button;
-    accessible-label: root.caption;
-    accessible-action-default => { if root.enabled { root.clicked(); } }
-
-    Label {
-        text: root.caption;
-        color: root.enabled ? Palette.ink : Palette.muted;
-        font-size: 14px;
-        horizontal-alignment: center;
-    }
-
-    hit := TouchArea {
-        enabled: root.enabled;
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-}
-
 export component FanDialog inherits Rectangle {
-
     in property <bool> ready;
     in property <bool> busy;
     in property <string> title;
@@ -37,15 +13,15 @@ export component FanDialog inherits Rectangle {
     callback close;
 
     private property <int> target: root.initial;
-    private property <bool> compact: root.width < 742px;
-    private property <length> inset: root.compact ? 16px : 24px;
+    private property <bool> compact: root.height < 410px;
+    private property <length> inset: root.width < 620px ? 16px : 24px;
 
     background: #00000052;
     TouchArea {}
 
     card := Rectangle {
         width: min(root.width - 48px, 760px);
-        height: (root.compact ? 208px : 192px) + (root.error == "" ? 0px : 24px);
+        height: (root.compact ? 288px : 381px) + (root.error == "" ? 0px : 21px);
         x: (root.width - self.width) / 2;
         y: (root.height - self.height) / 2;
         background: Palette.surface;
@@ -53,94 +29,82 @@ export component FanDialog inherits Rectangle {
         clip: true;
 
         Label {
-            x: root.inset; y: 24px;
+            x: root.inset; y: root.compact ? 12px : 24px;
             width: card.width - 2 * root.inset; height: 32px;
             text: root.title;
             font-size: 24px;
         }
 
-        Label {
-            x: root.inset; y: root.compact ? 65px : 80px;
-            width: 120px; height: root.compact ? 25px : 52px;
-            text: I18n.text("target");
-            font-size: 20px;
-        }
+        body := Rectangle {
+            x: root.inset;
+            y: root.compact ? 55px : 65px;
+            width: card.width - 2 * root.inset;
+            height: root.compact ? 190px : 252px;
+            private property <length> step-width: min(104px, (self.width - dial.width) / 2 - 12px);
 
-        controls := Rectangle {
-            x: root.inset + (root.compact ? 0px : 144px);
-            y: root.compact ? 96px : 80px;
-            width: card.width - self.x - root.inset;
-            height: 52px;
-            border-radius: 12px;
-            border-width: 1px;
-            border-color: #ffffff24;
-            clip: true;
-            private property <length> step-width: min(60px, (self.width - 82px) / 6);
-
-            Rectangle {
-                x: 3 * controls.step-width; y: 1px;
-                width: controls.width - 6 * controls.step-width;
-                height: controls.height - 2px;
-                background: Palette.ink.transparentize(94%);
-
-                Label {
-                    text: root.target;
-                    color: Palette.muted;
-                    font-size: 16px;
-                    horizontal-alignment: center;
-                }
-                Label {
-                    x: parent.width - 28px;
-                    width: 20px;
-                    text: "%";
-                    color: Palette.muted;
-                    font-size: 16px;
-                    horizontal-alignment: center;
-                }
-            }
-
-            for step[index] in [-100, -10, -1, 1, 10, 100]: FanStep {
-                x: index < 3 ? index * controls.step-width : controls.width - (6 - index) * controls.step-width;
-                y: 1px; width: controls.step-width; height: controls.height - 2px;
+            GaugeSteps {
+                x: (dial.x - body.step-width) / 2;
+                y: 0px;
+                width: body.step-width;
+                height: body.height;
+                steps: [-10, -1];
+                shortcut-label: "0%";
+                shortcut-enabled: root.target != 0;
+                select-shortcut => { root.target = 0; }
                 enabled: !root.busy;
-                caption: step == -100 ? I18n.text("min") : step == 100 ? I18n.text("max") : step > 0 ? "+" + step : "" + step;
-                clicked => { root.target = clamp(root.target + step, 0, 100); }
+                adjust(step) => { root.target = clamp(root.target + step, 0, 100); }
             }
 
-            for index in 6: Rectangle {
-                x: index < 3 ? (index + 1) * controls.step-width : controls.width - (6 - index) * controls.step-width;
-                y: 1px; width: 1px; height: controls.height - 2px;
-                background: #ffffff24;
+            dial := PercentGauge {
+                width: min(320px, body.height * 320 / 246, body.width - 124px);
+                height: self.width * 246 / 320;
+                x: (body.width - self.width) / 2;
+                y: (body.height - self.height) / 2;
+                target: root.target;
+                readout: root.target + "%";
+            }
+
+            GaugeSteps {
+                x: body.width - (dial.x + body.step-width) / 2;
+                y: 0px;
+                width: body.step-width;
+                height: body.height;
+                steps: [10, 1];
+                shortcut-label: "100%";
+                shortcut-enabled: root.target != 100;
+                select-shortcut => { root.target = 100; }
+                enabled: !root.busy;
+                adjust(step) => { root.target = clamp(root.target + step, 0, 100); }
             }
         }
 
         if root.error != "": Label {
-            x: root.inset; y: controls.y + controls.height + 3px;
-            width: card.width - 2 * root.inset; height: 21px;
+            x: root.inset; y: footer.y - self.height;
+            width: card.width - 2 * root.inset; height: 20px;
             text: root.error; color: Palette.error; font-size: 13px;
         }
 
-        HorizontalLayout {
-            x: 8px; y: card.height - 52px;
-            width: card.width - 16px; height: 52px;
+        footer := HorizontalLayout {
+            x: 8px; y: card.height - self.height - 8px;
+            width: card.width - 16px; height: 36px;
             spacing: 8px;
             alignment: end;
 
             Tile {
-                width: I18n.german ? 112px : 88px; height: 36px;
+                width: I18n.german ? 99px : 78px; height: 36px;
                 fill: transparent;
                 enabled: !root.busy;
-                label: I18n.text("cancel_uppercase");
+                label: I18n.text("cancel");
                 clicked => { root.close(); }
             }
 
             Rectangle {
-                width: I18n.german ? 110px : 68px; height: 36px;
+                width: I18n.german ? 100px : 68px; height: 36px;
                 Tile {
-                    fill: Palette.accent.transparentize(88%);
+                    fill: Palette.accent.transparentize(86%);
                     ink: Palette.accent;
                     enabled: root.ready && !root.busy;
-                    label: root.busy ? "" : I18n.text("save_uppercase");
+                    label: root.busy ? "" : I18n.text("save");
                     clicked => { root.save(root.target); }
                 }
                 if root.busy: Spinner { width: 20px; height: 20px; }

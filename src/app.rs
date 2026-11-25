@@ -997,10 +997,8 @@ impl State {
                 .map_or(key.as_str(), |(_, suffix)| suffix);
             controls.push(heater(key, name, "thermometer"));
         }
+        let first_fan = controls.len();
         for (key, data) in &self.status {
-            let Some(speed) = number(&data["speed"]) else {
-                continue;
-            };
             let (name, action) = if key == "fan" {
                 (tr(ui, "part_fan"), "fan")
             } else if let Some((kind, name)) = key.split_once(' ') {
@@ -1013,17 +1011,21 @@ impl State {
             } else {
                 continue;
             };
-            let mut entry = row(
-                name,
-                format!("{:.0}%", speed * 100.),
-                action,
-                key,
-                tr(ui, "set"),
-            );
+            let speed = number(&data["speed"]);
+            let rpm = number(&data["rpm"]);
+            let Some(detail) = speed
+                .map(|speed| format!("{:.0}%", speed * 100.))
+                .or_else(|| rpm.map(|rpm| if rpm > 0. { "100%" } else { "0%" }.to_owned()))
+            else {
+                continue;
+            };
+            let mut entry = row(name, detail, action, key, tr(ui, "set"));
+            entry.active = speed.is_some_and(|speed| speed > 0.) || rpm.is_some_and(|rpm| rpm > 0.);
             entry.icon = icons::glyph("fan");
             entry.tone = ink;
             controls.push(entry);
         }
+        controls[first_fan..].sort_by_key(|fan| fan.action.is_empty());
         let factor = number(&self.object("gcode_move")["speed_factor"]);
         let mut speed = row(
             factor

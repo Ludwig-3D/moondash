@@ -1,6 +1,7 @@
 import { I18n } from "i18n.slint";
 import { ScrollView, LineEdit } from "std-widgets.slint";
 import { Icons } from "icons.slint";
+import { SpinningFan } from "spinning-fan.slint";
 import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
 
 export struct FilamentSensor {
@@ -80,7 +81,8 @@ export component MotionPanel inherits Rectangle {
                                 Label { text: control.title; font-size: 12px; color: Palette.muted; }
                                 HorizontalLayout {
                                     spacing: 6px;
-                                    Mdi { text: control.icon; color: control.tone; font-size: 17px; width: 17px; }
+                                    if control.active: SpinningFan { ink: control.tone; width: 17px; height: 17px; }
+                                    if !control.active: Mdi { text: control.icon; color: control.tone; font-size: 17px; width: 17px; }
                                     Label { text: control.detail; font-weight: 600; horizontal-stretch: 1; }
                                 }
                             }
@@ -163,40 +165,34 @@ export component MotionPanel inherits Rectangle {
 
         Rectangle {
             width: root.compact ? 82px : 112px;
+            background: Palette.raised;
+            border-radius: 6px;
+            clip: true;
 
-            Rectangle {
-                y: 0px;
-                height: min(parent.height, (root.sensors.length + 2) * 57px);
-                background: Palette.surface;
-                border-radius: 4px;
-                clip: true;
-
-                ScrollView {
-                    VerticalLayout {
-                        alignment: start;
-                        Tile {
-                            label: I18n.text("load");
-                            height: 56px; border-radius: 0px; fill: transparent;
-                            enabled: root.enabled;
-                            clicked => { root.action("load-filament", ""); }
+            ScrollView {
+                VerticalLayout {
+                    alignment: start;
+                    Tile {
+                        label: I18n.text("load");
+                        height: 56px; border-radius: 0px; fill: transparent;
+                        enabled: root.enabled;
+                        clicked => { root.action("load-filament", ""); }
+                    }
+                    Rectangle { height: 1px; background: Palette.divider; }
+                    Tile {
+                        label: I18n.text("unload");
+                        height: 56px; border-radius: 0px; fill: transparent;
+                        enabled: root.enabled;
+                        clicked => { root.action("unload-filament", ""); }
+                    }
+                    Rectangle { height: 1px; background: Palette.divider; }
+                    for sensor in root.sensors: VerticalLayout {
+                        FilamentSensorButton {
+                            sensor: sensor;
+                            enabled: root.sensors-enabled;
+                            clicked => { root.action("toggle-filament-sensor", sensor.key); }
                         }
                         Rectangle { height: 1px; background: Palette.divider; }
-                        Tile {
-                            label: I18n.text("unload");
-                            height: 56px; border-radius: 0px; fill: transparent;
-                            enabled: root.enabled;
-                            clicked => { root.action("unload-filament", ""); }
-                        }
-                        Rectangle { height: 1px; background: Palette.divider; }
-                        for sensor in root.sensors: VerticalLayout {
-                            FilamentSensorButton {
-                                sensor: sensor;
-
-                                enabled: root.sensors-enabled;
-                                clicked => { root.action("toggle-filament-sensor", sensor.key); }
-                            }
-                            Rectangle { height: 1px; background: Palette.divider; }
-                        }
                     }
                 }
             }

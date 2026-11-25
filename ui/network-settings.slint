@@ -1,0 +1,425 @@
+import { ScrollView } from "std-widgets.slint";
+import { I18n } from "i18n.slint";
+import { Icons } from "icons.slint";
+import { Toggle } from "settings.slint";
+import { BusyCircle, Label, Mdi, Palette, Row, Tile } from "widgets.slint";
+
+export struct WifiEntry {
+    ssid: string,
+    signal: string,
+    icon: string,
+    saved: bool,
+    secured: bool,
+}
+
+component IconButton inherits Tile {
+    in property <string> description;
+    in property <bool> busy;
+    in property <color> busy-ink: Palette.accent;
+    fill: transparent;
+    accessible-role: button;
+    accessible-label: root.description;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+
+    if root.busy: BusyCircle { width: 24px; height: 24px; ink: root.busy-ink; }
+}
+
+component NetworkField inherits HorizontalLayout {
+    in property <string> caption;
+    in property <string> value;
+    spacing: 12px;
+    Label { text: root.caption; color: Palette.muted; }
+    Label {
+        text: root.value == "" ? I18n.text("network_none") : root.value;
+        horizontal-stretch: 1;
+        horizontal-alignment: right;
+        font-weight: 600;
+    }
+}
+
+component InterfaceCard inherits Rectangle {
+    in property <string> title;
+    in property <string> icon;
+    in property <[Row]> interfaces;
+    in property <bool> wired;
+    in property <bool> busy;
+    callback action(string, string);
+    height: content.preferred-height;
+    background: Palette.surface;
+    border-radius: 8px;
+    clip: true;
+
+    content := VerticalLayout {
+        padding: 16px;
+        padding-top: 10px;
+        spacing: 8px;
+        Label { text: root.title; height: 30px; font-size: 20px; font-weight: 500; }
+        if root.interfaces.length == 0: Label {
+            height: 40px; text: I18n.text("no_wired_interfaces"); color: Palette.muted;
+        }
+        for iface in root.interfaces: HorizontalLayout {
+            min-height: 48px;
+            spacing: 14px;
+            Mdi { width: 36px; text: root.icon; font-size: 31px; color: iface.active ? Palette.success : Palette.ink; }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Label { text: iface.title; }
+                Label { text: iface.detail; font-size: 13px; color: Palette.muted; }
+            }
+            if root.wired: Toggle {
+                checked: iface.active;
+                description: iface.title;
+                enabled: !root.busy;
+                toggled => { root.action(iface.action, iface.argument); }
+            }
+        }
+    }
+}
+
+export component NetworkPanel inherits Rectangle {
+    in property <bool> wifi-available;
+    in property <bool> wifi-enabled;
+    in property <string> ssid;
+    in property <string> wifi-ip;
+    in property <string> wifi-error;
+    in property <string> operation-error;
+    in property <string> job;
+    in property <[Row]> wired;
+    in property <[Row]> can;
+    in property <image> web-qr;
+    in property <string> web-url;
+    callback action(string, string);
+    private property <length> qr-size: root.width >= 680px ? 160px : min(128px, root.width * 0.2);
+
+    scroll := ScrollView {
+        horizontal-scrollbar-policy: always-off;
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 16px;
+
+            VerticalLayout {
+                width: (scroll.visible-width - 32px) / 2;
+                alignment: start;
+                spacing: 16px;
+
+                Rectangle {
+                    background: Palette.surface;
+                    border-radius: 8px;
+                    height: wifi-card.preferred-height;
+
+                    wifi-card := VerticalLayout {
+                        padding: 16px;
+                        padding-top: 8px;
+                        spacing: 12px;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            Label { text: I18n.text("wi_fi"); font-size: 20px; font-weight: 500; horizontal-stretch: 1; }
+                            IconButton {
+                                width: 40px; height: 40px;
+                                icon: root.job == "wifi-scan" ? "" : Icons.magnify;
+                                busy: root.job == "wifi-scan";
+                                description: I18n.text("scan");
+                                enabled: root.wifi-enabled && root.job == "";
+                                clicked => { root.action("wifi-scan", ""); }
+                            }
+                            IconButton {
+                                width: 40px; height: 40px;
+                                icon: Icons.key-plus;
+                                description: I18n.text("hidden_ssid");
+                                enabled: root.job == "" || root.job == "network";
+                                clicked => { root.action("wifi-hidden", ""); }
+                            }
+                            Toggle {
+                                description: I18n.text("wi_fi");
+                                checked: root.wifi-enabled;
+                                busy: root.job == "wifi-on" || root.job == "wifi-off";
+                                enabled: root.wifi-available && root.job == "";
+                                toggled => { root.action(root.wifi-enabled ? "wifi-off" : "wifi-on", ""); }
+                            }
+                        }
+                        NetworkField { caption: I18n.text("connected_ssid"); value: root.ssid; }
+                        NetworkField { caption: I18n.text("ip_address"); value: root.wifi-ip; }
+                        Tile {
+                            height: 36px;
+                            icon: Icons.content-save;
+                            label: I18n.text("saved_networks").to-uppercase();
+                            fill: Palette.ink.transparentize(88%);
+                            enabled: root.job == "" || root.job == "network";
+                            clicked => { root.action("wifi-saved", ""); }
+                        }
+                        if root.wifi-error != "": Label { text: root.wifi-error; color: Palette.error; wrap: word-wrap; overflow: clip; }
+                        if root.operation-error != "": Label { text: root.operation-error; color: Palette.error; wrap: word-wrap; overflow: clip; }
+                    }
+                }
+
+                InterfaceCard {
+                    title: I18n.text("wired");
+                    icon: Icons.ethernet;
+                    interfaces: root.wired;
+                    wired: true;
+                    busy: root.job != "";
+                    action(name, argument) => { root.action(name, argument); }
+                }
+            }
+
+            VerticalLayout {
+                width: (scroll.visible-width - 32px) / 2;
+                alignment: start;
+                spacing: 16px;
+
+                Rectangle {
+                    height: root.web-url == "" ? 48px : root.qr-size;
+                    border-radius: 8px;
+                    clip: true;
+                    background: Palette.surface;
+
+                    if root.web-url != "": HorizontalLayout {
+                        spacing: 16px;
+                        Image {
+                            width: root.qr-size;
+                            height: self.width;
+                            source: root.web-qr;
+                            image-fit: contain;
+                            accessible-label: I18n.text("web_interface_qr");
+                        }
+                        VerticalLayout {
+                            padding-top: 5px;
+                            padding-right: 8px;
+                            alignment: start;
+                            Label { text: I18n.text("web_interface"); font-size: 20px; height: 30px; }
+                            Label { text: root.web-url; font-size: 14px; color: Palette.muted; wrap: char-wrap; }
+                        }
+                    }
+                    if root.web-url == "" && root.job == "network": BusyCircle {
+                        x: 12px;
+                        width: 24px;
+                        height: 24px;
+                    }
+                    if root.web-url == "" && root.job != "network": Label {
+                        x: 12px;
+                        width: parent.width - 24px;
+                        text: I18n.text("network_none");
+                        color: Palette.info;
+                    }
+                }
+
+                if root.can.length > 0: InterfaceCard {
+                    title: I18n.text("can_bus");
+                    icon: Icons.expansion-card;
+                    interfaces: root.can;
+                }
+            }
+        }
+    }
+}
+
+component WifiDialogField inherits Rectangle {
+    in property <string> caption;
+    in property <string> value;
+    in property <string> icon;
+    in property <bool> secret;
+    in property <bool> enabled;
+    callback edit;
+    height: 48px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: Palette.ink.transparentize(71%);
+    accessible-role: button;
+    accessible-label: root.caption;
+    accessible-action-default => { if root.enabled { root.edit(); } }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        Mdi { text: root.icon; width: 23px; font-size: 22px; color: Palette.muted; }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            if root.value != "": Label { text: root.caption; color: Palette.muted; font-size: 11px; }
+            if root.value == "" || !root.secret: Label {
+                text: root.value == "" ? root.caption : root.value;
+                color: root.value == "" ? Palette.muted : Palette.ink;
+            }
+            if root.value != "" && root.secret: TextInput {
+                text: root.value;
+                read-only: true;
+                enabled: false;
+                input-type: password;
+                vertical-alignment: center;
+                color: Palette.ink;
+            }
+        }
+    }
+    TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.edit(); } }
+}
+
+export component WifiDialogs inherits Rectangle {
+    in property <string> mode;
+    in property <string> job;
+    in property <string> job-target;
+    in property <string> error;
+    in property <string> ssid;
+    in property <string> password;
+    in property <string> password-title;
+    in property <[WifiEntry]> scanned;
+    in property <[WifiEntry]> saved;
+    callback action(string, string);
+    callback edit(string);
+
+    private property <bool> saved-list: root.mode == "saved";
+    private property <bool> list: root.mode == "scan" || root.saved-list;
+    private property <bool> busy: root.job != "" && root.job != "network";
+    private property <[WifiEntry]> networks: root.saved-list ? root.saved : root.scanned;
+    private property <length> form-height: (root.mode == "hidden" ? 215px : 151px) + (root.error == "" ? 0px : 34px);
+    private property <string> title: root.list
+        ? I18n.text(root.saved-list ? "saved_networks" : "available_networks")
+        : root.mode == "hidden" ? I18n.text("hidden_ssid") : root.password-title;
+
+    background: #00000052;
+    TouchArea {}
+
+    card := Rectangle {
+        width: min(root.width - 48px, root.list ? 720px : 460px);
+        height: min(root.height - 48px, root.list
+            ? max(151px, min(640px, 103px + root.networks.length * 54px)) + (root.error == "" ? 0px : 34px)
+            : root.form-height);
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        background: Palette.surface;
+        border-radius: 8px;
+        clip: true;
+
+        VerticalLayout {
+            padding-top: 9px;
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-bottom: 8px;
+            spacing: 8px;
+
+            Label { text: root.title; height: 32px; font-size: 20px; font-weight: 500; }
+            if root.list: ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    alignment: start;
+                    if root.networks.length == 0: Rectangle {
+                        height: 43px;
+                        background: Palette.info.transparentize(88%);
+                        border-radius: 4px;
+                        Label {
+                            x: 12px; width: parent.width - 24px;
+                            text: I18n.text(root.saved-list ? "no_saved_networks" : "no_networks_found");
+                            color: Palette.info;
+                        }
+                    }
+                    for network[index] in root.networks: Rectangle {
+                        height: 54px;
+                        border-radius: 8px;
+                        background: !root.saved-list && select.has-hover
+                            ? Palette.ink.transparentize(89%)
+                            : mod(index, 2) == 1 ? Palette.ink.transparentize(88%) : transparent;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 14px;
+                            Mdi { text: network.icon; width: 24px; font-size: 21px; }
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Label { text: network.ssid; }
+                                HorizontalLayout {
+                                    alignment: start;
+                                    spacing: 4px;
+                                    Label { text: network.signal; color: Palette.muted; font-size: 13px; }
+                                    if !root.saved-list && network.saved: Label {
+                                        text: "· " + I18n.text("saved"); color: Palette.success; font-size: 13px;
+                                    }
+                                }
+                            }
+                            if !root.saved-list && root.job == "wifi-connect" && root.job-target == network.ssid:
+                                BusyCircle { width: 24px; height: 24px; }
+                            if !root.saved-list && !(root.job == "wifi-connect" && root.job-target == network.ssid) && network.secured:
+                                Mdi { text: Icons.lock; width: 24px; font-size: 18px; }
+                            if root.saved-list: HorizontalLayout {
+                                spacing: 4px;
+                                IconButton {
+                                    width: 40px;
+                                    busy: root.job == "wifi-connect" && root.job-target == network.ssid;
+                                    icon: self.busy ? "" : Icons.wifi;
+                                    enabled: !root.busy;
+                                    description: I18n.text("connect");
+                                    clicked => { root.action("wifi-connect", network.ssid); }
+                                }
+                                IconButton {
+                                    width: 40px;
+                                    busy: root.job == "wifi-forget" && root.job-target == network.ssid;
+                                    icon: self.busy ? "" : Icons.delete;
+                                    ink: Palette.error;
+                                    busy-ink: Palette.error;
+                                    enabled: !root.busy;
+                                    description: I18n.text("forget");
+                                    clicked => { root.action("wifi-forget", network.ssid); }
+                                }
+                            }
+                        }
+                        select := TouchArea {
+                            visible: !root.saved-list;
+                            enabled: !root.busy;
+                            mouse-cursor: pointer;
+                            accessible-role: button;
+                            accessible-label: network.ssid;
+                            accessible-action-default => {
+                                if !root.busy { root.action("wifi-connect", network.ssid); }
+                            }
+                            clicked => { root.action("wifi-connect", network.ssid); }
+                        }
+                    }
+                }
+            }
+            if !root.list: VerticalLayout {
+                spacing: 16px;
+                alignment: start;
+                if root.mode == "hidden": WifiDialogField {
+                    caption: I18n.text("ssid");
+                    value: root.ssid;
+                    icon: Icons.wifi;
+                    enabled: !root.busy;
+                    edit => { root.edit("wifi-ssid"); }
+                }
+                WifiDialogField {
+                    caption: I18n.text("password");
+                    value: root.password;
+                    secret: true;
+                    icon: Icons.lock-outline;
+                    enabled: !root.busy;
+                    edit => { root.edit("wifi-password"); }
+                }
+            }
+            if root.error != "": Label { height: 26px; text: root.error; color: Palette.error; wrap: word-wrap; }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+                height: 36px;
+                Tile {
+                    label: I18n.text(root.list ? "close" : "cancel").to-uppercase();
+                    width: 106px;
+                    fill: transparent;
+                    enabled: !root.busy;
+                    clicked => { root.action("wifi-close", ""); }
+                }
+                if !root.list: Rectangle {
+                    width: 112px;
+                    Tile {
+                        label: root.busy ? "" : I18n.text("connect").to-uppercase();
+                        fill: Palette.accent.transparentize(88%);
+                        ink: Palette.accent;
+                        enabled: !root.busy && root.ssid != "" && (root.mode == "hidden" || root.password != "");
+                        clicked => { root.action("wifi-submit", ""); }
+                    }
+                    if root.busy: BusyCircle { width: 24px; height: 24px; }
+                }
+            }
+        }
+    }
+}

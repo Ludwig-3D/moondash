@@ -1,9 +1,11 @@
 import { ScrollView } from "std-widgets.slint";
-import { Palette, Row, Label, Tile } from "widgets.slint";
+import { BusyCircle, Palette, Row, Label, Tile } from "widgets.slint";
 
-component Toggle inherits Rectangle {
+export component Toggle inherits Rectangle {
     in property <bool> checked;
     in property <string> description;
+    in property <bool> enabled: true;
+    in property <bool> busy;
     callback toggled;
     width: 44px;
     height: 30px;
@@ -11,7 +13,7 @@ component Toggle inherits Rectangle {
     accessible-label: description;
     accessible-checkable: true;
     accessible-checked: checked;
-    accessible-action-default => { root.toggled(); }
+    accessible-action-default => { if root.enabled { root.toggled(); } }
 
     Rectangle {
         width: 42px;
@@ -23,10 +25,11 @@ component Toggle inherits Rectangle {
             width: 15px;
             height: 15px;
             border-radius: 8px;
-            background: root.checked ? Palette.accent : Palette.muted;
+            background: root.busy ? transparent : root.checked ? Palette.accent : Palette.muted;
+            if root.busy: BusyCircle { width: 15px; height: 15px; }
         }
     }
-    TouchArea { mouse-cursor: pointer; clicked => { root.toggled(); } }
+    TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.toggled(); } }
 }
 
 export component ConfigForm inherits Rectangle {

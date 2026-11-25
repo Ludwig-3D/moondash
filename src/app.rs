@@ -2,7 +2,7 @@ use crate::icons;
 use crate::print_files::{self, array};
 use crate::{
     ColorSwatch, FilamentSensor, I18n, Lane, Moondash, Notification, Palette, PrintTool, Row,
-    config, input_idle, locale,
+    WifiEntry, config, input_idle, locale,
     moonraker::{self, Call, Event},
     network, theme, version, wayland_power,
 };
@@ -240,6 +240,17 @@ pub fn start(
         let Some(ui) = weak.upgrade() else {
             return;
         };
+        match target.as_str() {
+            "wifi-ssid" => {
+                ui.set_network_ssid(without_last(ui.get_network_ssid()).into());
+                return;
+            }
+            "wifi-password" => {
+                ui.set_network_password(without_last(ui.get_network_password()).into());
+                return;
+            }
+            _ => {}
+        }
         let mut state = shared.borrow_mut();
         match target.as_str() {
             "filter" => state.filter_files(&ui, &without_last(ui.get_filter())),
@@ -397,7 +408,7 @@ impl State {
                 self.request_moonraker_warnings();
             }
             match (self.page.as_str(), self.tab.as_str()) {
-                ("settings", "network") => self.network_action("network", "", ""),
+                ("settings", "network") => self.network_action(ui, "network", "", ""),
                 ("settings", "host") if self.online => {
                     self.call(ui, "machine.proc_stats", json!({}), "host-stats")
                 }
@@ -460,7 +471,7 @@ impl State {
             ("home", _) | ("tune", "queue") if self.online => {
                 self.call(ui, "server.job_queue.status", json!({}), "queue")
             }
-            ("settings", "network") => self.network_action("network", "", ""),
+            ("settings", "network") => self.network_action(ui, "network", "", ""),
             ("settings", "updates") if self.online => self.call(
                 ui,
                 "machine.update.status",
@@ -1815,110 +1826,7 @@ impl State {
                     rows.push(row(tr(ui, "add_shortcut"), "", "add-shortcut", "", "+"));
                 }
             }
-            ("settings", "network") => {
-                let mut right = Vec::new();
-                let ip = self.network["ip"].as_str().unwrap_or("—");
-                rows.push(row(
-                    tr(ui, "ip_address"),
-                    ip,
-                    "refresh",
-                    "",
-                    tr(ui, "refresh"),
-                ));
-                if self.network["status"]["wifiConnected"].as_bool() == Some(true)
-                    && let Some(quality) = self.network["status"]["quality"].as_str()
-                {
-                    rows.push(info(tr(ui, "wi_fi_signal"), quality));
-                }
-                let wifi = &self.network["wifi"];
-                if let Some(enabled) = wifi["enabled"].as_bool() {
-                    rows.push(alternate(
-                        row(
-                            tr(ui, "wi_fi"),
-                            wifi["connectedSsid"].as_str().unwrap_or(""),
-                            if enabled { "wifi-off" } else { "wifi-on" },
-                            "",
-                            if enabled {
-                                tr(ui, "disable")
-                            } else {
-                                tr(ui, "enable")
-                            },
-                        ),
-                        "wifi-scan",
-                        tr(ui, "scan"),
-                    ));
-                    if enabled {
-                        rows.push(row(
-                            tr(ui, "hidden_network"),
-                            "",
-                            "wifi-hidden",
-                            "",
-                            tr(ui, "connect"),
-                        ));
-                    }
-                }
-                if let Some(error) = self.network["wifi-error"].as_str() {
-                    rows.push(info(tr(ui, "wi_fi"), error));
-                }
-                for item in array(&wifi["scannedNetworks"]) {
-                    let Some(ssid) = item["ssid"].as_str() else {
-                        continue;
-                    };
-                    let signal = item["signalPercent"]
-                        .as_u64()
-                        .map(|signal| format!("{signal}%"))
-                        .unwrap_or_default();
-                    rows.push(row(ssid, signal, "wifi-connect", ssid, tr(ui, "connect")));
-                }
-                for item in array(&wifi["savedNetworks"]) {
-                    let Some(ssid) = item["ssid"].as_str() else {
-                        continue;
-                    };
-                    rows.push(alternate(
-                        row(
-                            ssid,
-                            tr(ui, "saved_wi_fi_network"),
-                            "wifi-connect",
-                            ssid,
-                            tr(ui, "connect"),
-                        ),
-                        "wifi-forget",
-                        tr(ui, "forget"),
-                    ));
-                }
-                for item in array(&self.network["wired"]["interfaces"]) {
-                    let Some(name) = item["interfaceName"].as_str() else {
-                        continue;
-                    };
-                    let connected = item["connected"].as_bool() == Some(true);
-                    rows.push(row(
-                        name,
-                        item["ip"].as_str().unwrap_or(tr(ui, "ethernet")),
-                        if connected { "wired-off" } else { "wired-on" },
-                        name,
-                        if connected {
-                            tr(ui, "disable")
-                        } else {
-                            tr(ui, "enable")
-                        },
-                    ));
-                }
-                for item in array(&self.network["can"]["interfaces"]) {
-                    let Some(name) = item["interfaceName"].as_str() else {
-                        continue;
-                    };
-                    right.push(info(
-                        name,
-                        format!(
-                            "CAN • {} bit/s • RX {} • TX {}",
-                            item["bitrate"], item["rxPackets"], item["txPackets"]
-                        ),
-                    ));
-                }
-                set_model(&ui.get_trailing_rows(), &right, |model| {
-                    ui.set_trailing_rows(model)
-                });
-            }
+            ("settings", "network") => self.update_network_models(ui),
             ("settings", "tools") => match self.tool_view.as_str() {
                 "mesh" => {
                     rows.push(row(
@@ -2115,9 +2023,6 @@ impl State {
                 continue;
             }
             entry.icon = icons::glyph(match entry.action.as_str() {
-                "refresh" if self.tab == "network" => "lan",
-                "wifi-on" | "wifi-off" | "wifi-connect" | "wifi-hidden" => "wifi",
-                "wired-on" | "wired-off" => "ethernet",
                 "webcam" => "webcam",
                 "mesh-info" | "mesh-calibrate" => "grid",
                 "pid" => "tune-variant",
@@ -3114,46 +3019,78 @@ impl State {
                 action,
                 argument,
             ),
-            "wifi-on" | "wifi-off" | "wifi-scan" => self.network_action(action, argument, ""),
-            "wifi-connect" => {
-                let network = &self.network["wifi"];
-                let saved = array(&network["savedNetworks"])
+            "wifi-on" | "wifi-off" | "wifi-scan" | "wifi-forget" | "wired-on" | "wired-off" => {
+                self.network_action(ui, action, argument, "");
+            }
+            "wifi-saved" | "wifi-hidden"
+                if matches!(ui.get_network_job().as_str(), "" | "network") =>
+            {
+                ui.set_network_error("".into());
+                ui.set_network_ssid("".into());
+                ui.set_network_password("".into());
+                ui.set_network_dialog(
+                    if action == "wifi-saved" {
+                        "saved"
+                    } else {
+                        "hidden"
+                    }
+                    .into(),
+                );
+            }
+            "wifi-connect" if ui.get_network_job().is_empty() => {
+                let wifi = &self.network["wifi"];
+                let saved = array(&wifi["savedNetworks"])
                     .iter()
                     .any(|item| item["ssid"].as_str() == Some(argument));
-                let secured = array(&network["scannedNetworks"])
+                let secured = array(&wifi["scannedNetworks"])
                     .iter()
                     .find(|item| item["ssid"].as_str() == Some(argument))
                     .is_some_and(|item| item["secured"].as_bool() == Some(true));
                 if secured && !saved {
-                    self.dialog(
-                        ui,
-                        tr(ui, "wi_fi_password"),
-                        argument,
-                        "text",
-                        action,
-                        argument,
+                    ui.set_network_error("".into());
+                    ui.set_network_ssid(argument.into());
+                    ui.set_network_password("".into());
+                    ui.set_network_password_title(
+                        tr(ui, "connect_to_ssid").replace("{ssid}", argument).into(),
                     );
-                    ui.set_dialog_secret(true);
+                    ui.set_network_dialog("password".into());
                 } else {
-                    self.network_action(action, argument, "");
+                    self.network_action(ui, action, argument, "");
                 }
             }
-            "wifi-hidden" => self.dialog(
-                ui,
-                tr(ui, "hidden_wi_fi_network"),
-                tr(ui, "network_name_ssid"),
-                "text",
-                action,
-                "",
-            ),
-            "wifi-forget" | "wired-on" | "wired-off" => self.dialog(
-                ui,
-                tr(ui, "change_network_settings_question"),
-                argument,
-                "confirm",
-                action,
-                argument,
-            ),
+            "wifi-submit" => {
+                let ssid = ui.get_network_ssid();
+                let password = ui.get_network_password();
+                match ui.get_network_dialog().as_str() {
+                    "hidden" if !ssid.trim().is_empty() => {
+                        self.network_action(
+                            ui,
+                            "wifi-hidden-password",
+                            ssid.trim(),
+                            password.as_str(),
+                        );
+                    }
+                    "password" if !ssid.is_empty() && !password.is_empty() => {
+                        self.network_action(ui, "wifi-connect", ssid.as_str(), password.as_str());
+                    }
+                    _ => {}
+                }
+            }
+            "wifi-close" => {
+                let job = ui.get_network_job();
+                if job.is_empty() || job == "network" {
+                    let back = if ui.get_network_dialog() == "password" {
+                        "scan"
+                    } else {
+                        ""
+                    };
+                    ui.set_network_dialog(back.into());
+                    ui.set_network_error("".into());
+                    ui.set_network_password("".into());
+                    ui.set_network_ssid("".into());
+                    ui.set_keyboard_target("".into());
+                }
+            }
             "reload-config" => self.load_config(ui, true),
             "save-config" => self.store_config(ui, argument),
             "sleep" => {
@@ -3348,24 +3285,6 @@ impl State {
                 "update-finished",
             ),
             "update-all" => self.call(ui, "machine.update.full", json!({}), "update-finished"),
-            "wifi-hidden" => {
-                if value.is_empty() {
-                    return;
-                }
-                self.dialog(
-                    ui,
-                    tr(ui, "hidden_network_password"),
-                    tr(ui, "leave_blank_for_an_open_network"),
-                    "text",
-                    "wifi-hidden-password",
-                    value,
-                );
-                ui.set_dialog_secret(true);
-                return;
-            }
-            "wifi-hidden-password" | "wifi-connect" | "wifi-forget" | "wired-on" | "wired-off" => {
-                self.network_action(&action, &argument, input);
-            }
             _ => {}
         }
         ui.set_dialog_mode("".into());
@@ -3427,6 +3346,11 @@ impl State {
     }
 
     fn reply(&mut self, ui: &Moondash, tag: &str, reply: Result<Value, String>) {
+        if let Some(action) = tag.strip_prefix("network:") {
+            self.network_reply(ui, action, reply);
+            return;
+        }
+
         match tag {
             "notification-dismissals" => {
                 if let Ok(result) = reply
@@ -3685,24 +3609,6 @@ impl State {
                 self.queue = result;
                 self.update_jobs(ui);
             }
-            "network" => {
-                if self.network["ip"] != result["ip"]
-                    && let Some(ip) = result["ip"].as_str()
-                {
-                    let host = if ip.contains(':') {
-                        format!("[{ip}]")
-                    } else {
-                        ip.to_string()
-                    };
-                    let url = format!("http://{host}");
-                    ui.set_web_qr(web_qr(&url));
-                    ui.set_web_url(url.into());
-                } else if result["ip"].is_null() {
-                    ui.set_web_qr(Image::default());
-                    ui.set_web_url("".into());
-                }
-                self.network = result;
-            }
             "updates" => self.set_updates(ui, result),
             "host-info" => {
                 if self.host.is_null() {
@@ -3771,7 +3677,7 @@ impl State {
             | "shutdown" | "reboot" => {}
             _ => {}
         }
-        if matches!(tag, "queue" | "network" | "host-info" | "host-stats") {
+        if matches!(tag, "queue" | "host-info" | "host-stats") {
             self.render_rows(ui);
         }
     }
@@ -3854,11 +3760,179 @@ impl State {
         }
     }
 
-    fn network_action(&self, action: &str, argument: &str, password: &str) {
+    fn update_network_models(&self, ui: &Moondash) {
+        let wifi = &self.network["wifi"];
+        ui.set_network_wifi_available(wifi.is_object());
+        ui.set_network_wifi_enabled(wifi["enabled"].as_bool().unwrap_or_default());
+        ui.set_network_connected_ssid(
+            wifi["connectedSsid"]
+                .as_str()
+                .or_else(|| self.network["status"]["ssid"].as_str())
+                .unwrap_or_default()
+                .into(),
+        );
+        ui.set_network_wifi_ip(wifi["connectedIp"].as_str().unwrap_or_default().into());
+        ui.set_network_wifi_error(
+            self.network["wifi-error"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+        );
+
+        let wifi_entries = |field| {
+            array(&wifi[field])
+                .iter()
+                .filter_map(|network| {
+                    let signal = network["signalPercent"].as_u64();
+                    let icon = match signal {
+                        Some(80..) => "wifi-strength-4",
+                        Some(60..=79) => "wifi-strength-3",
+                        Some(40..=59) => "wifi-strength-2",
+                        Some(20..=39) => "wifi-strength-1",
+                        _ => "wifi-strength-outline",
+                    };
+                    Some(WifiEntry {
+                        ssid: network["ssid"].as_str()?.into(),
+                        signal: signal
+                            .map_or_else(
+                                || tr(ui, "network_none").to_owned(),
+                                |signal| format!("{signal}%"),
+                            )
+                            .into(),
+                        icon: icons::glyph(icon),
+                        saved: network["saved"].as_bool().unwrap_or_default(),
+                        secured: network["secured"].as_bool().unwrap_or_default(),
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        set_model(
+            &ui.get_network_scanned(),
+            &wifi_entries("scannedNetworks"),
+            |model| ui.set_network_scanned(model),
+        );
+        set_model(
+            &ui.get_network_saved(),
+            &wifi_entries("savedNetworks"),
+            |model| ui.set_network_saved(model),
+        );
+
+        let wired: Vec<_> = array(&self.network["wired"]["interfaces"])
+            .iter()
+            .filter_map(|interface| {
+                let name = interface["interfaceName"].as_str()?;
+                let active = interface["connected"].as_bool().unwrap_or_default();
+                Some(Row {
+                    active,
+                    ..row(
+                        name,
+                        interface["ip"].as_str().unwrap_or("--"),
+                        if active { "wired-off" } else { "wired-on" },
+                        name,
+                        "",
+                    )
+                })
+            })
+            .collect();
+        set_model(&ui.get_network_wired(), &wired, |model| {
+            ui.set_network_wired(model)
+        });
+
+        let can: Vec<_> = array(&self.network["can"]["interfaces"])
+            .iter()
+            .filter_map(|interface| {
+                let name = interface["interfaceName"].as_str()?;
+                let mut detail = Vec::new();
+                if let Some(bitrate) = interface["bitrate"].as_u64() {
+                    detail.push(if bitrate < 1_000 {
+                        format!("{bitrate} bit/s")
+                    } else {
+                        format!("{:.1} kbit/s", bitrate as f64 / 1_000.)
+                    });
+                }
+                let rx = number(&interface["rxBytesPerSecond"]);
+                let tx = number(&interface["txBytesPerSecond"]);
+                if rx.is_some() || tx.is_some() {
+                    let rate = |bytes: Option<f64>| {
+                        bytes.map_or_else(
+                            || "--".to_owned(),
+                            |value| format!("{}/s", display_size(value as u64)),
+                        )
+                    };
+                    detail.push(format!("RX {} / TX {}", rate(rx), rate(tx)));
+                }
+                Some(Row {
+                    active: interface["connected"].as_bool().unwrap_or_default(),
+                    ..info(
+                        name,
+                        if detail.is_empty() {
+                            "--".to_owned()
+                        } else {
+                            detail.join(" · ")
+                        },
+                    )
+                })
+            })
+            .collect();
+        set_model(&ui.get_network_can(), &can, |model| {
+            ui.set_network_can(model)
+        });
+    }
+
+    fn network_reply(&mut self, ui: &Moondash, action: &str, reply: Result<Value, String>) {
+        ui.set_network_job("".into());
+        ui.set_network_job_target("".into());
+        let result = match reply {
+            Ok(result) => result,
+            Err(error) => {
+                ui.set_network_error(error.into());
+                return;
+            }
+        };
+        if self.network["ip"] != result["ip"] {
+            let url = result["ip"].as_str().map(|ip| {
+                if ip.contains(':') {
+                    format!("http://[{ip}]")
+                } else {
+                    format!("http://{ip}")
+                }
+            });
+            ui.set_web_qr(url.as_deref().map_or_else(Image::default, web_qr));
+            ui.set_web_url(url.unwrap_or_default().into());
+        }
+        self.network = result;
+        self.update_network_models(ui);
+
+        match action {
+            "wifi-scan" if self.page == "settings" && self.tab == "network" => {
+                ui.set_network_dialog("scan".into());
+            }
+            "wifi-connect" | "wifi-hidden-password" => {
+                ui.set_network_dialog("".into());
+                ui.set_network_password("".into());
+                ui.set_network_ssid("".into());
+            }
+            _ => {}
+        }
+    }
+
+    fn network_action(&self, ui: &Moondash, action: &str, argument: &str, password: &str) {
+        if !ui.get_network_job().is_empty()
+            || (action == "network" && !ui.get_network_dialog().is_empty())
+        {
+            return;
+        }
+        if action != "network" {
+            ui.set_network_error("".into());
+        }
+        ui.set_network_job(action.into());
+        ui.set_network_job_target(argument.into());
         let (action, argument) = (action.to_owned(), argument.to_owned());
         let password = (!password.is_empty()).then(|| password.to_owned());
         let tx = self.background.clone();
         self.runtime.spawn(async move {
+            let tag = format!("network:{action}");
+            let mut scan = None;
             let result = match action.as_str() {
                 "network" => Ok(()),
                 "wifi-on" | "wifi-off" => network::set_wifi_enabled(action == "wifi-on").await,
@@ -3866,18 +3940,23 @@ impl State {
                 "wifi-connect" => network::connect_to_wifi(argument, password).await,
                 "wifi-hidden-password" => network::connect_hidden_wifi(argument, password).await,
                 "wifi-forget" => network::forget_saved_wifi(argument).await,
-                "wifi-scan" => network::scan_wifi_networks().await.map(|_| ()),
+                "wifi-scan" => network::scan_wifi_networks().await.map(|networks| { scan = Some(networks); }),
                 _ => return,
             };
             if let Err(error) = result {
-                let _ = tx.send(Background::Reply("network".into(), Err(error)));
+                let _ = tx.send(Background::Reply(tag, Err(error)));
                 return;
             }
             let (ip, wifi, wired, can, status) = tokio::join!(network::get_primary_ip_address(), network::get_wifi_settings(),
                 network::get_wired_settings(), network::get_canbus_settings(), network::get_network_status());
             let wifi_error = wifi.as_ref().err().cloned();
-            let data = json!({"ip": ip.ok(), "wifi": wifi.ok(), "wifi-error": wifi_error, "wired": wired.ok(), "can": can.ok(), "status": status.ok()});
-            let _ = tx.send(Background::Reply("network".into(), Ok(data)));
+            let mut data = json!({"ip": ip.ok(), "wifi": wifi.ok(), "wifi-error": wifi_error, "wired": wired.ok(), "can": can.ok(), "status": status.ok()});
+            if let Some(scan) = scan
+                && data["wifi"].is_object()
+            {
+                data["wifi"]["scannedNetworks"] = json!(scan);
+            }
+            let _ = tx.send(Background::Reply(tag, Ok(data)));
         });
     }
 }

@@ -13,8 +13,9 @@ import { StartupScreen } from "startup-screen.slint";
 import { Keyboard } from "keyboard.slint";
 import { PrintDialog, FolderPicker, PrintTool } from "print-dialogs.slint";
 import { ConfigForm } from "settings.slint";
+import { NetworkPanel, WifiDialogs, WifiEntry } from "network-settings.slint";
 import { ColorPicker, ColorSwatch } from "color-picker.slint";
-export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor }
+export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry }
 
 component RowList inherits ScrollView {
     in property <[Row]> rows;
@@ -104,6 +105,22 @@ export component Moondash inherits Window {
     in property <[Row]> trailing-rows;
     in property <image> web-qr;
     in property <string> web-url;
+    in property <bool> network-wifi-available;
+    in property <bool> network-wifi-enabled;
+    in property <string> network-connected-ssid;
+    in property <string> network-wifi-ip;
+    in property <string> network-wifi-error;
+    in property <[Row]> network-wired;
+    in property <[Row]> network-can;
+    in property <[WifiEntry]> network-scanned;
+    in property <[WifiEntry]> network-saved;
+    in property <string> network-job;
+    in property <string> network-job-target;
+    in property <string> network-error;
+    in property <string> network-dialog;
+    in property <string> network-password-title;
+    in-out property <string> network-ssid;
+    in-out property <string> network-password;
     in property <int> file-sort;
     in property <int> file-columns-config;
     in property <int> file-rows-config;
@@ -367,26 +384,20 @@ export component Moondash inherits Window {
                 }
             }
 
-            if root.page == "settings" && root.tab == "network": HorizontalLayout {
+            if root.page == "settings" && root.tab == "network": NetworkPanel {
                 vertical-stretch: 1;
-                padding: 8px;
-                spacing: 14px;
-                RowList { horizontal-stretch: 1; rows: root.rows; action(name, argument) => { root.action(name, argument); } }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 8px;
-                    HorizontalLayout {
-                        padding: 8px;
-                        spacing: 10px;
-                        if root.web-qr.width > 0: Image { source: root.web-qr; width: 100px; height: 100px; image-fit: contain; }
-                        VerticalLayout {
-                            alignment: center;
-                            Label { text: I18n.text("web_panel"); font-weight: 600; }
-                            Label { text: root.web-url; color: Palette.muted; }
-                        }
-                    }
-                    RowList { vertical-stretch: 1; rows: root.trailing-rows; action(name, argument) => { root.action(name, argument); } }
-                }
+                wifi-available: root.network-wifi-available;
+                wifi-enabled: root.network-wifi-enabled;
+                ssid: root.network-connected-ssid;
+                wifi-ip: root.network-wifi-ip;
+                wifi-error: root.network-wifi-error;
+                operation-error: root.network-dialog == "" ? root.network-error : "";
+                job: root.network-job;
+                wired: root.network-wired;
+                can: root.network-can;
+                web-qr: root.web-qr;
+                web-url: root.web-url;
+                action(name, argument) => { root.action(name, argument); }
             }
 
             if root.page == "debug": VerticalLayout {
@@ -743,6 +754,37 @@ export component Moondash inherits Window {
                 clicked => { root.file-feedback = ""; }
             }
         }
+    }
+
+    if root.network-dialog != "": WifiDialogs {
+        mode: root.network-dialog;
+        job: root.network-job;
+        job-target: root.network-job-target;
+        error: root.network-error;
+        ssid: root.network-ssid;
+        password: root.network-password;
+        password-title: root.network-password-title;
+        scanned: root.network-scanned;
+        saved: root.network-saved;
+        action(name, argument) => { root.action(name, argument); }
+        edit(field) => { root.keyboard-target = field; }
+    }
+
+    if root.keyboard-target == "wifi-ssid" && root.network-dialog == "hidden": Keyboard {
+        title: I18n.text("ssid");
+        value <=> root.network-ssid;
+        erase => { root.keyboard-erase("wifi-ssid"); }
+        accepted => { root.keyboard-target = "wifi-password"; }
+        dismissed => { root.close-keyboard(); }
+    }
+
+    if root.keyboard-target == "wifi-password" && (root.network-dialog == "hidden" || root.network-dialog == "password"): Keyboard {
+        secret: true;
+        title: I18n.text("password");
+        value <=> root.network-password;
+        erase => { root.keyboard-erase("wifi-password"); }
+        accepted => { root.close-keyboard(); }
+        dismissed => { root.close-keyboard(); }
     }
 
     if root.keyboard-target == "filter": Keyboard {

@@ -43,6 +43,55 @@ export component Mdi inherits Text {
     vertical-alignment: center;
 }
 
+export component BusyCircle inherits Rectangle {
+    in property <color> ink: Palette.accent;
+    private property <length> line-width: root.width / 11;
+    private property <angle> rotation: 360deg * (mod(animation-tick(), 1200ms) / 1200ms);
+    private property <angle> sweep: 145deg - 95deg * cos(360deg * (mod(animation-tick(), 1500ms) / 1500ms));
+    private property <angle> start: root.rotation - root.sweep / 2;
+    private property <angle> end: root.rotation + root.sweep / 2;
+
+    accessible-role: progress-indicator;
+
+    Rectangle {
+        width: root.width * 0.75 + root.line-width;
+        height: self.width;
+        border-radius: self.width / 2;
+        border-width: root.line-width;
+        border-color: root.ink.transparentize(80%);
+    }
+
+    Path {
+        viewbox-width: 24;
+        viewbox-height: 24;
+        stroke: root.ink;
+        stroke-width: root.line-width;
+
+        MoveTo {
+            x: 12 + 9 * cos(root.start);
+            y: 12 + 9 * sin(root.start);
+        }
+        ArcTo {
+            x: 12 + 9 * cos(root.end);
+            y: 12 + 9 * sin(root.end);
+            radius-x: 9;
+            radius-y: 9;
+            sweep: true;
+            large-arc: root.sweep > 180deg;
+        }
+    }
+
+    for cap in 2: Rectangle {
+        private property <angle> endpoint: cap == 0 ? root.start : root.end;
+        width: root.line-width;
+        height: self.width;
+        x: root.width * (0.5 + 0.375 * cos(self.endpoint)) - self.width / 2;
+        y: root.height * (0.5 + 0.375 * sin(self.endpoint)) - self.height / 2;
+        border-radius: self.width / 2;
+        background: root.ink;
+    }
+}
+
 export component Tile inherits Rectangle {
     in property <string> label;
     in property <string> icon;

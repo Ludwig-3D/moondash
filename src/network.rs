@@ -164,8 +164,7 @@ fn is_wired_device(device: &Device) -> bool {
 
 #[cfg(target_os = "linux")]
 fn is_active_device(device: &Device) -> bool {
-    let state = format!("{}", device.state).to_lowercase();
-    state.contains("activated") || state.contains("connected")
+    device.state == nmrs::DeviceState::Activated
 }
 
 #[cfg(target_os = "linux")]

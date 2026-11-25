@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { Spinner } from "std-widgets.slint";
 import { NumberPad } from "number-pad.slint";
 import { Label, Mdi, Palette, Tile } from "widgets.slint";
@@ -34,7 +35,7 @@ component TemperatureReadout inherits Rectangle {
 }
 
 export component TemperatureDialog inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> busy;
     in property <bool> ready;
     in property <string> title;
@@ -85,18 +86,18 @@ export component TemperatureDialog inherits Rectangle {
                 height: self.preferred-height;
                 spacing: root.compact ? 8px : 12px;
                 TemperatureReadout {
-                    caption: root.german ? "Ziel" : "Target";
+                    caption: I18n.text("target");
                     value: root.setpoint + "°C";
                     setpoint: true;
                     compact: root.compact;
                 }
                 TemperatureReadout {
-                    caption: root.german ? "Aktuell" : "Current";
+                    caption: I18n.text("current");
                     value: root.current;
                     compact: root.compact;
                 }
                 TemperatureReadout {
-                    caption: "Max";
+                    caption: I18n.text("maximum");
                     value: root.maximum + "°C";
                     compact: root.compact;
                 }
@@ -106,7 +107,7 @@ export component TemperatureDialog inherits Rectangle {
                 x: readings.width + root.gap; y: 0px;
                 width: body.width - self.x;
                 height: 4 * root.key-height + 24px;
-                german: root.german;
+
                 enabled: !root.busy;
                 digit(digit) => { root.entry = min((root.entry + digit).to-float(), root.maximum); }
                 clear => { root.entry = ""; }
@@ -130,21 +131,21 @@ export component TemperatureDialog inherits Rectangle {
             alignment: end;
 
             Tile {
-                width: root.german ? 99px : 78px; height: 36px;
+                width: I18n.german ? 99px : 78px; height: 36px;
                 fill: transparent;
                 enabled: !root.busy;
-                label: root.german ? "Abbrechen" : "Cancel";
+                label: I18n.text("cancel");
                 clicked => { root.close(); }
             }
             Rectangle {
-                width: root.german ? 82px : 64px;
+                width: I18n.german ? 82px : 64px;
                 height: 36px;
 
                 Tile {
                     fill: Palette.accent.transparentize(86%);
                     ink: Palette.accent;
                     enabled: root.ready && !root.busy;
-                    label: root.busy ? "" : root.german ? "Setzen" : "Set";
+                    label: root.busy ? "" : I18n.text("set");
                     clicked => { root.save("" + clamp(root.setpoint, 0, root.maximum)); }
                 }
                 if root.busy: Spinner { width: 20px; height: 20px; }

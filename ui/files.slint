@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { Spinner, ScrollView } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
@@ -93,7 +94,7 @@ component FileCard inherits Rectangle {
 }
 
 export component FileBrowser inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> loading;
     in property <[Row]> entries;
     in property <[Row]> crumbs;
@@ -147,7 +148,7 @@ export component FileBrowser inherits Rectangle {
                         Mdi { text: Icons.filter-outline; width: 24px; color: Palette.muted; }
                         Label {
                             horizontal-stretch: 1;
-                            text: root.filter == "" ? "Filter" : root.filter;
+                            text: root.filter == "" ? I18n.text("filter") : root.filter;
                             color: root.filter == "" ? Palette.muted : Palette.ink;
                         }
                     }
@@ -179,12 +180,12 @@ export component FileBrowser inherits Rectangle {
 
             if root.loading: Spinner { width: 40px; height: 40px; }
             if !root.loading && root.entries.length == 0: Rectangle {
-                width: root.german ? 250px : 215px;
+                width: I18n.german ? 250px : 215px;
                 height: 50px;
                 border-radius: 5px;
                 background: Palette.info.transparentize(86%);
                 Label {
-                    text: root.german ? "Keine Druckdateien gefunden" : "No print files found";
+                    text: I18n.text("no_print_files_found");
                     horizontal-alignment: center;
                 }
             }

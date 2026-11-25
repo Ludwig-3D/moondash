@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Tile } from "widgets.slint";
@@ -14,7 +15,7 @@ export struct Lane {
 }
 
 export component AfcPanel inherits HorizontalLayout {
-    in property <bool> german;
+
     in property <bool> enabled;
     in property <[Lane]> lanes;
     in property <[Row]> units;
@@ -29,7 +30,7 @@ export component AfcPanel inherits HorizontalLayout {
         spacing: 12px;
 
         if root.lanes.length == 0: Label {
-            text: root.german ? "Keine Einheiten vorhanden!" : "No units present!";
+            text: I18n.text("no_units_present");
             horizontal-alignment: center;
             color: Palette.muted;
         }

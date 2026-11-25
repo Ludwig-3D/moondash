@@ -6,7 +6,3 @@
 .DS_Store
 config.cfg
 moondash_logo.png
-
-# Local artifacts from older checkouts
-/src-tauri/target/
-/src-tauri/gen/

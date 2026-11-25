@@ -1,8 +1,8 @@
 use crate::icons;
 use crate::print_files::{self, array};
 use crate::{
-    ColorSwatch, FilamentSensor, Lane, Moondash, Notification, Palette, PrintTool, Row, config,
-    input_idle,
+    ColorSwatch, FilamentSensor, I18n, Lane, Moondash, Notification, Palette, PrintTool, Row,
+    config, input_idle, locale,
     moonraker::{self, Call, Event},
     network, theme, version, wayland_power,
 };
@@ -158,6 +158,8 @@ pub fn start(
         webcam_image_pending: false,
     }));
 
+    ui.global::<I18n>()
+        .on_lookup(|key, german| locale::text(key.as_str(), german).into());
     state.borrow_mut().load_config(ui, true);
     runtime.spawn(moonraker::run(endpoint_rx, calls_rx, events_tx));
     if std::env::var_os("WAYLAND_DISPLAY").is_some() {
@@ -349,7 +351,9 @@ impl State {
         palette.set_dark(dark);
         let [primary, secondary] = theme::theme_defaults(dark);
         palette.set_accent(config_color(&self.config["styling"]["primary"], primary));
-        ui.set_german(self.config["system"]["language"].as_str() == Some("de"));
+        let german = self.config["system"]["language"].as_str() == Some("de");
+        ui.global::<I18n>()
+            .set_language(if german { "de" } else { "en" }.into());
         ui.set_debug(self.config["dev"]["debug"].as_bool().unwrap_or(false));
         if let Some(logo) = theme::custom_logo(&self.config_path) {
             ui.set_logo(logo);
@@ -500,9 +504,9 @@ impl State {
         tag: impl Into<String>,
     ) -> bool {
         if !self.online {
-            ui.set_message("Moonraker is disconnected".into());
+            ui.set_message(tr(ui, "moonraker_is_disconnected").into());
         } else if self.calls.try_send(Call::new(method, params, tag)).is_err() {
-            ui.set_message("Moonraker request queue is busy".into());
+            ui.set_message(tr(ui, "moonraker_request_queue_is_busy").into());
         } else {
             return true;
         }
@@ -529,7 +533,7 @@ impl State {
             self.motion_busy = true;
             ui.set_motion_busy(true);
         } else {
-            ui.set_message("Moonraker request queue is busy".into());
+            ui.set_message(tr(ui, "moonraker_request_queue_is_busy").into());
         }
     }
 
@@ -542,7 +546,7 @@ impl State {
                 "gcode",
             );
         } else {
-            ui.set_message("Klipper is not ready".into());
+            ui.set_message(tr(ui, "klipper_is_not_ready").into());
         }
     }
 
@@ -552,6 +556,7 @@ impl State {
                 self.online = true;
                 self.dismissed_notifications
                     .retain(|id| is_persistent_warning(id));
+                ui.set_connected_once(true);
                 ui.set_online(true);
                 ui.set_connection("".into());
                 ui.set_message("".into());
@@ -587,19 +592,13 @@ impl State {
                 self.online = false;
                 if ui.get_file_busy() {
                     ui.set_file_busy(false);
-                    ui.set_dialog_detail("Moonraker disconnected".into());
-                    ui.set_folder_picker_error("Moonraker disconnected".into());
+                    let message = tr(ui, "moonraker_disconnected");
+                    ui.set_dialog_detail(message.into());
+                    ui.set_folder_picker_error(message.into());
                 }
                 if ui.get_printer_setting_busy() {
                     ui.set_printer_setting_busy(false);
-                    ui.set_dialog_detail(
-                        if ui.get_german() {
-                            "Verbindung zu Moonraker unterbrochen"
-                        } else {
-                            "Moonraker disconnected"
-                        }
-                        .into(),
-                    );
+                    ui.set_dialog_detail(tr(ui, "moonraker_disconnected").into());
                 }
                 ui.set_folder_picker_loading(false);
                 ui.set_file_dialog_loading(false);
@@ -654,6 +653,7 @@ impl State {
         }
         let webhooks = self.object("webhooks");
         let klippy = webhooks["state"].as_str().unwrap_or("connecting");
+        ui.set_klipper_state(klippy.into());
         ui.set_ready(self.online && klippy == "ready");
         let stats = self.object("print_stats");
         let state = stats["state"].as_str().unwrap_or("standby");
@@ -777,29 +777,21 @@ impl State {
     }
 
     fn update_notifications(&self, ui: &Moondash) {
-        let german = ui.get_german();
-        let text = |en, de| if german { de } else { en };
-        let palette = ui.global::<Palette>();
-        let warning = palette.get_warning();
-        let info_color = palette.get_info();
-        let error_color = if ui.get_dark() {
-            palette.get_error()
+        let tone = ui.global::<Palette>().get_accent();
+        let brightness = 299 * u32::from(tone.red())
+            + 587 * u32::from(tone.green())
+            + 114 * u32::from(tone.blue());
+        let action_ink = if brightness > 145_000 {
+            rgb(0x000000)
         } else {
-            rgb(0xb00020)
+            rgb(0xffffff)
         };
         let mut rows = Vec::new();
-        let mut push = |id: String, entry, icon, tone: slint::Color| {
+        let mut push = |id: String, entry, icon| {
             if !self.dismissed_notifications.contains(&id) {
-                let brightness = 299 * u32::from(tone.red())
-                    + 587 * u32::from(tone.green())
-                    + 114 * u32::from(tone.blue());
                 rows.push(Notification {
                     id: id.into(),
-                    action_ink: if brightness > 145_000 {
-                        rgb(0x000000)
-                    } else {
-                        rgb(0xffffff)
-                    },
+                    action_ink,
                     entry: Row {
                         icon: icons::glyph(icon),
                         tone,
@@ -816,19 +808,15 @@ impl State {
                 row(
                     "Moonraker",
                     if reason.is_empty() {
-                        text(
-                            "Connecting to Moonraker…",
-                            "Verbindung zu Moonraker wird aufgebaut…",
-                        )
+                        tr(ui, "connecting_to_moonraker")
                     } else {
                         reason.as_str()
                     },
                     "reconnect-moonraker",
                     "",
-                    text("Reconnect", "Wiederverbinden"),
+                    tr(ui, "reconnect"),
                 ),
                 "information",
-                info_color,
             );
         } else {
             for message in warning_messages(&self.moonraker_warnings) {
@@ -836,7 +824,6 @@ impl State {
                     format!("moonraker-warning/{message}"),
                     info("Moonraker", message),
                     "alert-circle",
-                    warning,
                 );
             }
 
@@ -845,60 +832,43 @@ impl State {
             let message = klipper_message(&webhooks["state_message"])
                 .or_else(|| klipper_message(&self.object("print_stats")["message"]));
             if state != "ready" || message.is_some() {
-                let (title, fallback, tone) = match state {
+                let (title, fallback, icon) = match state {
                     "error" => (
-                        text("Klipper error", "Klipper-Fehler"),
-                        text("Klipper reported an error.", "Klipper meldet einen Fehler."),
-                        error_color,
+                        tr(ui, "klipper_error"),
+                        tr(ui, "klipper_reported_an_error"),
+                        "close-circle",
                     ),
                     "shutdown" => (
-                        text("Klipper shutdown", "Klipper heruntergefahren"),
-                        text("Klipper has shut down.", "Klipper wurde abgeschaltet."),
-                        error_color,
+                        tr(ui, "klipper_shutdown"),
+                        tr(ui, "klipper_has_shut_down"),
+                        "close-circle",
                     ),
-                    "disconnected" => (
-                        "Klipper",
-                        text(
-                            "Klipper is disconnected.",
-                            "Verbindung zu Klipper unterbrochen.",
-                        ),
-                        info_color,
-                    ),
-                    "ready" => ("Klipper", "", error_color),
+                    "disconnected" => ("Klipper", tr(ui, "klipper_is_disconnected"), "information"),
+                    "ready" => ("Klipper", "", "close-circle"),
                     _ => (
-                        text("Klipper starting", "Klipper startet"),
-                        text("Klipper is starting up.", "Klipper wird gestartet."),
-                        info_color,
+                        tr(ui, "klipper_starting"),
+                        tr(ui, "klipper_is_starting_up"),
+                        "information",
                     ),
                 };
                 let mut entry = info(title, message.unwrap_or(fallback));
                 if !ui.get_printing() && !ui.get_paused() {
                     entry.action = "restart-klipper".into();
-                    entry.button = text("Restart", "Neustart").into();
-                    entry = alternate(
-                        entry,
-                        "restart-firmware",
-                        text("Firmware Restart", "Firmware-Neustart"),
-                    );
+                    entry.button = tr(ui, "restart").into();
+                    entry = alternate(entry, "restart-firmware", tr(ui, "firmware_restart"));
                 }
                 push(
                     format!("klipper-status/{state}/{}", message.unwrap_or_default()),
                     entry,
-                    if tone == error_color {
-                        "close-circle"
-                    } else {
-                        "information"
-                    },
-                    tone,
+                    icon,
                 );
             }
             for warning_message in warning_messages(&self.object("configfile")["warnings"]) {
                 if Some(warning_message) != message {
                     push(
                         format!("klipper-warning/{warning_message}"),
-                        info(text("Klipper warning", "Klipper-Warnung"), warning_message),
+                        info(tr(ui, "klipper_warning"), warning_message),
                         "alert-circle",
-                        warning,
                     );
                 }
             }
@@ -906,9 +876,8 @@ impl State {
             if let Some(message) = afc_notification(self.object("AFC")) {
                 push(
                     format!("afc/{message}"),
-                    row("AFC", message, "afc-reset", "", text("Clear", "Löschen")),
+                    row("AFC", message, "afc-reset", "", tr(ui, "clear")),
                     "alert-circle",
-                    warning,
                 );
             }
             let count = self.updates["version_info"]
@@ -921,20 +890,17 @@ impl State {
                 push(
                     format!("updates/{count}"),
                     row(
-                        "Updates",
+                        tr(ui, "updates"),
                         if count == 1 {
-                            text("1 update available", "1 Update verfügbar").to_owned()
-                        } else if german {
-                            format!("{count} Updates verfügbar")
+                            tr(ui, "1_update_available").to_owned()
                         } else {
-                            format!("{count} updates available")
+                            tr(ui, "count_updates_available").replace("{count}", &count.to_string())
                         },
                         "show-updates",
                         "",
-                        text("Open Settings", "Einstellungen öffnen"),
+                        tr(ui, "settings"),
                     ),
                     "update",
-                    palette.get_accent(),
                 );
             }
         }
@@ -963,7 +929,7 @@ impl State {
         self.status.get(key).unwrap_or(&Value::Null)
     }
 
-    fn heater_rows(&self) -> impl Iterator<Item = Row> + '_ {
+    fn heater_rows<'a>(&'a self, ui: &'a Moondash) -> impl Iterator<Item = Row> + 'a {
         self.status
             .iter()
             .filter(|(name, _)| {
@@ -971,21 +937,20 @@ impl State {
                     || name.starts_with("extruder") && !name.contains('_')
                     || name.starts_with("heater_generic ")
             })
-            .filter_map(|(name, data)| {
+            .filter_map(move |(name, data)| {
                 let current = number(&data["temperature"])?;
                 let target = number(&data["target"]).unwrap_or_default();
                 Some(row(
                     format!("{name}  {current:.0}°C"),
-                    format!("Target {target:.0}°C"),
+                    tr(ui, "heater_target").replace("{temperature}", &format!("{target:.0}")),
                     "heater",
                     name,
-                    "Set",
+                    tr(ui, "set"),
                 ))
             })
     }
 
     fn update_shortcuts(&self, ui: &Moondash) {
-        let german = ui.get_german();
         let ink = if ui.get_dark() {
             slint::Color::from_rgb_u8(255, 255, 255)
         } else {
@@ -1001,7 +966,7 @@ impl State {
                     .unwrap_or_else(|| "--°C".into()),
                 "heater",
                 name,
-                "Set",
+                tr(ui, "set"),
             );
             entry.icon = icons::glyph(icon);
             entry.tone = match current {
@@ -1014,9 +979,9 @@ impl State {
         let tool = self.object("toolhead")["extruder"]
             .as_str()
             .unwrap_or("extruder");
-        let bed = if german { "Heizbett" } else { "Heater Bed" };
+        let bed = tr(ui, "heater_bed");
         let mut controls = vec![
-            heater(tool, "Extruder", "printer-3d-nozzle-heat"),
+            heater(tool, tr(ui, "extruder"), "printer-3d-nozzle-heat"),
             heater("heater_bed", bed, "radiator"),
         ];
         let mut shortcuts = controls.clone();
@@ -1037,7 +1002,7 @@ impl State {
                 continue;
             };
             let (name, action) = if key == "fan" {
-                (if german { "Bauteillüfter" } else { "Part Fan" }, "fan")
+                (tr(ui, "part_fan"), "fan")
             } else if let Some((kind, name)) = key.split_once(' ') {
                 match kind {
                     "fan_generic" => (name, "fan"),
@@ -1048,7 +1013,13 @@ impl State {
             } else {
                 continue;
             };
-            let mut entry = row(name, format!("{:.0}%", speed * 100.), action, key, "Set");
+            let mut entry = row(
+                name,
+                format!("{:.0}%", speed * 100.),
+                action,
+                key,
+                tr(ui, "set"),
+            );
             entry.icon = icons::glyph("fan");
             entry.tone = ink;
             controls.push(entry);
@@ -1061,7 +1032,7 @@ impl State {
             "",
             "speed",
             "",
-            "Set",
+            tr(ui, "set"),
         );
         speed.icon = icons::glyph(match factor {
             Some(speed) if speed < 1. => "speedometer-slow",
@@ -1083,7 +1054,7 @@ impl State {
             .take(3)
             .filter_map(|item| {
                 let name = item["name"].as_str()?;
-                let mut button = row(name, "", "shortcut", name, "Run");
+                let mut button = row(name, "", "shortcut", name, tr(ui, "run"));
                 button.active = shortcut_active(&self.status, item);
                 button.icon = icons::glyph(item["icon"].as_str().unwrap_or_default());
                 if button.icon.is_empty() {
@@ -1188,10 +1159,8 @@ impl State {
                     name: name.as_str().into(),
                     material: if has_filament {
                         material.unwrap_or(name)
-                    } else if ui.get_german() {
-                        "Leer"
                     } else {
-                        "Empty"
+                        tr(ui, "empty")
                     }
                     .into(),
                     weight: number(&lane["weight"])
@@ -1266,6 +1235,10 @@ impl State {
             self.requested_files.insert(path);
         }
     }
+}
+
+fn tr<'a>(ui: &Moondash, key: &'a str) -> &'a str {
+    locale::text(key, ui.global::<I18n>().get_german())
 }
 
 fn row(
@@ -1491,11 +1464,7 @@ fn without_last(value: slint::SharedString) -> String {
 
 fn folder_label<'a>(ui: &Moondash, path: &'a str) -> &'a str {
     if path.is_empty() {
-        if ui.get_german() {
-            "Hauptverzeichnis"
-        } else {
-            "Root folder"
-        }
+        tr(ui, "root_folder")
     } else {
         path
     }
@@ -1609,14 +1578,7 @@ impl State {
         if acceleration.is_none()
             && (!input.is_empty() || self.initial_speed_acceleration.is_some())
         {
-            ui.set_dialog_detail(
-                if ui.get_german() {
-                    "Beschleunigung größer als 0 eingeben."
-                } else {
-                    "Enter an acceleration greater than 0."
-                }
-                .into(),
-            );
+            ui.set_dialog_detail(tr(ui, "enter_an_acceleration_greater_than_0").into());
             return;
         }
 
@@ -1703,30 +1665,42 @@ impl State {
                         .iter()
                         .any(|value| value.as_str() == Some(name))
                     {
-                        rows.push(info(name, "Excluded"));
+                        rows.push(info(name, tr(ui, "excluded")));
                     } else {
-                        rows.push(row(name, "", "exclude", name, "Skip"));
+                        rows.push(row(name, "", "exclude", name, tr(ui, "skip")));
                     }
                 }
                 if rows.is_empty() {
-                    rows.push(info("No printable objects", ""));
+                    rows.push(info(tr(ui, "no_printable_objects"), ""));
                 }
             }
             ("tune", "queue") => {
                 let state = self.queue["queue_state"].as_str().unwrap_or("—");
                 rows.push(if state == "paused" {
-                    row("Job queue", state, "queue-start", "", "Start queue")
+                    row(
+                        tr(ui, "job_queue_warteschlange"),
+                        state,
+                        "queue-start",
+                        "",
+                        tr(ui, "start_queue"),
+                    )
                 } else {
-                    row("Job queue", state, "queue-pause", "", "Pause queue")
+                    row(
+                        tr(ui, "job_queue_warteschlange"),
+                        state,
+                        "queue-pause",
+                        "",
+                        tr(ui, "pause_queue"),
+                    )
                 });
                 for job in array(&self.queue["queued_jobs"]) {
                     if let (Some(id), Some(filename)) =
                         (job["job_id"].as_str(), job["filename"].as_str())
                     {
                         rows.push(alternate(
-                            row(filename, "", "file", filename, "Details"),
+                            row(filename, "", "file", filename, tr(ui, "details")),
                             &format!("queue-remove:{id}"),
-                            "Remove",
+                            tr(ui, "remove"),
                         ));
                     }
                 }
@@ -1734,82 +1708,77 @@ impl State {
             ("settings", "config") => {
                 let system = &self.config["system"];
                 let styling = &self.config["styling"];
-                let text = |english, german| if ui.get_german() { german } else { english };
                 let mut dark = row(
-                    text("Dark mode", "Dunkelmodus"),
+                    tr(ui, "dark_mode"),
                     "",
                     "config-toggle",
                     "styling.darkmode",
-                    text("On", "An"),
+                    tr(ui, "on"),
                 );
                 dark.active = styling["darkmode"].as_bool().unwrap_or(true);
                 if !dark.active {
-                    dark.button = text("Off", "Aus").into();
+                    dark.button = tr(ui, "off").into();
                 }
                 rows.push(dark);
                 rows.push(alternate(
                     row(
-                        text("Colors", "Farben"),
+                        tr(ui, "colors"),
                         "",
                         "config-color",
                         "styling.primary",
-                        text("Primary", "Primär"),
+                        tr(ui, "primary"),
                     ),
                     "config-secondary",
-                    text("Secondary", "Sekundär"),
+                    tr(ui, "secondary"),
                 ));
                 let mut advanced = row(
-                    text("Advanced state", "Erweiterte Anzeige"),
+                    tr(ui, "advanced_state"),
                     "",
                     "config-toggle",
                     "styling.advanced_states",
-                    text("Off", "Aus"),
+                    tr(ui, "off"),
                 );
                 advanced.active = styling["advanced_states"].as_bool().unwrap_or(false);
                 if advanced.active {
-                    advanced.button = text("On", "An").into();
+                    advanced.button = tr(ui, "on").into();
                 }
                 rows.push(advanced);
                 rows.push(row(
-                    text("Language", "Sprache"),
+                    tr(ui, "language"),
                     "",
                     "config-language",
                     "",
-                    if ui.get_german() {
-                        "Deutsch"
-                    } else {
-                        "English"
-                    },
+                    tr(ui, "english"),
                 ));
                 rows.push(row(
-                    text("Display profile", "Anzeigeprofil"),
+                    tr(ui, "display_profile"),
                     "",
                     "config-profile",
                     "",
                     system["display_profile"]
                         .as_str()
                         .or_else(|| styling["display_profile"].as_str())
-                        .unwrap_or("Auto"),
+                        .unwrap_or(tr(ui, "auto")),
                 ));
                 let mut idle = row(
-                    text("Display idle timeout", "Bildschirm-Ruhezeit"),
+                    tr(ui, "display_idle_timeout"),
                     "",
                     "config-toggle",
                     "system.use_idle_timeout",
-                    text("On", "An"),
+                    tr(ui, "on"),
                 );
                 idle.active = system["use_idle_timeout"].as_bool().unwrap_or(true);
                 if !idle.active {
-                    idle.button = text("Off", "Aus").into();
+                    idle.button = tr(ui, "off").into();
                 }
                 rows.push(idle);
                 if system["use_idle_timeout"].as_bool().unwrap_or(true) {
                     rows.push(row(
-                        text("Idle timeout", "Ruhezeit"),
+                        tr(ui, "idle_timeout"),
                         format!("{} s", system["idle_timeout"]),
                         "config-edit",
                         "system.idle_timeout",
-                        text("Edit", "Ändern"),
+                        tr(ui, "edit"),
                     ));
                 }
                 rows.push(row(
@@ -1817,14 +1786,14 @@ impl State {
                     self.endpoint.borrow().as_str(),
                     "config-edit",
                     "websocket.ip",
-                    text("Edit", "Ändern"),
+                    tr(ui, "edit"),
                 ));
                 rows.push(row(
-                    text("Configuration file", "Konfigurationsdatei"),
+                    tr(ui, "configuration_file"),
                     self.config_path.display().to_string(),
                     "config-raw",
                     "",
-                    text("Edit file", "Datei öffnen"),
+                    tr(ui, "edit_file"),
                 ));
             }
             ("settings", "shortcuts") => {
@@ -1835,57 +1804,59 @@ impl State {
                         shortcut["macro_inactive"].as_str().unwrap_or_default(),
                         "edit-shortcut",
                         name,
-                        if ui.get_german() {
-                            "Bearbeiten"
-                        } else {
-                            "Edit"
-                        },
+                        tr(ui, "edit_shortcut"),
                     );
                     entry.icon = icons::glyph(shortcut["icon"].as_str().unwrap_or_default());
                     rows.push(entry);
                 }
                 if rows.len() < 3 {
-                    rows.push(row(
-                        if ui.get_german() {
-                            "Kurzbefehl hinzufügen"
-                        } else {
-                            "Add shortcut"
-                        },
-                        "",
-                        "add-shortcut",
-                        "",
-                        "+",
-                    ));
+                    rows.push(row(tr(ui, "add_shortcut"), "", "add-shortcut", "", "+"));
                 }
             }
             ("settings", "network") => {
                 let mut right = Vec::new();
                 let ip = self.network["ip"].as_str().unwrap_or("—");
-                rows.push(row("IP address", ip, "refresh", "", "Refresh"));
+                rows.push(row(
+                    tr(ui, "ip_address"),
+                    ip,
+                    "refresh",
+                    "",
+                    tr(ui, "refresh"),
+                ));
                 if self.network["status"]["wifiConnected"].as_bool() == Some(true)
                     && let Some(quality) = self.network["status"]["quality"].as_str()
                 {
-                    rows.push(info("Wi-Fi signal", quality));
+                    rows.push(info(tr(ui, "wi_fi_signal"), quality));
                 }
                 let wifi = &self.network["wifi"];
                 if let Some(enabled) = wifi["enabled"].as_bool() {
                     rows.push(alternate(
                         row(
-                            "Wi-Fi",
+                            tr(ui, "wi_fi"),
                             wifi["connectedSsid"].as_str().unwrap_or(""),
                             if enabled { "wifi-off" } else { "wifi-on" },
                             "",
-                            if enabled { "Disable" } else { "Enable" },
+                            if enabled {
+                                tr(ui, "disable")
+                            } else {
+                                tr(ui, "enable")
+                            },
                         ),
                         "wifi-scan",
-                        "Scan",
+                        tr(ui, "scan"),
                     ));
                     if enabled {
-                        rows.push(row("Hidden network", "", "wifi-hidden", "", "Connect"));
+                        rows.push(row(
+                            tr(ui, "hidden_network"),
+                            "",
+                            "wifi-hidden",
+                            "",
+                            tr(ui, "connect"),
+                        ));
                     }
                 }
                 if let Some(error) = self.network["wifi-error"].as_str() {
-                    rows.push(info("Wi-Fi", error));
+                    rows.push(info(tr(ui, "wi_fi"), error));
                 }
                 for item in array(&wifi["scannedNetworks"]) {
                     let Some(ssid) = item["ssid"].as_str() else {
@@ -1895,16 +1866,22 @@ impl State {
                         .as_u64()
                         .map(|signal| format!("{signal}%"))
                         .unwrap_or_default();
-                    rows.push(row(ssid, signal, "wifi-connect", ssid, "Connect"));
+                    rows.push(row(ssid, signal, "wifi-connect", ssid, tr(ui, "connect")));
                 }
                 for item in array(&wifi["savedNetworks"]) {
                     let Some(ssid) = item["ssid"].as_str() else {
                         continue;
                     };
                     rows.push(alternate(
-                        row(ssid, "Saved Wi-Fi network", "wifi-connect", ssid, "Connect"),
+                        row(
+                            ssid,
+                            tr(ui, "saved_wi_fi_network"),
+                            "wifi-connect",
+                            ssid,
+                            tr(ui, "connect"),
+                        ),
                         "wifi-forget",
-                        "Forget",
+                        tr(ui, "forget"),
                     ));
                 }
                 for item in array(&self.network["wired"]["interfaces"]) {
@@ -1914,10 +1891,14 @@ impl State {
                     let connected = item["connected"].as_bool() == Some(true);
                     rows.push(row(
                         name,
-                        item["ip"].as_str().unwrap_or("Ethernet"),
+                        item["ip"].as_str().unwrap_or(tr(ui, "ethernet")),
                         if connected { "wired-off" } else { "wired-on" },
                         name,
-                        if connected { "Disable" } else { "Enable" },
+                        if connected {
+                            tr(ui, "disable")
+                        } else {
+                            tr(ui, "enable")
+                        },
                     ));
                 }
                 for item in array(&self.network["can"]["interfaces"]) {
@@ -1939,82 +1920,72 @@ impl State {
             ("settings", "tools") => match self.tool_view.as_str() {
                 "mesh" => {
                     rows.push(row(
-                        "Bed mesh",
+                        tr(ui, "bed_mesh"),
                         self.object("bed_mesh")["profile_name"]
                             .as_str()
                             .unwrap_or_default(),
                         "mesh-info",
                         "",
-                        "Inspect",
+                        tr(ui, "inspect"),
                     ));
                     rows.push(alternate(
                         row(
-                            "Bed mesh calibration",
+                            tr(ui, "bed_mesh_calibration"),
                             "",
                             "mesh-calibrate",
                             "",
-                            "Calibrate",
+                            tr(ui, "calibrate"),
                         ),
                         "mesh-clear",
-                        "Clear",
+                        tr(ui, "clear"),
                     ));
                     if let Some(profiles) = self.object("bed_mesh")["profiles"].as_object() {
                         for name in profiles.keys() {
                             rows.push(alternate(
-                                row(name.as_str(), "Bed mesh profile", "mesh-load", name, "Load"),
+                                row(
+                                    name.as_str(),
+                                    tr(ui, "bed_mesh_profile"),
+                                    "mesh-load",
+                                    name,
+                                    tr(ui, "load"),
+                                ),
                                 "mesh-remove",
-                                "Remove",
+                                tr(ui, "remove"),
                             ));
                         }
                     }
                     rows.push(row(
-                        "Save printer configuration",
-                        "Klipper restarts after saving",
+                        tr(ui, "save_printer_configuration"),
+                        tr(ui, "klipper_restarts_after_saving"),
                         "save-printer",
                         "",
-                        "Save",
+                        tr(ui, "save"),
                     ));
                 }
                 "pid" => {
-                    for heater in self.heater_rows() {
+                    for heater in self.heater_rows(ui) {
                         rows.push(row(
                             heater.argument.clone(),
-                            "PID calibration",
+                            tr(ui, "pid_calibration"),
                             "pid",
                             heater.argument.as_str(),
-                            "Tune",
+                            tr(ui, "tune"),
                         ));
                     }
                     rows.push(row(
-                        "Save printer configuration",
-                        "Klipper restarts after saving",
+                        tr(ui, "save_printer_configuration"),
+                        tr(ui, "klipper_restarts_after_saving"),
                         "save-printer",
                         "",
-                        "Save",
+                        tr(ui, "save"),
                     ));
                 }
                 "camera" => {}
                 _ => {
                     for (title, action, icon) in [
-                        (
-                            if ui.get_german() {
-                                "Druckbettvermessung"
-                            } else {
-                                "Bed Mesh"
-                            },
-                            "tool-mesh",
-                            "grid",
-                        ),
-                        (
-                            if ui.get_german() {
-                                "PID-Kalibrierung"
-                            } else {
-                                "PID Tuning"
-                            },
-                            "tool-pid",
-                            "tune-variant",
-                        ),
-                        ("Webcam", "tool-camera", "webcam"),
+                        (tr(ui, "bed_mesh"), "tool-mesh", "grid"),
+                        (tr(ui, "pid_tuning"), "tool-pid", "tune-variant"),
+                        (tr(ui, "webcam"), "tool-camera", "webcam"),
                     ] {
                         rows.push(Row {
                             icon: icons::glyph(icon),
@@ -2029,12 +2000,12 @@ impl State {
                     version::current_version(),
                     "refresh",
                     "",
-                    "Refresh",
+                    tr(ui, "refresh"),
                 ));
                 let system = &self.host["info"]["system_info"];
                 let stats = &self.host["stats"];
                 rows.push(info(
-                    "Host",
+                    tr(ui, "host"),
                     system["distribution"]["pretty_name"]
                         .as_str()
                         .unwrap_or("—"),
@@ -2044,11 +2015,11 @@ impl State {
                     system["cpu_info"]["cpu_desc"].as_str().unwrap_or("—"),
                 ));
                 if let Some(cpu) = number(&stats["system_cpu_usage"]["cpu"]) {
-                    rows.push(info("CPU usage", format!("{cpu:.1}%")));
+                    rows.push(info(tr(ui, "cpu_usage"), format!("{cpu:.1}%")));
                 }
                 if let Some(memory) = stats["system_memory"].as_object() {
                     rows.push(info(
-                        "Memory",
+                        tr(ui, "memory"),
                         format!(
                             "{} / {}",
                             display_size(memory["used"].as_u64().unwrap_or_default() * 1024),
@@ -2056,8 +2027,20 @@ impl State {
                         ),
                     ));
                 }
-                rows.push(row("G-code storage", "", "storage", "", "Inspect"));
-                rows.push(row("Print history", "", "history", "", "Open"));
+                rows.push(row(
+                    tr(ui, "g_code_storage"),
+                    "",
+                    "storage",
+                    "",
+                    tr(ui, "inspect"),
+                ));
+                rows.push(row(
+                    tr(ui, "print_history"),
+                    "",
+                    "history",
+                    "",
+                    tr(ui, "open"),
+                ));
                 let mcus: Vec<_> = self
                     .status
                     .iter()
@@ -2082,9 +2065,15 @@ impl State {
             }
             ("settings", "updates") => {
                 rows.push(alternate(
-                    row("Software updates", "", "update-refresh", "", "Check"),
+                    row(
+                        tr(ui, "software_updates"),
+                        "",
+                        "update-refresh",
+                        "",
+                        tr(ui, "check"),
+                    ),
                     "update-all",
-                    "Update all",
+                    tr(ui, "update_all"),
                 ));
                 if let Some(components) = self.updates["version_info"].as_object() {
                     for (name, data) in components {
@@ -2098,18 +2087,18 @@ impl State {
                         let updatable = installed != available
                             || data["package_count"].as_u64().unwrap_or_default() > 0;
                         rows.push(if updatable {
-                            row(name.as_str(), detail, "update", name, "Update")
+                            row(name.as_str(), detail, "update", name, tr(ui, "update"))
                         } else {
                             info(name.as_str(), detail)
                         });
                     }
                 }
                 rows.push(row(
-                    "Moondash service",
-                    "After a Moondash package update",
+                    tr(ui, "moondash_service"),
+                    tr(ui, "after_a_moondash_package_update"),
                     "restart-service",
                     "",
-                    "Restart",
+                    tr(ui, "restart"),
                 ));
             }
             ("debug", _) => ui.set_diagnostics(
@@ -2253,7 +2242,7 @@ impl State {
                     detail,
                     "apply-print-lane",
                     name,
-                    if ui.get_german() { "Wählen" } else { "Select" },
+                    tr(ui, "select"),
                 ))
             })
             .collect();
@@ -2427,11 +2416,10 @@ impl State {
             hex: format!("#{color:06X}").into(),
             fill: rgb(*color),
         };
-        let extra_title = match (theme_color, ui.get_german()) {
-            (true, true) => "Standardfarben",
-            (true, false) => "Default Colors",
-            (false, true) => "Farben anderer Spuren",
-            (false, false) => "Other lane colors",
+        let extra_title = if theme_color {
+            tr(ui, "default_colors")
+        } else {
+            tr(ui, "other_lane_colors")
         };
         ui.set_picker_swatches(ModelRc::new(VecModel::from(
             colors.iter().map(swatch).collect::<Vec<_>>(),
@@ -2454,9 +2442,9 @@ impl State {
             "refresh" => self.refresh(ui),
             "tool-mesh" | "tool-pid" | "tool-camera" => {
                 let (view, title) = match action {
-                    "tool-mesh" => ("mesh", "Bed Mesh"),
-                    "tool-pid" => ("pid", "PID Tuning"),
-                    _ => ("camera", "Webcam"),
+                    "tool-mesh" => ("mesh", tr(ui, "bed_mesh")),
+                    "tool-pid" => ("pid", tr(ui, "pid_tuning")),
+                    _ => ("camera", tr(ui, "webcam")),
                 };
                 self.tool_view = view.into();
                 ui.set_tool_title(title.into());
@@ -2472,7 +2460,7 @@ impl State {
                 ui.set_tool_image(Image::default());
                 self.render_rows(ui);
             }
-            "power" => self.dialog(ui, "Power options", "", "power", "", ""),
+            "power" => self.dialog(ui, tr(ui, "power_options"), "", "power", "", ""),
             "clear-message" => self.script(ui, "M117"),
             "clear-file" => self.script(ui, "SDCARD_RESET_FILE"),
             "reprint" => {
@@ -2487,10 +2475,10 @@ impl State {
             "afc-edit" => {
                 self.dialog(ui, argument, "", "menu", "", "");
                 let options = [
-                    ("Material", "afc-material", "printer-3d-nozzle"),
-                    ("Color", "afc-color", "palette"),
-                    ("Weight", "afc-weight", "scale"),
-                    ("Tool mapping", "afc-map", "source-branch"),
+                    (tr(ui, "material"), "afc-material", "printer-3d-nozzle"),
+                    (tr(ui, "color"), "afc-color", "palette"),
+                    (tr(ui, "weight"), "afc-weight", "scale"),
+                    (tr(ui, "tool_mapping"), "afc-map", "source-branch"),
                 ]
                 .map(|(title, action, icon)| Row {
                     icon: icons::glyph(icon),
@@ -2667,7 +2655,11 @@ impl State {
             "config-language" => self.change_setting(
                 ui,
                 "system.language",
-                if ui.get_german() { "en" } else { "de" },
+                if ui.global::<I18n>().get_german() {
+                    "en"
+                } else {
+                    "de"
+                },
             ),
             "config-toggle" => {
                 if let Some((section, key)) = argument.split_once('.') {
@@ -2699,11 +2691,10 @@ impl State {
                     .as_str()
                     .and_then(theme::parse_rgb)
                     .unwrap_or(default);
-                let title = match (key, ui.get_german()) {
-                    ("primary", true) => "Primärfarbe auswählen",
-                    ("primary", false) => "Choose primary color",
-                    (_, true) => "Sekundärfarbe auswählen",
-                    _ => "Choose secondary color",
+                let title = if key == "primary" {
+                    tr(ui, "choose_primary_color")
+                } else {
+                    tr(ui, "choose_secondary_color")
                 };
                 self.show_color_picker(ui, title, "theme-color", key, selected, defaults.to_vec());
             }
@@ -2716,8 +2707,8 @@ impl State {
                     .as_str()
                     .map_or_else(|| value.to_string(), str::to_owned);
                 let (title, detail) = match argument {
-                    "system.idle_timeout" => ("Idle timeout", "Seconds"),
-                    _ => ("Moonraker", "Host and port or URL"),
+                    "system.idle_timeout" => (tr(ui, "idle_timeout"), tr(ui, "seconds")),
+                    _ => ("Moonraker", tr(ui, "host_and_port_or_url")),
                 };
                 self.dialog(ui, title, detail, "text", action, argument);
                 ui.set_dialog_value(initial.into());
@@ -2726,7 +2717,10 @@ impl State {
                 self.dialog(
                     ui,
                     argument,
-                    "Macro to run. Edit the configuration file to set advanced options.",
+                    tr(
+                        ui,
+                        "macro_to_run_edit_the_configuration_file_to_set_advanced_options",
+                    ),
                     "text",
                     action,
                     argument,
@@ -2739,11 +2733,25 @@ impl State {
                     ui.set_dialog_value(value.into());
                 }
             }
-            "add-shortcut" => self.dialog(ui, "Add shortcut", "Shortcut name", "text", action, ""),
+            "add-shortcut" => self.dialog(
+                ui,
+                tr(ui, "add_shortcut"),
+                tr(ui, "shortcut_name"),
+                "text",
+                action,
+                "",
+            ),
             "emergency" => self.call(ui, "printer.emergency_stop", json!({}), "emergency"),
             "pause" => self.call(ui, "printer.print.pause", json!({}), "pause"),
             "resume" => self.call(ui, "printer.print.resume", json!({}), "resume"),
-            "cancel" => self.dialog(ui, "Cancel print?", "", "confirm", action, argument),
+            "cancel" => self.dialog(
+                ui,
+                tr(ui, "cancel_print_question"),
+                "",
+                "confirm",
+                action,
+                argument,
+            ),
             "folder" | "up" => {
                 self.folder = if action == "up" {
                     parent_dir(&self.folder).to_owned()
@@ -2767,14 +2775,21 @@ impl State {
             action if action.starts_with("queue-remove:") => {
                 self.dialog(
                     ui,
-                    "Remove queued job?",
+                    tr(ui, "remove_queued_job_question"),
                     argument,
                     "confirm",
                     "queue-remove",
                     &action["queue-remove:".len()..],
                 );
             }
-            "queue-start" => self.dialog(ui, "Start job queue?", "", "confirm", action, argument),
+            "queue-start" => self.dialog(
+                ui,
+                tr(ui, "start_job_queue_question"),
+                "",
+                "confirm",
+                action,
+                argument,
+            ),
             "queue-pause" => self.call(ui, "server.job_queue.pause", json!({}), "queue"),
             "home" => self.motion(ui, format!("G28 {argument}")),
             "set-step" => {
@@ -2825,7 +2840,14 @@ impl State {
                     self.script(ui, command);
                 }
             }
-            "disable-motors" => self.dialog(ui, "Disable motors?", "", "confirm", action, argument),
+            "disable-motors" => self.dialog(
+                ui,
+                tr(ui, "disable_motors_question"),
+                "",
+                "confirm",
+                action,
+                argument,
+            ),
             "jog-plus" | "jog-minus" => {
                 let distance = if action == "jog-plus" {
                     self.jog_step
@@ -2886,17 +2908,20 @@ impl State {
             }
             "step" | "extrude" | "retract" | "flow" | "pid" => {
                 let (title, detail, initial) = match action {
-                    "step" => ("Jog distance", "Millimetres", self.jog_step),
-                    "extrude" => ("Extrude", "Millimetres", 5.),
-                    "retract" => ("Retract", "Millimetres", 5.),
+                    "step" => (tr(ui, "jog_distance"), tr(ui, "millimetres"), self.jog_step),
+                    "extrude" => (tr(ui, "extrude"), tr(ui, "millimetres"), 5.),
+                    "retract" => (tr(ui, "retract"), tr(ui, "millimetres"), 5.),
                     "flow" => (
-                        "Extrusion factor",
-                        "Percent",
+                        tr(ui, "extrusion_factor"),
+                        tr(ui, "percent"),
                         number(&self.object("gcode_move")["extrude_factor"]).unwrap_or(1.) * 100.,
                     ),
                     _ => (
-                        "PID calibration",
-                        "Target temperature in °C. Klipper will heat the selected heater.",
+                        tr(ui, "pid_calibration"),
+                        tr(
+                            ui,
+                            "target_temperature_in_c_klipper_will_heat_the_selected_heater",
+                        ),
                         if argument == "heater_bed" { 60. } else { 200. },
                     ),
                 };
@@ -2941,7 +2966,14 @@ impl State {
                         .into(),
                 );
             }
-            "macro" => self.dialog(ui, "Run macro?", argument, "confirm", action, argument),
+            "macro" => self.dialog(
+                ui,
+                tr(ui, "run_macro_question"),
+                argument,
+                "confirm",
+                action,
+                argument,
+            ),
             "shortcut" => {
                 if let Some(shortcut) = array(&self.config["shortcutbuttons"])
                     .iter()
@@ -2964,9 +2996,9 @@ impl State {
             "afc-load" | "afc-unload" | "exclude" => self.dialog(
                 ui,
                 match action {
-                    "afc-load" => "Load lane?",
-                    "afc-unload" => "Unload lane?",
-                    _ => "Skip object?",
+                    "afc-load" => tr(ui, "load_lane_question"),
+                    "afc-unload" => tr(ui, "unload_lane_question"),
+                    _ => tr(ui, "skip_object_question"),
                 },
                 argument,
                 "confirm",
@@ -2987,21 +3019,17 @@ impl State {
                         .filter_map(|(_, data)| data["color"].as_str().and_then(theme::parse_rgb))
                         .filter(|color| *color != 0x434343)
                         .collect();
-                    let title = if ui.get_german() {
-                        "Farbe auswählen"
-                    } else {
-                        "Choose color"
-                    };
+                    let title = tr(ui, "choose_color");
                     self.show_color_picker(ui, title, action, argument, selected, extras);
                 }
             }
             "afc-material" | "afc-map" | "afc-runout" | "afc-weight" => self.dialog(
                 ui,
                 match action {
-                    "afc-material" => "Material",
-                    "afc-map" => "Tool mapping",
-                    "afc-weight" => "Weight (g)",
-                    _ => "Runout destination",
+                    "afc-material" => tr(ui, "material"),
+                    "afc-map" => tr(ui, "tool_mapping"),
+                    "afc-weight" => tr(ui, "weight_g"),
+                    _ => tr(ui, "runout_destination"),
                 },
                 argument,
                 "text",
@@ -3025,9 +3053,9 @@ impl State {
                     .join("\n");
                 self.dialog(
                     ui,
-                    "Bed mesh",
+                    tr(ui, "bed_mesh"),
                     if matrix.is_empty() {
-                        "No active mesh"
+                        tr(ui, "no_active_mesh")
                     } else {
                         &matrix
                     },
@@ -3043,15 +3071,15 @@ impl State {
             | "restart-klipper" | "restart-firmware" | "reboot" | "shutdown"
             | "restart-service" => {
                 let title = match action {
-                    "mesh-calibrate" => "Calibrate bed mesh?",
-                    "mesh-clear" => "Clear bed mesh?",
-                    "mesh-remove" => "Remove profile?",
-                    "save-printer" => "Save configuration and restart Klipper?",
-                    "restart-klipper" => "Restart Klipper?",
-                    "restart-firmware" => "Restart firmware?",
-                    "reboot" => "Reboot host?",
-                    "shutdown" => "Shut down host?",
-                    _ => "Restart Moondash service?",
+                    "mesh-calibrate" => tr(ui, "calibrate_bed_mesh_question"),
+                    "mesh-clear" => tr(ui, "clear_bed_mesh_question"),
+                    "mesh-remove" => tr(ui, "remove_profile_question"),
+                    "save-printer" => tr(ui, "save_configuration_and_restart_klipper_question"),
+                    "restart-klipper" => tr(ui, "restart_klipper_question"),
+                    "restart-firmware" => tr(ui, "restart_firmware_question"),
+                    "reboot" => tr(ui, "reboot_host_question"),
+                    "shutdown" => tr(ui, "shut_down_host_question"),
+                    _ => tr(ui, "restart_moondash_service_question"),
                 };
                 self.dialog(ui, title, argument, "confirm", action, argument);
             }
@@ -3074,11 +3102,11 @@ impl State {
                 "updates",
             ),
             "update-all" | "update" if ui.get_printing() || ui.get_paused() => {
-                ui.set_message("Finish the print before installing updates.".into());
+                ui.set_message(tr(ui, "finish_the_print_before_installing_updates").into());
             }
             "update-all" | "update" => self.dialog(
                 ui,
-                "Install updates?",
+                tr(ui, "install_updates_question"),
                 argument,
                 "confirm",
                 action,
@@ -3095,7 +3123,14 @@ impl State {
                     .find(|item| item["ssid"].as_str() == Some(argument))
                     .is_some_and(|item| item["secured"].as_bool() == Some(true));
                 if secured && !saved {
-                    self.dialog(ui, "Wi-Fi password", argument, "text", action, argument);
+                    self.dialog(
+                        ui,
+                        tr(ui, "wi_fi_password"),
+                        argument,
+                        "text",
+                        action,
+                        argument,
+                    );
                     ui.set_dialog_secret(true);
                 } else {
                     self.network_action(action, argument, "");
@@ -3103,15 +3138,15 @@ impl State {
             }
             "wifi-hidden" => self.dialog(
                 ui,
-                "Hidden Wi-Fi network",
-                "Network name (SSID)",
+                tr(ui, "hidden_wi_fi_network"),
+                tr(ui, "network_name_ssid"),
                 "text",
                 action,
                 "",
             ),
             "wifi-forget" | "wired-on" | "wired-off" => self.dialog(
                 ui,
-                "Change network settings?",
+                tr(ui, "change_network_settings_question"),
                 argument,
                 "confirm",
                 action,
@@ -3123,7 +3158,7 @@ impl State {
                 if std::env::var_os("WAYLAND_DISPLAY").is_some() {
                     self.manual_sleep.store(true, Ordering::Relaxed);
                 } else {
-                    ui.set_message("Display power control requires Wayland".into());
+                    ui.set_message(tr(ui, "display_power_control_requires_wayland").into());
                 }
             }
             _ => {}
@@ -3179,14 +3214,17 @@ impl State {
                 "pid" => 1.,
                 _ => 0.,
             };
-            let Ok(number) = value.parse::<f64>() else {
-                ui.set_dialog_detail(format!("Enter a number from {minimum} to {limit}").into());
+            let Some(number) = value
+                .parse::<f64>()
+                .ok()
+                .filter(|number| (minimum..=limit).contains(number))
+            else {
+                let message = tr(ui, "number_range")
+                    .replace("{minimum}", &minimum.to_string())
+                    .replace("{maximum}", &limit.to_string());
+                ui.set_dialog_detail(message.into());
                 return;
             };
-            if !(minimum..=limit).contains(&number) {
-                ui.set_dialog_detail(format!("Enter a number from {minimum} to {limit}").into());
-                return;
-            }
             self.submit_number(ui, &action, &argument, number);
             ui.set_dialog_mode("".into());
             return;
@@ -3210,7 +3248,7 @@ impl State {
                     _ => false,
                 };
                 if !valid || value.contains(['\n', '\r']) {
-                    ui.set_dialog_detail("Enter a valid value".into());
+                    ui.set_dialog_detail(tr(ui, "enter_a_valid_value").into());
                     return;
                 }
                 self.change_setting(ui, &argument, value);
@@ -3220,15 +3258,22 @@ impl State {
                     || value.contains(['[', ']', '\n', '\r'])
                     || self.config.get(format!("shortcutbutton {value}")).is_some()
                 {
-                    ui.set_dialog_detail("Enter a unique shortcut name".into());
+                    ui.set_dialog_detail(tr(ui, "enter_a_unique_shortcut_name").into());
                     return;
                 }
-                self.dialog(ui, value, "Macro to run", "text", "new-shortcut", value);
+                self.dialog(
+                    ui,
+                    value,
+                    tr(ui, "macro_to_run"),
+                    "text",
+                    "new-shortcut",
+                    value,
+                );
                 return;
             }
             "edit-shortcut" | "new-shortcut" => {
                 if value.is_empty() || value.contains(['\n', '\r']) {
-                    ui.set_dialog_detail("Enter a single-line G-code command.".into());
+                    ui.set_dialog_detail(tr(ui, "enter_a_single_line_g_code_command").into());
                     return;
                 }
                 let section = format!("shortcutbutton {argument}");
@@ -3260,7 +3305,7 @@ impl State {
             "afc-unload" => self.script(ui, format!("LANE_UNLOAD LANE={}", gcode_arg(&argument))),
             "afc-material" | "afc-map" | "afc-runout" | "afc-weight" => {
                 if value.is_empty() || value.contains(['\n', '\r']) {
-                    ui.set_dialog_detail("Enter a value.".into());
+                    ui.set_dialog_detail(tr(ui, "enter_a_value").into());
                     return;
                 }
                 let parameter = match action.as_str() {
@@ -3307,8 +3352,8 @@ impl State {
                 }
                 self.dialog(
                     ui,
-                    "Hidden network password",
-                    "Leave blank for an open network.",
+                    tr(ui, "hidden_network_password"),
+                    tr(ui, "leave_blank_for_an_open_network"),
                     "text",
                     "wifi-hidden-password",
                     value,
@@ -3363,7 +3408,7 @@ impl State {
     }
 
     fn save_setting(&mut self, ui: &Moondash, path: &str, value: &str) -> Result<(), String> {
-        let (section, key) = path.split_once('.').ok_or("Invalid setting path")?;
+        let (section, key) = path.split_once('.').ok_or(tr(ui, "invalid_setting_path"))?;
         let existing = match fs::read_to_string(&self.config_path) {
             Ok(text) => text.into(),
             Err(error) if error.kind() == io::ErrorKind::NotFound => ui.get_config_text(),
@@ -3564,14 +3609,7 @@ impl State {
         if let Some(path) = tag.strip_prefix("folder-created:") {
             ui.set_folder_create(false);
             ui.set_keyboard_target("".into());
-            self.file_feedback(
-                ui,
-                if ui.get_german() {
-                    "Ordner erstellt"
-                } else {
-                    "Folder created"
-                },
-            );
+            self.file_feedback(ui, tr(ui, "folder_created"));
             self.browse_to(ui, path.into());
             return;
         }
@@ -3612,11 +3650,10 @@ impl State {
         match tag {
             "file-deleted" | "file-moved" => {
                 ui.set_dialog_mode("".into());
-                let message = match (tag, ui.get_german()) {
-                    ("file-deleted", true) => "Datei erfolgreich gelöscht",
-                    ("file-deleted", false) => "File deleted successfully",
-                    (_, true) => "Datei erfolgreich verschoben",
-                    _ => "File moved successfully",
+                let message = if tag == "file-deleted" {
+                    tr(ui, "file_deleted_successfully")
+                } else {
+                    tr(ui, "file_moved_successfully")
                 };
                 self.file_feedback(ui, message);
                 self.refresh(ui);
@@ -3680,22 +3717,34 @@ impl State {
             "update-finished" => self.refresh(ui),
             "storage" => {
                 let usage = &result["disk_usage"];
-                let space = format!(
-                    "{} used • {} available",
-                    display_size(usage["used"].as_u64().unwrap_or_default()),
-                    display_size(usage["free"].as_u64().unwrap_or_default())
-                );
-                self.dialog(ui, "G-code storage", &space, "info", "", "");
+                let space = tr(ui, "storage_usage")
+                    .replace(
+                        "{used}",
+                        &display_size(usage["used"].as_u64().unwrap_or_default()),
+                    )
+                    .replace(
+                        "{available}",
+                        &display_size(usage["free"].as_u64().unwrap_or_default()),
+                    );
+                self.dialog(ui, tr(ui, "g_code_storage"), &space, "info", "", "");
             }
             "history" => {
                 let totals = &result["job_totals"];
-                let details = format!(
-                    "Prints · {}\nPrint time · {}\nFilament · {:.1} m",
-                    totals["total_jobs"].as_u64().unwrap_or_default(),
-                    duration(number(&totals["total_print_time"]).unwrap_or_default()),
-                    number(&totals["total_filament_used"]).unwrap_or_default() / 1000.
-                );
-                self.dialog(ui, "Print history", &details, "info", "", "");
+                let filament = number(&totals["total_filament_used"]).unwrap_or_default() / 1000.;
+                let details = tr(ui, "print_history_summary")
+                    .replace(
+                        "{prints}",
+                        &totals["total_jobs"]
+                            .as_u64()
+                            .unwrap_or_default()
+                            .to_string(),
+                    )
+                    .replace(
+                        "{time}",
+                        &duration(number(&totals["total_print_time"]).unwrap_or_default()),
+                    )
+                    .replace("{filament}", &format!("{filament:.1}"));
+                self.dialog(ui, tr(ui, "print_history"), &details, "info", "", "");
             }
             "webcams" if self.page == "settings" && self.tab == "tools" => {
                 let candidate = array(&result["webcams"]).iter().find_map(|camera| {
@@ -3713,7 +3762,7 @@ impl State {
                         .and_then(|base| base.join(url).ok())
                         .map(|url| url.to_string());
                 } else {
-                    ui.set_message("No webcam snapshot URL is configured".into());
+                    ui.set_message(tr(ui, "no_webcam_snapshot_url_is_configured").into());
                 }
             }
             "gcode" | "start" | "emergency" | "pause" | "resume" | "cancel" | "restart"
@@ -3739,6 +3788,10 @@ impl State {
         let client = self.http.clone();
         let tx = self.background.clone();
         let url = url.to_owned();
+        let image_too_large = locale::text(
+            "image_too_large",
+            self.config["system"]["language"].as_str() == Some("de"),
+        );
         self.runtime.spawn(async move {
             let result = async {
                 const MAX_IMAGE: usize = 12 * 1024 * 1024;
@@ -3746,7 +3799,7 @@ impl State {
                 let mut bytes = Vec::new();
                 while let Some(chunk) = response.chunk().await? {
                     if bytes.len() + chunk.len() > MAX_IMAGE {
-                        return Err("Image exceeds 12 MB".into());
+                        return Err(image_too_large.into());
                     }
                     bytes.extend_from_slice(&chunk);
                 }
@@ -3962,13 +4015,14 @@ fn start_display_watcher(
                 }
             }
 
-            let (enabled, timeout, unlock) = config
+            let (enabled, timeout, unlock, german) = config
                 .lock()
                 .map(|config| {
                     (
                         config["use_idle_timeout"].as_bool().unwrap_or_default(),
                         Duration::from_secs(config["idle_timeout"].as_u64().unwrap_or(900).max(1)),
                         Duration::from_millis(config["idle_unlock"].as_u64().unwrap_or(500)),
+                        config["language"].as_str() == Some("de"),
                     )
                 })
                 .unwrap_or_default();
@@ -3993,7 +4047,7 @@ fn start_display_watcher(
                     if manual {
                         let _ = tx.send(Background::Reply(
                             "display".into(),
-                            Err("No input device available to wake the screen".into()),
+                            Err(locale::text("no_display_wake_device", german).into()),
                         ));
                     }
                     last_activity = Instant::now();

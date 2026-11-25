@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { ScrollView, LineEdit } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
@@ -11,7 +12,7 @@ export struct FilamentSensor {
 
 component FilamentSensorButton inherits Tile {
     in property <FilamentSensor> sensor;
-    in property <bool> german;
+
     height: 56px;
     border-radius: 0px;
     fill: !root.sensor.enabled ? Palette.ink.transparentize(82%) :
@@ -19,8 +20,8 @@ component FilamentSensorButton inherits Tile {
     ink: !root.sensor.enabled ? Palette.muted : root.sensor.detected ? #ffffff : Palette.warning;
     accessible-role: button;
     accessible-label: root.sensor.name + (root.sensor.enabled
-        ? (root.german ? ", aktiviert" : ", enabled")
-        : (root.german ? ", deaktiviert" : ", disabled"));
+        ? I18n.text("enabled_suffix")
+        : I18n.text("disabled_suffix"));
     accessible-action-default => { if root.enabled { root.clicked(); } }
 
     Label {
@@ -44,7 +45,7 @@ component Move inherits Tile {
 }
 
 export component MotionPanel inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> enabled;
     in property <bool> sensors-enabled;
     in property <bool> x-homed;
@@ -149,7 +150,7 @@ export component MotionPanel inherits Rectangle {
                     min-height: 36px;
                     spacing: 5px;
                     if root.has-tilt: Tile {
-                        label: "Z Tilt"; enabled: root.enabled && root.x-homed && root.y-homed;
+                        label: I18n.text("z_tilt"); enabled: root.enabled && root.x-homed && root.y-homed;
                         clicked => { root.action("z-tilt", ""); }
                     }
                     if root.has-qgl: Tile {
@@ -174,14 +175,14 @@ export component MotionPanel inherits Rectangle {
                     VerticalLayout {
                         alignment: start;
                         Tile {
-                            label: root.german ? "Laden" : "Load";
+                            label: I18n.text("load");
                             height: 56px; border-radius: 0px; fill: transparent;
                             enabled: root.enabled;
                             clicked => { root.action("load-filament", ""); }
                         }
                         Rectangle { height: 1px; background: Palette.divider; }
                         Tile {
-                            label: root.german ? "Entladen" : "Unload";
+                            label: I18n.text("unload");
                             height: 56px; border-radius: 0px; fill: transparent;
                             enabled: root.enabled;
                             clicked => { root.action("unload-filament", ""); }
@@ -190,7 +191,7 @@ export component MotionPanel inherits Rectangle {
                         for sensor in root.sensors: VerticalLayout {
                             FilamentSensorButton {
                                 sensor: sensor;
-                                german: root.german;
+
                                 enabled: root.sensors-enabled;
                                 clicked => { root.action("toggle-filament-sensor", sensor.key); }
                             }
@@ -241,7 +242,7 @@ component Adjustment inherits Rectangle {
 }
 
 export component PrintOptions inherits ScrollView {
-    in property <bool> german;
+
     in property <string> flow;
     in property <string> advance;
     in property <string> smooth;
@@ -252,21 +253,21 @@ export component PrintOptions inherits ScrollView {
         padding-right: 10px;
         spacing: 8px;
         Adjustment {
-            label: root.german ? "Fluss" : "Flow";
+            label: I18n.text("flow");
             current: root.flow;
             enabled: root.enabled;
             steps: ["-10", "-5", "-1", "1", "5", "10"];
             apply(value) => { root.action("set-flow", value); }
         }
         Adjustment {
-            label: root.german ? "Druckvorschub (PA)" : "Pressure Advance";
+            label: I18n.text("pressure_advance");
             current: root.advance;
             enabled: root.enabled;
             steps: ["-0.01", "-0.005", "-0.001", "0.001", "0.005", "0.01"];
             apply(value) => { root.action("set-advance", value); }
         }
         Adjustment {
-            label: root.german ? "PA-Glättungszeit" : "PA Smooth Time";
+            label: I18n.text("pa_smooth_time");
             current: root.smooth;
             enabled: root.enabled;
             steps: ["-0.01", "-0.005", "-0.001", "0.001", "0.005", "0.01"];

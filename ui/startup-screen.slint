@@ -1,0 +1,44 @@
+import { I18n } from "i18n.slint";
+import { Label, Palette } from "widgets.slint";
+
+export component StartupScreen inherits Rectangle {
+
+    in property <bool> klipper;
+
+    background: Palette.background;
+    TouchArea {}
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+
+        Label {
+            text: root.klipper
+                ? I18n.text("klipper_is_starting")
+                : I18n.text("system_starting");
+            horizontal-alignment: center;
+            font-size: 16px;
+            color: Palette.accent;
+        }
+
+        Rectangle {
+            height: 4px;
+            track := Rectangle {
+                width: 184px;
+                height: parent.height;
+                x: (parent.width - self.width) / 2;
+                border-radius: 2px;
+                background: Palette.accent.transparentize(76%);
+                clip: true;
+
+                Rectangle {
+                    width: 64px;
+                    height: parent.height;
+                    x: (track.width + self.width) * (mod(animation-tick(), 1350ms) / 1350ms) - self.width;
+                    border-radius: 2px;
+                    background: Palette.accent;
+                }
+            }
+        }
+    }
+}

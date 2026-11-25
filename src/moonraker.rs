@@ -168,7 +168,13 @@ async fn session(
                     else { let _ = output.send(Event::Reply(tag.clone(), Err("Moonraker request timed out".into()))); }
                     false
                 });
-                if retry_subscription {
+                let awaiting_klippy = connected && matches!(
+                    status.get("webhooks").and_then(|webhooks: &Value| webhooks["state"].as_str()),
+                    Some("startup" | "disconnected")
+                );
+                if (retry_subscription || awaiting_klippy)
+                    && !pending.values().any(|(tag, _)| tag == "@server")
+                {
                     send(&mut socket, &mut id, &mut pending, Call::new("server.info", json!({}), "@server")).await?;
                 }
                 socket.send(Message::Ping(Default::default())).await.map_err(|e| e.to_string())?;
@@ -189,15 +195,19 @@ async fn session(
                     };
                     match tag.as_str() {
                         "@server" => {
+                            let result = result?;
                             if !connected {
                                 connected = true;
                                 let _ = output.send(Event::Connected);
                             }
-                            status.entry("webhooks").or_insert_with(|| json!({
-                                "state": value["result"]["klippy_state"].as_str().unwrap_or("disconnected")
-                            }));
+                            let klippy_state = result["klippy_state"].as_str().unwrap_or("disconnected");
+                            if status.get("webhooks").and_then(|webhooks| webhooks["state"].as_str()) != Some(klippy_state) {
+                                status.insert("webhooks".into(), json!({"state": klippy_state}));
+                            }
                             let _ = output.send(Event::Status(status.clone()));
-                            send(&mut socket, &mut id, &mut pending, Call::new("printer.objects.list", json!({}), "@objects")).await?;
+                            if klippy_state != "disconnected" {
+                                send(&mut socket, &mut id, &mut pending, Call::new("printer.objects.list", json!({}), "@objects")).await?;
+                            }
                         }
                         "@objects" => {
                             if let Ok(objects) = result {

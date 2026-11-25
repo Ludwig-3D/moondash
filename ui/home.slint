@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
@@ -16,6 +17,86 @@ component PrintStat inherits VerticalLayout {
 
     Label { text: root.caption; font-size: 13px; height: 19px; color: Palette.muted; horizontal-alignment: root.align; }
     Label { text: root.value; font-size: 16px; height: 22px; font-weight: 700; horizontal-alignment: root.align; }
+}
+
+component PrintCardAction inherits Tile {
+    in property <string> caption;
+    in property <string> glyph;
+    out property <length> natural-width: caption-label.preferred-width + 43px;
+    border-radius: 0px;
+    accessible-role: button;
+    accessible-label: root.caption;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 7px;
+        alignment: center;
+
+        Mdi { text: root.glyph; width: 20px; font-size: 20px; color: root.ink; }
+        caption-label := Label {
+            text: root.caption;
+            color: root.ink;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+    }
+}
+
+component PrintCardActions inherits Rectangle {
+    in property <bool> paused;
+    in property <bool> finished;
+    in property <bool> can-skip;
+    in property <bool> can-reprint;
+    callback action(string);
+
+    private property <bool> show-primary: !root.finished || root.can-reprint;
+    private property <length> skip-width: !root.finished && root.can-skip ? 40px : 0px;
+    private property <length> primary-width: root.show-primary ? primary.natural-width : 0px;
+    private property <length> natural-width: root.skip-width + root.primary-width + secondary.natural-width;
+    private property <bool> split: root.show-primary && root.natural-width > root.width;
+    height: root.split ? 72px : 36px;
+
+    group := Rectangle {
+        x: 0px;
+        width: min(root.width, root.natural-width);
+        height: root.height;
+        border-radius: 14px;
+        clip: true;
+
+        if root.skip-width > 0px: Tile {
+            x: 0px; y: 0px;
+            width: root.skip-width; height: 36px;
+            icon: Icons.debug-step-over;
+            border-radius: 0px;
+            clicked => { root.action("show-objects"); }
+        }
+
+        primary := PrintCardAction {
+            visible: root.show-primary;
+            x: root.skip-width; y: 0px;
+            width: root.split ? group.width - self.x : root.primary-width;
+            height: 36px;
+            glyph: root.finished ? Icons.printer : root.paused ? Icons.play : Icons.pause;
+            caption: root.finished ? I18n.text("reprint") : root.paused ? I18n.text("resume") : I18n.text("pause");
+            fill: root.finished ? Palette.raised : root.paused ? Palette.success : Palette.warning;
+            ink: root.finished ? Palette.ink : #ffffff;
+            clicked => { root.action(root.finished ? "reprint" : root.paused ? "resume" : "pause"); }
+        }
+
+        secondary := PrintCardAction {
+            x: root.split ? 0px : root.skip-width + root.primary-width;
+            y: root.split ? 36px : 0px;
+            width: group.width - self.x;
+            height: 36px;
+            glyph: root.finished ? Icons.broom : Icons.stop;
+            caption: root.finished ? I18n.text("clear_file") : I18n.text("stop");
+            fill: root.finished ? Palette.accent : Palette.error;
+            ink: #ffffff;
+            clicked => { root.action(root.finished ? "clear-file" : "cancel"); }
+        }
+    }
 }
 
 component Notice inherits Rectangle {
@@ -37,15 +118,16 @@ component Notice inherits Rectangle {
 component NotificationAction inherits Tile {
     in property <string> caption;
     in property <string> leading-icon;
-    private property <length> icon-space: root.leading-icon == "" ? 0px : 24px;
-    out property <length> natural-width: max(64px, caption-label.preferred-width + 32px + root.icon-space);
+    private property <length> inset: 12px;
+    private property <length> icon-space: root.leading-icon == "" ? 0px : 28px;
+    out property <length> natural-width: max(64px, caption-label.preferred-width + 2 * root.inset + root.icon-space);
     border-radius: 4px;
     accessible-role: button;
     accessible-label: root.caption;
     accessible-action-default => { root.clicked(); }
 
     if root.leading-icon != "": Mdi {
-        x: 12px;
+        x: root.inset;
         width: 18px;
         text: root.leading-icon;
         color: root.ink;
@@ -53,24 +135,24 @@ component NotificationAction inherits Tile {
     }
 
     caption-label := Label {
-        x: 7px + root.icon-space;
-        width: parent.width - self.x - 7px;
-        text: root.caption.to-uppercase();
+        x: root.inset + root.icon-space;
+        width: parent.width - self.x - root.inset;
+        text: root.caption;
         color: root.ink;
         font-size: 14px;
         font-weight: 500;
-        letter-spacing: 1.25px;
         horizontal-alignment: center;
     }
 }
 
 component NotificationCard inherits Rectangle {
     in property <Notification> notification;
-    in property <bool> german;
     in property <bool> compact;
     callback action(string, string);
     callback dismiss;
     private property <Row> entry: root.notification.entry;
+    private property <length> icon-width: 24px;
+    private property <length> column-gap: root.compact ? 8px : 10px;
     border-radius: 4px;
     clip: true;
 
@@ -88,99 +170,107 @@ component NotificationCard inherits Rectangle {
         background: root.entry.tone.transparentize(62%);
     }
 
-    HorizontalLayout {
-        padding-left: root.compact ? 16px : 24px;
-        padding-right: root.compact ? 8px : 16px;
-        padding-top: 14px;
-        padding-bottom: 14px;
-        spacing: root.compact ? 8px : 16px;
+    VerticalLayout {
+        padding-left: root.compact ? 12px : 16px;
+        padding-right: 8px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 4px;
+        alignment: start;
 
-        VerticalLayout {
-            width: 28px;
-            padding-top: 2px;
-            alignment: start;
-            Mdi { text: root.entry.icon; color: root.entry.tone; height: 28px; font-size: 28px; }
-        }
+        HorizontalLayout {
+            spacing: root.column-gap;
 
-        VerticalLayout {
-            padding-top: 2px;
-            padding-bottom: 2px;
-            spacing: 2px;
-            horizontal-stretch: 1;
-            alignment: start;
-
-            Label {
-                text: root.entry.title;
-                color: root.entry.tone;
-                font-size: 14px;
-                font-weight: 700;
-                wrap: word-wrap;
-                overflow: clip;
+            VerticalLayout {
+                width: root.icon-width;
+                alignment: start;
+                Mdi {
+                    text: root.entry.icon;
+                    color: root.entry.tone;
+                    height: root.icon-width;
+                    font-size: root.icon-width;
+                }
             }
 
-            Label {
-                text: root.entry.detail;
-                color: root.entry.tone;
-                font-size: 14px;
-                wrap: word-wrap;
-                overflow: clip;
+            VerticalLayout {
+                spacing: 2px;
+                horizontal-stretch: 1;
+                alignment: start;
+
+                Label {
+                    text: root.entry.title;
+                    color: root.entry.tone;
+                    font-size: 14px;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                    overflow: clip;
+                }
+
+                Label {
+                    text: root.entry.detail;
+                    color: root.entry.tone;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                    overflow: clip;
+                }
             }
 
-            if root.entry.action != "": VerticalLayout {
-                padding-top: 10px;
+            VerticalLayout {
+                width: 32px;
+                alignment: start;
 
-                buttons := Rectangle {
-                    private property <bool> alternate: root.entry.alternate != "";
-                    private property <bool> wrap: alternate && first.natural-width + 8px + second.natural-width > self.width;
-                    height: self.wrap ? 80px : 36px;
-
-                    first := NotificationAction {
-                        x: 0px; y: 0px;
-                        width: min(self.natural-width, buttons.width);
-                        height: 36px;
-                        caption: root.entry.button;
-                        leading-icon: root.entry.action == "show-updates" ? Icons.cog-outline : "";
-                        fill: buttons.alternate ? transparent : root.entry.tone;
-                        ink: buttons.alternate ? root.entry.tone : root.notification.action-ink;
-                        clicked => { root.action(root.entry.action, root.entry.argument); }
-                    }
-
-                    second := NotificationAction {
-                        visible: buttons.alternate;
-                        x: buttons.wrap ? 0px : first.width + 8px;
-                        y: buttons.wrap ? 44px : 0px;
-                        width: min(self.natural-width, buttons.width);
-                        height: 36px;
-                        caption: root.entry.alternate-button;
-                        fill: root.entry.tone;
-                        ink: root.notification.action-ink;
-                        clicked => { root.action(root.entry.alternate, root.entry.argument); }
-                    }
+                close := Tile {
+                    min-width: 32px;
+                    icon: Icons.close;
+                    icon-size: 18px;
+                    fill: transparent;
+                    ink: root.entry.tone;
+                    accessible-role: button;
+                    accessible-label: I18n.text("dismiss_notification");
+                    accessible-action-default => { close.clicked(); }
+                    clicked => { root.dismiss(); }
                 }
             }
         }
 
-        VerticalLayout {
-            width: 32px;
-            alignment: start;
+        if root.entry.action != "": VerticalLayout {
+            padding-left: root.compact ? 0px : root.icon-width + root.column-gap;
 
-            close := Tile {
-                min-width: 32px;
-                icon: Icons.close;
-                icon-size: 18px;
-                fill: transparent;
-                ink: root.entry.tone;
-                accessible-role: button;
-                accessible-label: root.german ? "Meldung ausblenden" : "Dismiss notification";
-                accessible-action-default => { close.clicked(); }
-                clicked => { root.dismiss(); }
+            buttons := Rectangle {
+                private property <bool> alternate: root.entry.alternate != "";
+                private property <length> gap: 6px;
+                private property <bool> wrap: alternate && first.natural-width + gap + second.natural-width > self.width;
+                height: self.wrap ? 2 * 36px + gap : 36px;
+
+                first := NotificationAction {
+                    x: 0px; y: 0px;
+                    width: min(self.natural-width, buttons.width);
+                    height: 36px;
+                    caption: root.entry.button;
+                    leading-icon: root.entry.action == "show-updates" ? Icons.cog-outline : "";
+                    fill: buttons.alternate ? transparent : root.entry.tone;
+                    ink: buttons.alternate ? root.entry.tone : root.notification.action-ink;
+                    clicked => { root.action(root.entry.action, root.entry.argument); }
+                }
+
+                second := NotificationAction {
+                    visible: buttons.alternate;
+                    x: buttons.wrap ? 0px : first.width + buttons.gap;
+                    y: buttons.wrap ? 36px + buttons.gap : 0px;
+                    width: min(self.natural-width, buttons.width);
+                    height: 36px;
+                    caption: root.entry.alternate-button;
+                    fill: root.entry.tone;
+                    ink: root.notification.action-ink;
+                    clicked => { root.action(root.entry.alternate, root.entry.argument); }
+                }
             }
         }
     }
 }
 
 export component Dashboard inherits HorizontalLayout {
-    in property <bool> german;
+
     in property <bool> ready;
     in property <bool> online;
     in property <bool> printing;
@@ -249,7 +339,7 @@ export component Dashboard inherits HorizontalLayout {
                 Rectangle { vertical-stretch: 1; }
 
                 Rectangle {
-                    height: 142px;
+                    height: 106px + actions.height;
                     background: Palette.header;
                     VerticalLayout {
                         padding-top: 12px;
@@ -260,9 +350,9 @@ export component Dashboard inherits HorizontalLayout {
 
                         HorizontalLayout {
                             spacing: 12px;
-                            PrintStat { caption: root.german ? "Fortschritt" : "Progress"; value: round(root.progress * 100) + "%"; horizontal-stretch: 1; }
-                            PrintStat { caption: root.german ? "Schicht" : "Layer"; value: root.layers; align: center; horizontal-stretch: 1; }
-                            PrintStat { caption: root.german ? "Verbleibend" : "Remaining"; value: root.remaining; align: right; horizontal-stretch: 1; }
+                            PrintStat { caption: I18n.text("progress"); value: round(root.progress * 100) + "%"; horizontal-stretch: 1; }
+                            PrintStat { caption: I18n.text("layer"); value: root.layers; align: center; horizontal-stretch: 1; }
+                            PrintStat { caption: I18n.text("remaining"); value: root.remaining; align: right; horizontal-stretch: 1; }
                         }
 
                         track := Rectangle {
@@ -273,45 +363,12 @@ export component Dashboard inherits HorizontalLayout {
                             Rectangle { x: 0px; y: 0px; width: track.width * clamp(root.progress, 0, 1); height: track.height; background: Palette.accent; }
                         }
 
-                        HorizontalLayout {
-                            alignment: start;
-                            height: 40px;
-                            padding-top: 4px;
-                            Rectangle {
-                                border-radius: 14px;
-                                clip: true;
-                                height: 36px;
-                                HorizontalLayout {
-                                    if !root.finished && root.can-skip: Tile {
-                                        icon: Icons.debug-step-over; width: 38px; border-radius: 0px;
-                                        clicked => { root.action("show-objects", ""); }
-                                    }
-                                    if !root.finished: Tile {
-                                        icon: root.paused ? Icons.play : Icons.pause;
-                                        label: root.paused ? (root.german ? "Fortsetzen" : "Resume") : (root.german ? "Pausieren" : "Pause");
-                                        fill: root.paused ? Palette.success : Palette.warning;
-                                        ink: #ffffff;
-                                        border-radius: 0px;
-                                        min-width: root.german ? 134px : 115px;
-                                        clicked => { root.action(root.paused ? "resume" : "pause", ""); }
-                                    }
-                                    if !root.finished: Tile {
-                                        icon: Icons.stop; label: root.german ? "Stoppen" : "Stop";
-                                        fill: Palette.error; ink: #ffffff; border-radius: 0px;
-                                        min-width: root.german ? 121px : 110px;
-                                        clicked => { root.action("cancel", ""); }
-                                    }
-                                    if root.finished && root.jobs.length == 0: Tile {
-                                        icon: Icons.printer; label: root.german ? "Erneut drucken" : "Reprint"; border-radius: 0px;
-                                        clicked => { root.action("reprint", ""); }
-                                    }
-                                    if root.finished: Tile {
-                                        icon: Icons.broom; label: root.german ? "Datei entfernen" : "Clear file";
-                                        fill: Palette.accent; ink: #ffffff; border-radius: 0px;
-                                        clicked => { root.action("clear-file", ""); }
-                                    }
-                                }
-                            }
+                        actions := PrintCardActions {
+                            paused: root.paused;
+                            finished: root.finished;
+                            can-skip: root.can-skip;
+                            can-reprint: root.jobs.length == 0;
+                            action(name) => { root.action(name, ""); }
                         }
                     }
                 }
@@ -327,23 +384,6 @@ export component Dashboard inherits HorizontalLayout {
                 y: (parent.height - self.height) / 2;
                 opacity: 0.6;
                 image-fit: contain;
-            }
-
-            if !root.online: VerticalLayout {
-                alignment: center;
-                spacing: 8px;
-                Label {
-                    text: root.german ? "Moondash wird gestartet…" : "Starting Moondash…";
-                    color: Palette.accent; horizontal-alignment: center;
-                }
-                Rectangle {
-                    width: 110px;
-                    height: 4px;
-                    x: (parent.width - self.width) / 2;
-                    border-radius: 2px;
-                    background: Palette.accent.transparentize(70%);
-                    Rectangle { width: 42px; height: parent.height; x: 34px; border-radius: 2px; background: Palette.accent; }
-                }
             }
 
             if root.message != "": Notice {
@@ -401,7 +441,7 @@ export component Dashboard inherits HorizontalLayout {
         ScrollView {
             VerticalLayout {
                 padding: root.notifications.length > 0 ? 0px : 8px;
-                spacing: root.notifications.length > 0 ? 12px : 6px;
+                spacing: root.notifications.length > 0 ? 8px : 6px;
                 alignment: root.notifications.length > 0 ? start : stretch;
 
                 if root.error != "": VerticalLayout {
@@ -411,7 +451,6 @@ export component Dashboard inherits HorizontalLayout {
 
                 for notification in root.notifications: NotificationCard {
                     notification: notification;
-                    german: root.german;
                     compact: root.notification-width < 250px;
                     dismiss => { root.action("dismiss-notification", notification.id); }
                     action(name, argument) => { root.action(name, argument); }
@@ -419,7 +458,7 @@ export component Dashboard inherits HorizontalLayout {
 
                 if root.ready && root.error == "" && root.notifications.length == 0 && !root.printing && !root.paused && root.jobs.length > 0: VerticalLayout {
                     spacing: 5px;
-                    Label { text: root.german ? "Warteschlange" : "Job Queue"; font-weight: 700; }
+                    Label { text: I18n.text("job_queue"); font-weight: 700; }
                     for job in root.jobs: Tile {
                         label: job.title;
                         icon: Icons.printer;

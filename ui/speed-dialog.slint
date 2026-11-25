@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { Spinner } from "std-widgets.slint";
 import { NumberPad } from "number-pad.slint";
 import { Label, Palette, Tile } from "widgets.slint";
@@ -199,7 +200,7 @@ component SpeedSteps inherits VerticalLayout {
 }
 
 component AccelerationEditor inherits Rectangle {
-    in property <bool> german;
+
     in property <string> current;
     callback commit(string);
     callback close;
@@ -252,7 +253,7 @@ component AccelerationEditor inherits Rectangle {
         Label {
             x: root.inset; y: root.compact ? 12px : 24px;
             width: card.width - 2 * root.inset; height: 32px;
-            text: root.german ? "Beschleunigung" : "Acceleration";
+            text: I18n.text("acceleration");
             font-size: 24px;
         }
 
@@ -287,7 +288,7 @@ component AccelerationEditor inherits Rectangle {
                 x: readout.width + (root.width < 620px ? 14px : 24px); y: 0px;
                 width: body.width - self.x;
                 height: body.height;
-                german: root.german;
+
                 digit(value) => { root.append(value); }
                 clear => { root.clear(); }
                 erase => { root.erase(); }
@@ -301,17 +302,17 @@ component AccelerationEditor inherits Rectangle {
             alignment: end;
 
             Tile {
-                width: root.german ? 99px : 78px; height: 36px;
+                width: I18n.german ? 99px : 78px; height: 36px;
                 fill: transparent;
-                label: root.german ? "Abbrechen" : "Cancel";
+                label: I18n.text("cancel");
                 clicked => { root.close(); }
             }
             Tile {
-                width: root.german ? 82px : 64px; height: 36px;
+                width: I18n.german ? 82px : 64px; height: 36px;
                 fill: Palette.accent.transparentize(86%);
                 ink: Palette.accent;
                 enabled: root.valid;
-                label: root.german ? "Setzen" : "Set";
+                label: I18n.text("set");
                 clicked => { root.commit(root.entry); }
             }
         }
@@ -319,7 +320,7 @@ component AccelerationEditor inherits Rectangle {
 }
 
 export component SpeedDialog inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> busy;
     in property <bool> ready;
     in property <string> error;
@@ -352,7 +353,7 @@ export component SpeedDialog inherits Rectangle {
             x: root.inset; y: root.compact ? 12px : 24px;
             width: card.width - 2 * root.inset;
             height: 32px;
-            text: root.german ? "Druckgeschwindigkeit" : "Print Speed";
+            text: I18n.text("print_speed");
             font-size: 24px;
         }
 
@@ -395,13 +396,13 @@ export component SpeedDialog inherits Rectangle {
             reset := Tile {
                 x: (body.width - self.width) / 2;
                 y: dial.y + dial.height * 187 / 246;
-                width: root.german ? 112px : 84px;
+                width: I18n.german ? 112px : 84px;
                 height: 36px;
-                label: root.german ? "Zurücksetzen" : "Reset";
+                label: I18n.text("reset");
                 fill: Palette.ink.transparentize(94%);
                 enabled: !root.busy && !root.editing-acceleration && root.target != 100;
                 accessible-role: button;
-                accessible-label: root.german ? "Geschwindigkeit auf 100 % zurücksetzen" : "Reset speed to 100%";
+                accessible-label: I18n.text("reset_speed_to_100");
                 accessible-action-default => { if reset.enabled { reset.clicked(); } }
                 clicked => { root.adjust(100 - root.target); }
             }
@@ -421,8 +422,8 @@ export component SpeedDialog inherits Rectangle {
             width: card.width - self.x - 8px;
             height: 36px;
             spacing: 8px;
-            private property <length> cancel-width: root.german ? 99px : 78px;
-            private property <length> save-width: root.german ? 100px : 68px;
+            private property <length> cancel-width: I18n.german ? 99px : 78px;
+            private property <length> save-width: I18n.german ? 100px : 68px;
 
             acceleration-field := Rectangle {
                 width: min(220px, footer.width - footer.cancel-width - footer.save-width - 3 * footer.spacing);
@@ -431,7 +432,7 @@ export component SpeedDialog inherits Rectangle {
                 border-width: 1px;
                 border-color: Palette.ink.transparentize(82%);
                 background: hit.pressed ? Palette.accent.transparentize(83%) : hit.has-hover ? Palette.raised : Palette.ink.transparentize(95%);
-                private property <string> title: root.german ? "Beschleunigung" : "Acceleration";
+                private property <string> title: I18n.text("acceleration");
                 private property <string> value: (root.acceleration == "" ? "—" : root.acceleration) + " mm/s²";
                 accessible-role: button;
                 accessible-label: title + ", " + value;
@@ -458,7 +459,7 @@ export component SpeedDialog inherits Rectangle {
                 width: footer.cancel-width; height: 36px;
                 fill: transparent;
                 enabled: !root.busy;
-                label: root.german ? "Abbrechen" : "Cancel";
+                label: I18n.text("cancel");
                 clicked => { root.close(); }
             }
 
@@ -470,7 +471,7 @@ export component SpeedDialog inherits Rectangle {
                     fill: Palette.accent.transparentize(86%);
                     ink: Palette.accent;
                     enabled: root.ready && !root.busy;
-                    label: root.busy ? "" : root.german ? "Speichern" : "Save";
+                    label: root.busy ? "" : I18n.text("save");
                     clicked => { root.save(); }
                 }
                 if root.busy: Spinner { width: 20px; height: 20px; }
@@ -479,7 +480,7 @@ export component SpeedDialog inherits Rectangle {
     }
 
     if root.editing-acceleration: AccelerationEditor {
-        german: root.german;
+
         current: root.acceleration;
         remove-last(value) => { return root.remove-last(value); }
         commit(value) => {

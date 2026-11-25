@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile, Tab, RailButton } from "widgets.slint";
@@ -8,11 +9,12 @@ import { AfcPanel, Lane } from "afc.slint";
 import { SpeedDialog } from "speed-dialog.slint";
 import { TemperatureDialog } from "temperature-dialog.slint";
 import { FanDialog } from "fan-dialog.slint";
+import { StartupScreen } from "startup-screen.slint";
 import { Keyboard } from "keyboard.slint";
 import { PrintDialog, FolderPicker, PrintTool } from "print-dialogs.slint";
 import { ConfigForm } from "settings.slint";
 import { ColorPicker, ColorSwatch } from "color-picker.slint";
-export { Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor }
+export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor }
 
 component RowList inherits ScrollView {
     in property <[Row]> rows;
@@ -66,9 +68,11 @@ export component Moondash inherits Window {
     default-font-size: 15px;
 
     in property <bool> dark: true;
-    in property <bool> german;
+
     in property <bool> online;
+    in property <bool> connected-once;
     in property <bool> ready;
+    in property <string> klipper-state: "connecting";
     in property <bool> printing;
     in property <bool> paused;
     in property <bool> sleeping;
@@ -191,10 +195,21 @@ export component Moondash inherits Window {
     }
 
     private property <bool> file-dialog: root.dialog-mode == "print" || root.dialog-mode.starts-with("file-");
+    private property <bool> initial-connection-timed-out;
+    private property <bool> klipper-starting: root.online && root.klipper-state == "startup";
+    private property <bool> starting: root.klipper-starting
+        || (!root.connected-once && !root.initial-connection-timed-out);
+
+    Timer {
+        interval: 8s;
+        running: !root.connected-once && !root.initial-connection-timed-out && root.connection != "";
+        triggered => { root.initial-connection-timed-out = true; }
+    }
 
 
     HorizontalLayout {
         x: 0px; y: 0px; width: root.width; height: root.height;
+        visible: !root.starting;
         Rectangle {
             width: 58px;
             background: Palette.background;
@@ -203,15 +218,15 @@ export component Moondash inherits Window {
                 padding-top: 17px;
                 padding-bottom: 17px;
                 spacing: 5px;
-                RailButton { icon: Icons.home-variant; active: root.page == "home"; accessible-label: "Home"; clicked => { root.navigate("home", ""); } }
-                RailButton { icon: Icons.tune-vertical-variant; active: root.page == "tune"; accessible-label: "Controls"; clicked => { root.navigate("tune", "motion"); } }
-                RailButton { icon: Icons.printer-3d; active: root.page == "files"; accessible-label: "Files"; clicked => { root.navigate("files", ""); } }
-                RailButton { icon: Icons.cog; active: root.page == "settings"; accessible-label: "Settings"; clicked => { root.navigate("settings", "network"); } }
-                if root.debug: RailButton { icon: Icons.code-json; active: root.page == "debug"; accessible-label: "Debug"; clicked => { root.navigate("debug", ""); } }
+                RailButton { icon: Icons.home-variant; active: root.page == "home"; accessible-label: I18n.text("home"); clicked => { root.navigate("home", ""); } }
+                RailButton { icon: Icons.tune-vertical-variant; active: root.page == "tune"; accessible-label: I18n.text("controls"); clicked => { root.navigate("tune", "motion"); } }
+                RailButton { icon: Icons.printer-3d; active: root.page == "files"; accessible-label: I18n.text("files"); clicked => { root.navigate("files", ""); } }
+                RailButton { icon: Icons.cog; active: root.page == "settings"; accessible-label: I18n.text("settings"); clicked => { root.navigate("settings", "network"); } }
+                if root.debug: RailButton { icon: Icons.code-json; active: root.page == "debug"; accessible-label: I18n.text("debug"); clicked => { root.navigate("debug", ""); } }
                 RailButton {
                     icon: root.printing || root.paused ? Icons.alert-octagon : Icons.power;
                     ink: root.printing || root.paused ? Palette.error : Palette.muted;
-                    accessible-label: root.printing || root.paused ? "Emergency stop" : "Power";
+                    accessible-label: root.printing || root.paused ? I18n.text("emergency_stop") : I18n.text("power");
                     clicked => { root.action(root.printing || root.paused ? "emergency" : "power", ""); }
                 }
             }
@@ -219,7 +234,7 @@ export component Moondash inherits Window {
 
         if root.page == "home": Dashboard {
             horizontal-stretch: 1;
-            german: root.german;
+
             online: root.online;
             ready: root.ready;
             printing: root.printing;
@@ -252,11 +267,11 @@ export component Moondash inherits Window {
                     padding-right: 8px;
                     spacing: 2px;
                     alignment: start;
-                    Tab { width: 105px; label: root.german ? "Steuerung" : "Controls"; active: root.tab == "motion"; clicked => { root.navigate("tune", "motion"); } }
-                    if root.has-afc: Tab { width: 100px; label: "Filament"; active: root.tab == "afc"; clicked => { root.navigate("tune", "afc"); } }
-                    Tab { width: 135px; label: root.german ? "Druckoptionen" : "Print options"; active: root.tab == "print"; clicked => { root.navigate("tune", "print"); } }
-                    if root.tab == "objects": Tab { width: 105px; label: root.german ? "Objekte" : "Objects"; active: true; }
-                    if root.tab == "queue": Tab { width: 115px; label: root.german ? "Warteschlange" : "Job Queue"; active: true; }
+                    Tab { width: 105px; label: I18n.text("controls"); active: root.tab == "motion"; clicked => { root.navigate("tune", "motion"); } }
+                    if root.has-afc: Tab { width: 100px; label: I18n.text("filament"); active: root.tab == "afc"; clicked => { root.navigate("tune", "afc"); } }
+                    Tab { width: 135px; label: I18n.text("print_options"); active: root.tab == "print"; clicked => { root.navigate("tune", "print"); } }
+                    if root.tab == "objects": Tab { width: 105px; label: I18n.text("objects"); active: true; }
+                    if root.tab == "queue": Tab { width: 115px; label: I18n.text("job_queue"); active: true; }
                 }
             }
 
@@ -264,12 +279,12 @@ export component Moondash inherits Window {
                 height: 40px;
                 HorizontalLayout {
                     padding-right: 8px;
-                    Tab { label: root.german ? "Netzwerk" : "Network"; active: root.tab == "network"; clicked => { root.navigate("settings", "network"); } }
-                    Tab { label: root.german ? "Einstellungen" : "Settings"; active: root.tab == "config"; clicked => { root.navigate("settings", "config"); } }
-                    Tab { label: root.german ? "Werkzeuge" : "Tools"; active: root.tab == "tools"; clicked => { root.navigate("settings", "tools"); } }
-                    Tab { label: root.german ? "Ressourcen" : "Resources"; active: root.tab == "host"; clicked => { root.navigate("settings", "host"); } }
-                    Tab { label: root.german ? "Kurzbefehle" : "Shortcuts"; active: root.tab == "shortcuts"; clicked => { root.navigate("settings", "shortcuts"); } }
-                    Tab { label: "Updates"; active: root.tab == "updates"; clicked => { root.navigate("settings", "updates"); } }
+                    Tab { label: I18n.text("network"); active: root.tab == "network"; clicked => { root.navigate("settings", "network"); } }
+                    Tab { label: I18n.text("settings"); active: root.tab == "config"; clicked => { root.navigate("settings", "config"); } }
+                    Tab { label: I18n.text("tools"); active: root.tab == "tools"; clicked => { root.navigate("settings", "tools"); } }
+                    Tab { label: I18n.text("resources"); active: root.tab == "host"; clicked => { root.navigate("settings", "host"); } }
+                    Tab { label: I18n.text("shortcuts"); active: root.tab == "shortcuts"; clicked => { root.navigate("settings", "shortcuts"); } }
+                    Tab { label: I18n.text("updates"); active: root.tab == "updates"; clicked => { root.navigate("settings", "updates"); } }
                 }
             }
 
@@ -287,7 +302,7 @@ export component Moondash inherits Window {
 
             if root.page == "tune" && root.tab == "motion": MotionPanel {
                 vertical-stretch: 1;
-                german: root.german;
+
                 enabled: root.ready && !root.printing && !root.paused && !root.motion-busy;
                 sensors-enabled: root.ready && !root.motion-busy;
                 x-homed: root.x-homed;
@@ -303,7 +318,7 @@ export component Moondash inherits Window {
 
             if root.page == "tune" && root.tab == "print": PrintOptions {
                 vertical-stretch: 1;
-                german: root.german;
+
                 enabled: root.ready;
                 flow: root.flow;
                 advance: root.advance;
@@ -313,7 +328,7 @@ export component Moondash inherits Window {
 
             if root.page == "tune" && root.tab == "afc": AfcPanel {
                 vertical-stretch: 1;
-                german: root.german;
+
                 enabled: root.ready && !root.printing && !root.paused;
                 lanes: root.afc-lanes;
                 units: root.afc-units;
@@ -322,7 +337,7 @@ export component Moondash inherits Window {
 
             if root.page == "files": FileBrowser {
                 vertical-stretch: 1;
-                german: root.german;
+
                 entries: root.rows;
                 crumbs: root.breadcrumbs;
                 loading: root.file-loading;
@@ -347,8 +362,8 @@ export component Moondash inherits Window {
                 HorizontalLayout {
                     spacing: 6px;
                     Tile { icon: Icons.arrow-left; clicked => { root.action("config-form", ""); } }
-                    Tile { icon: Icons.reload; label: root.german ? "Neu laden" : "Reload"; clicked => { root.action("reload-config", ""); } }
-                    Tile { icon: Icons.content-save; label: root.german ? "Speichern" : "Save"; active: root.config-dirty; enabled: root.config-dirty; clicked => { root.action("save-config", root.config-text); } }
+                    Tile { icon: Icons.reload; label: I18n.text("reload"); clicked => { root.action("reload-config", ""); } }
+                    Tile { icon: Icons.content-save; label: I18n.text("save"); active: root.config-dirty; enabled: root.config-dirty; clicked => { root.action("save-config", root.config-text); } }
                 }
             }
 
@@ -366,7 +381,7 @@ export component Moondash inherits Window {
                         if root.web-qr.width > 0: Image { source: root.web-qr; width: 100px; height: 100px; image-fit: contain; }
                         VerticalLayout {
                             alignment: center;
-                            Label { text: "Web Panel"; font-weight: 600; }
+                            Label { text: I18n.text("web_panel"); font-weight: 600; }
                             Label { text: root.web-url; color: Palette.muted; }
                         }
                     }
@@ -378,7 +393,7 @@ export component Moondash inherits Window {
                 padding: 8px;
                 spacing: 6px;
                 TextEdit { text: root.diagnostics; read-only: true; vertical-stretch: 1; }
-                Tile { icon: Icons.power; label: root.german ? "Display ausschalten" : "Sleep display"; clicked => { root.action("sleep", ""); } }
+                Tile { icon: Icons.power; label: I18n.text("sleep_display"); clicked => { root.action("sleep", ""); } }
             }
 
             if root.page == "settings" && root.tab == "tools" && root.tool-title != "": HorizontalLayout {
@@ -424,24 +439,24 @@ export component Moondash inherits Window {
             power-layout := VerticalLayout {
                 padding: 14px;
                 spacing: 12px;
-                Label { text: root.german ? "Energieoptionen" : "Power options"; font-size: 20px; font-weight: 600; }
+                Label { text: I18n.text("power_options"); font-size: 20px; font-weight: 600; }
                 HorizontalLayout {
                     spacing: 12px;
-                    Tile { stacked: true; icon: Icons.power; label: root.german ? "Herunterfahren" : "Shut down"; height: 124px; fill: Palette.error.transparentize(77%); clicked => { root.action("shutdown", ""); } }
-                    Tile { stacked: true; icon: Icons.restart; label: root.german ? "Neustart" : "Reboot"; height: 124px; fill: Palette.warning.transparentize(77%); clicked => { root.action("reboot", ""); } }
-                    Tile { stacked: true; icon: Icons.refresh; label: "Restart Klipper"; height: 124px; clicked => { root.action("restart-klipper", ""); } }
-                    Tile { stacked: true; icon: Icons.chip; label: "Restart Firmware"; height: 124px; fill: Palette.info.transparentize(77%); clicked => { root.action("restart-firmware", ""); } }
+                    Tile { stacked: true; icon: Icons.power; label: I18n.text("shut_down"); height: 124px; fill: Palette.error.transparentize(77%); clicked => { root.action("shutdown", ""); } }
+                    Tile { stacked: true; icon: Icons.restart; label: I18n.text("reboot"); height: 124px; fill: Palette.warning.transparentize(77%); clicked => { root.action("reboot", ""); } }
+                    Tile { stacked: true; icon: Icons.refresh; label: I18n.text("restart_klipper"); height: 124px; clicked => { root.action("restart-klipper", ""); } }
+                    Tile { stacked: true; icon: Icons.chip; label: I18n.text("restart_firmware"); height: 124px; fill: Palette.info.transparentize(77%); clicked => { root.action("restart-firmware", ""); } }
                 }
                 HorizontalLayout {
                     alignment: end;
-                    Tile { label: root.german ? "Schließen" : "Close"; fill: transparent; clicked => { root.dialog-close(); } }
+                    Tile { label: I18n.text("close"); fill: transparent; clicked => { root.dialog-close(); } }
                 }
             }
         }
     }
 
     if root.file-dialog: PrintDialog {
-        german: root.german;
+
         folder: root.dialog-folder;
         printing: root.printing || root.paused;
         ready: root.ready;
@@ -464,7 +479,7 @@ export component Moondash inherits Window {
     }
 
     if root.folder-picker: FolderPicker {
-        german: root.german;
+
         loading: root.folder-picker-loading;
         busy: root.file-busy;
         creating: root.folder-create;
@@ -489,17 +504,17 @@ export component Moondash inherits Window {
             VerticalLayout {
                 padding: 14px;
                 spacing: 8px;
-                Label { text: root.german ? "Spurauswahl" : "Select Lane"; font-size: 19px; font-weight: 600; }
+                Label { text: I18n.text("select_lane"); font-size: 19px; font-weight: 600; }
                 RowList { rows: root.dialog-options; vertical-stretch: 1; action(name, argument) => { root.action(name, argument); } }
                 HorizontalLayout {
                     alignment: end;
-                    Tile { label: root.german ? "Abbrechen" : "Cancel"; min-width: 90px; fill: transparent; clicked => { root.action("close-print-lanes", ""); } }
+                    Tile { label: I18n.text("cancel"); min-width: 90px; fill: transparent; clicked => { root.action("close-print-lanes", ""); } }
                 }
             }
         }
     }
     if root.dialog-mode == "color": ColorPicker {
-        german: root.german;
+
         title: root.dialog-title;
         extras-title: root.picker-extras-title;
         error: root.dialog-detail;
@@ -513,7 +528,7 @@ export component Moondash inherits Window {
     }
 
     if root.dialog-mode == "speed": SpeedDialog {
-        german: root.german;
+
         busy: root.printer-setting-busy;
         ready: root.ready;
         target: root.speed-target;
@@ -527,7 +542,7 @@ export component Moondash inherits Window {
     }
 
     if root.dialog-mode == "temperature": TemperatureDialog {
-        german: root.german;
+
         busy: root.printer-setting-busy;
         ready: root.ready;
         title: root.dialog-title;
@@ -543,7 +558,7 @@ export component Moondash inherits Window {
     }
 
     if root.dialog-mode == "fan": FanDialog {
-        german: root.german;
+
         busy: root.printer-setting-busy;
         ready: root.ready;
         title: root.dialog-title;
@@ -586,7 +601,7 @@ export component Moondash inherits Window {
                             VerticalLayout {
                                 padding: 10px;
                                 alignment: center;
-                                Label { text: root.german ? "Ziel" : "Target"; color: Palette.muted; }
+                                Label { text: I18n.text("target"); color: Palette.muted; }
                                 Label {
                                     text: (root.dialog-value == "" ? "0" : root.dialog-value) + root.dialog-unit;
                                     font-size: 29px; color: Palette.accent; font-weight: 700;
@@ -601,7 +616,7 @@ export component Moondash inherits Window {
                             VerticalLayout {
                                 padding: 10px;
                                 alignment: center;
-                                Label { text: root.german ? "Aktuell" : "Current"; color: Palette.muted; }
+                                Label { text: I18n.text("current"); color: Palette.muted; }
                                 Label { text: root.dialog-current; font-size: 21px; font-weight: 600; }
                             }
                         }
@@ -613,7 +628,7 @@ export component Moondash inherits Window {
                             VerticalLayout {
                                 padding: 10px;
                                 alignment: center;
-                                Label { text: "Max"; color: Palette.muted; }
+                                Label { text: I18n.text("maximum"); color: Palette.muted; }
                                 Label { text: root.dialog-limit; font-size: 21px; font-weight: 600; }
                             }
                         }
@@ -655,8 +670,8 @@ export component Moondash inherits Window {
                             else if root.dialog-value.is-float() { root.dialog-value += "."; }
                         }
                     }
-                    Tile { label: root.german ? "Abbrechen" : "Cancel"; fill: transparent; clicked => { root.dialog-close(); } }
-                    Tile { label: root.german ? "Setzen" : "Set"; active: true; clicked => { root.dialog-submit(root.dialog-value == "" ? "0" : root.dialog-value, false); } }
+                    Tile { label: I18n.text("cancel"); fill: transparent; clicked => { root.dialog-close(); } }
+                    Tile { label: I18n.text("set"); active: true; clicked => { root.dialog-submit(root.dialog-value == "" ? "0" : root.dialog-value, false); } }
                 }
             }
         }
@@ -706,8 +721,8 @@ export component Moondash inherits Window {
                 }
                 HorizontalLayout {
                     spacing: 6px;
-                    Tile { label: root.german ? "Zurück" : "Back"; clicked => { root.dialog-close(); } }
-                    if root.dialog-mode != "info" && root.dialog-mode != "menu": Tile { label: "OK"; active: true; clicked => { root.dialog-submit(root.dialog-value, false); } }
+                    Tile { label: I18n.text("back"); clicked => { root.dialog-close(); } }
+                    if root.dialog-mode != "info" && root.dialog-mode != "menu": Tile { label: I18n.text("ok_uppercase"); active: true; clicked => { root.dialog-submit(root.dialog-value, false); } }
                 }
             }
         }
@@ -724,15 +739,15 @@ export component Moondash inherits Window {
             padding-left: 12px;
             Label { text: root.file-feedback; color: #111111; horizontal-stretch: 1; }
             Tile {
-                label: root.german ? "Schließen" : "Close"; ink: #111111; fill: transparent;
+                label: I18n.text("close"); ink: #111111; fill: transparent;
                 clicked => { root.file-feedback = ""; }
             }
         }
     }
 
     if root.keyboard-target == "filter": Keyboard {
-        german: root.german;
-        title: root.german ? "Filter Druckdateien nach Namen" : "Filter print files by name";
+
+        title: I18n.text("filter_print_files_by_name");
         value <=> root.filter;
         edited(value) => { root.filter-edited(value); }
         erase => { root.keyboard-erase("filter"); }
@@ -741,7 +756,7 @@ export component Moondash inherits Window {
     }
 
     if root.keyboard-target == "dialog" && root.dialog-mode == "text": Keyboard {
-        german: root.german;
+
         secret: root.dialog-secret;
         title: root.dialog-title;
         value <=> root.dialog-value;
@@ -751,8 +766,8 @@ export component Moondash inherits Window {
     }
 
     if root.keyboard-target == "move-name": Keyboard {
-        german: root.german;
-        title: root.german ? "Dateiname" : "Filename";
+
+        title: I18n.text("filename");
         value <=> root.move-name;
         edited(_) => { root.picker-edited(); }
         erase => { root.keyboard-erase("move-name"); }
@@ -761,13 +776,20 @@ export component Moondash inherits Window {
     }
 
     if root.keyboard-target == "folder-name": Keyboard {
-        german: root.german;
-        title: root.german ? "Ordnername" : "Folder name";
+
+        title: I18n.text("folder_name");
         value <=> root.folder-name;
         edited(_) => { root.picker-edited(); }
         erase => { root.keyboard-erase("folder-name"); }
         accepted => { root.close-keyboard(); }
         dismissed => { root.close-keyboard(); }
+    }
+
+    if root.starting: StartupScreen {
+        width: root.width;
+        height: root.height;
+
+        klipper: root.klipper-starting;
     }
 
     if root.sleeping: Rectangle {

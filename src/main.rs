@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod icons;
 mod input_idle;
+mod locale;
 mod moonraker;
 mod network;
 mod print_files;

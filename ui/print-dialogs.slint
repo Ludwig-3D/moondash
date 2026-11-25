@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { ScrollView, Spinner } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Label, Mdi, Palette, Row, Tile } from "widgets.slint";
@@ -30,7 +31,7 @@ export struct PrintTool {
 }
 
 export component PrintDialog inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> folder;
     in property <bool> printing;
     in property <bool> ready;
@@ -148,7 +149,7 @@ export component PrintDialog inherits Rectangle {
                     height: 42px;
                     padding-left: 4px;
                     padding-right: 8px;
-                    Label { text: root.german ? "Zeitraffer" : "Timelapse"; font-weight: 600; horizontal-stretch: 1; }
+                    Label { text: I18n.text("timelapse"); font-weight: 600; horizontal-stretch: 1; }
                     Rectangle {
                         width: 44px; height: 24px; border-radius: 12px;
                         background: root.timelapse-enabled ? Palette.accent.transparentize(58%) : Palette.ink.transparentize(82%);
@@ -164,17 +165,17 @@ export component PrintDialog inherits Rectangle {
                 if root.mode == "file-context": VerticalLayout {
                     spacing: 14px;
                     Label {
-                        text: root.folder ? (root.german ? "Ordneraktionen" : "Folder actions") : (root.german ? "Dateiaktionen" : "File actions");
+                        text: root.folder ? I18n.text("folder_actions") : I18n.text("file_actions");
                         font-size: 18px; font-weight: 600; height: 32px;
                     }
                     Rectangle { height: 7px; }
                     Tile {
-                        icon: Icons.folder-move-outline; label: root.german ? "Datei verschieben" : "Move file";
+                        icon: Icons.folder-move-outline; label: I18n.text("move_file");
                         height: 44px; enabled: !root.busy;
                         clicked => { root.action("move-selected", ""); }
                     }
                     Tile {
-                        icon: Icons.delete-outline; label: root.german ? "Datei löschen" : "Delete file";
+                        icon: Icons.delete-outline; label: I18n.text("delete_file");
                         height: 44px; fill: Palette.error.transparentize(85%); ink: Palette.error; enabled: !root.busy;
                         clicked => { root.action("delete-selected", ""); }
                     }
@@ -185,15 +186,15 @@ export component PrintDialog inherits Rectangle {
                     HorizontalLayout {
                         spacing: 10px; height: 34px;
                         Mdi { text: Icons.folder-move-outline; width: 24px; }
-                        Label { text: root.german ? "Datei verschieben" : "Move file"; font-size: 18px; font-weight: 600; horizontal-stretch: 1; }
+                        Label { text: I18n.text("move_file"); font-size: 18px; font-weight: 600; horizontal-stretch: 1; }
                     }
-                    Label { text: root.german ? "Zielordner" : "Destination folder"; color: Palette.muted; }
+                    Label { text: I18n.text("destination_folder"); color: Palette.muted; }
                     Tile {
                         icon: Icons.folder-outline; label: root.destination;
                         height: 48px; enabled: !root.busy;
                         clicked => { root.action("browse-destination", ""); }
                     }
-                    Label { text: root.german ? "Dateiname" : "Filename"; color: Palette.muted; }
+                    Label { text: I18n.text("filename"); color: Palette.muted; }
                     Tile {
                         icon: Icons.file-code-outline; label: root.filename;
                         height: 48px; enabled: !root.busy;
@@ -207,7 +208,7 @@ export component PrintDialog inherits Rectangle {
                         spacing: 9px;
                         Mdi { text: Icons.delete-outline; width: 24px; color: Palette.error; }
                         Label {
-                            text: root.folder ? (root.german ? "Ordner löschen?" : "Delete folder?") : (root.german ? "G-Code-Datei löschen?" : "Delete G-code file?");
+                            text: root.folder ? I18n.text("delete_folder_question") : I18n.text("delete_g_code_file_question");
                             font-size: 17px; font-weight: 600; horizontal-stretch: 1;
                         }
                     }
@@ -220,8 +221,8 @@ export component PrintDialog inherits Rectangle {
                             spacing: 10px;
                             Mdi { text: Icons.alert-outline; width: 24px; color: Palette.warning; }
                             Text {
-                                text: root.folder ? (root.german ? "Dieser Ordner wird gelöscht. Er muss leer sein." : "This folder will be deleted. It must be empty.")
-                                                  : (root.german ? "Diese Datei wird dauerhaft gelöscht" : "This file will be permanently deleted");
+                                text: root.folder ? I18n.text("this_folder_will_be_deleted_it_must_be_empty")
+                                                  : I18n.text("this_file_will_be_permanently_deleted");
                                 color: Palette.ink; wrap: word-wrap; vertical-alignment: center;
                             }
                         }
@@ -244,11 +245,11 @@ export component PrintDialog inherits Rectangle {
                     if root.mode == "print" && !root.printing: Tile {
                         icon: Icons.playlist-plus; fill: transparent; enabled: !root.busy;
                         accessible-role: button;
-                        accessible-label: root.german ? "Anreihen" : "Add to queue";
+                        accessible-label: I18n.text("add_to_queue");
                         clicked => { root.action("queue-file", ""); }
                     }
                     Tile {
-                        label: root.german ? "Abbrechen" : "Cancel";
+                        label: I18n.text("cancel");
                         min-width: 84px;
                         fill: transparent;
                         enabled: !root.busy;
@@ -258,18 +259,18 @@ export component PrintDialog inherits Rectangle {
                         }
                     }
                     if root.mode == "print": Action {
-                        label: root.printing ? (root.german ? "Anreihen" : "Add to queue") : (root.german ? "Drucken" : "Print");
+                        label: root.printing ? I18n.text("add_to_queue") : I18n.text("print");
                         min-width: 91px;
                         enabled: !root.busy && (root.printing || root.ready);
                         clicked => { root.action(root.printing ? "queue-file" : "print-file", ""); }
                     }
                     if root.mode == "file-move": Action {
-                        label: root.german ? "Verschieben" : "Move"; min-width: 107px;
+                        label: I18n.text("move"); min-width: 107px;
                         enabled: root.can-move && !root.busy;
                         clicked => { root.action("apply-move", ""); }
                     }
                     if root.mode == "file-delete": Action {
-                        label: root.german ? "Löschen" : "Delete"; min-width: 90px;
+                        label: I18n.text("delete"); min-width: 90px;
                         tint: Palette.error; enabled: !root.busy;
                         clicked => { root.action("apply-delete", ""); }
                     }
@@ -280,7 +281,7 @@ export component PrintDialog inherits Rectangle {
 }
 
 export component FolderPicker inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> loading;
     in property <bool> busy;
     in property <bool> creating;
@@ -311,7 +312,7 @@ export component FolderPicker inherits Rectangle {
                 height: 28px;
                 spacing: 10px;
                 Mdi { text: Icons.folder-open-outline; width: 26px; }
-                Label { text: root.german ? "Zielordner" : "Destination folder"; font-size: 18px; font-weight: 600; horizontal-stretch: 1; }
+                Label { text: I18n.text("destination_folder"); font-size: 18px; font-weight: 600; horizontal-stretch: 1; }
             }
             HorizontalLayout {
                 height: 49px;
@@ -347,23 +348,23 @@ export component FolderPicker inherits Rectangle {
                 spacing: 7px;
                 if root.creating: Tile {
                     icon: Icons.folder-plus-outline;
-                    label: root.folder-name == "" ? (root.german ? "Ordnername" : "Folder name") : root.folder-name;
+                    label: root.folder-name == "" ? I18n.text("folder_name") : root.folder-name;
                     horizontal-stretch: 1; enabled: !root.busy;
                     clicked => { root.action("new-folder-keyboard", ""); }
                 }
                 if !root.creating: Rectangle { horizontal-stretch: 1; }
                 Tile {
-                    label: root.german ? "Abbrechen" : "Cancel"; min-width: 86px; fill: transparent; enabled: !root.busy;
+                    label: I18n.text("cancel"); min-width: 86px; fill: transparent; enabled: !root.busy;
                     clicked => { root.action(root.creating ? "cancel-new-folder" : "close-folder-picker", ""); }
                 }
                 Action {
-                    label: root.german ? (root.creating ? "Erstellen" : "Neuen Ordner erstellen") : (root.creating ? "Create" : "Create new folder");
+                    label: root.creating ? I18n.text("create") : I18n.text("create_new_folder");
                     min-width: root.creating ? 90px : 166px;
                     enabled: !root.busy && !root.loading && (!root.creating || root.create-valid);
                     clicked => { root.action(root.creating ? "apply-new-folder" : "start-new-folder", ""); }
                 }
                 if !root.creating: Action {
-                    label: root.german ? "Diesen Ordner wählen" : "Select this folder";
+                    label: I18n.text("select_this_folder");
                     min-width: 162px;
                     enabled: !root.loading && !root.busy;
                     clicked => { root.action("select-this-folder", ""); }

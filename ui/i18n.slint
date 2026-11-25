@@ -1,0 +1,9 @@
+export global I18n {
+    in property <string> language;
+    out property <bool> german: root.language == "de";
+    pure callback lookup(string, bool) -> string;
+
+    pure public function text(key: string) -> string {
+        return root.lookup(key, root.german);
+    }
+}

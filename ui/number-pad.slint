@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { Icons } from "icons.slint";
 import { Label, Mdi, Palette } from "widgets.slint";
 
@@ -35,7 +36,7 @@ component NumberKey inherits Rectangle {
 }
 
 export component NumberPad inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> enabled: true;
     callback digit(string);
     callback clear;
@@ -51,7 +52,7 @@ export component NumberPad inherits Rectangle {
         height: root.key-height;
         enabled: root.enabled;
         icon: key == "clear" ? Icons.trash-can-outline : key == "erase" ? Icons.backspace-outline : "";
-        label: key == "clear" ? (root.german ? "Löschen" : "Clear") : key == "erase" ? (root.german ? "Rücktaste" : "Backspace") : key;
+        label: key == "clear" ? I18n.text("clear") : key == "erase" ? I18n.text("backspace") : key;
 
         clicked => {
             if key == "clear" { root.clear(); }

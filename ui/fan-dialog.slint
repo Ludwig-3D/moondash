@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { Spinner } from "std-widgets.slint";
 import { Label, Palette, Tile } from "widgets.slint";
 
@@ -26,7 +27,7 @@ component FanStep inherits Rectangle {
 }
 
 export component FanDialog inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> ready;
     in property <bool> busy;
     in property <string> title;
@@ -61,7 +62,7 @@ export component FanDialog inherits Rectangle {
         Label {
             x: root.inset; y: root.compact ? 65px : 80px;
             width: 120px; height: root.compact ? 25px : 52px;
-            text: root.german ? "Ziel" : "Target";
+            text: I18n.text("target");
             font-size: 20px;
         }
 
@@ -102,7 +103,7 @@ export component FanDialog inherits Rectangle {
                 x: index < 3 ? index * controls.step-width : controls.width - (6 - index) * controls.step-width;
                 y: 1px; width: controls.step-width; height: controls.height - 2px;
                 enabled: !root.busy;
-                caption: step == -100 ? "min" : step == 100 ? "max" : step > 0 ? "+" + step : "" + step;
+                caption: step == -100 ? I18n.text("min") : step == 100 ? I18n.text("max") : step > 0 ? "+" + step : "" + step;
                 clicked => { root.target = clamp(root.target + step, 0, 100); }
             }
 
@@ -126,20 +127,20 @@ export component FanDialog inherits Rectangle {
             alignment: end;
 
             Tile {
-                width: root.german ? 112px : 88px; height: 36px;
+                width: I18n.german ? 112px : 88px; height: 36px;
                 fill: transparent;
                 enabled: !root.busy;
-                label: root.german ? "ABBRECHEN" : "CANCEL";
+                label: I18n.text("cancel_uppercase");
                 clicked => { root.close(); }
             }
 
             Rectangle {
-                width: root.german ? 110px : 68px; height: 36px;
+                width: I18n.german ? 110px : 68px; height: 36px;
                 Tile {
                     fill: Palette.accent.transparentize(88%);
                     ink: Palette.accent;
                     enabled: root.ready && !root.busy;
-                    label: root.busy ? "" : root.german ? "SPEICHERN" : "SAVE";
+                    label: root.busy ? "" : I18n.text("save_uppercase");
                     clicked => { root.save(root.target); }
                 }
                 if root.busy: Spinner { width: 20px; height: 20px; }

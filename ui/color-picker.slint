@@ -1,3 +1,4 @@
+import { I18n } from "i18n.slint";
 import { ScrollView, Spinner } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Label, Palette, Tile } from "widgets.slint";
@@ -51,7 +52,7 @@ component SwatchGrid inherits Rectangle {
 }
 
 export component ColorPicker inherits Rectangle {
-    in property <bool> german;
+
     in property <bool> busy;
     in property <bool> enabled: true;
     in property <string> title;
@@ -82,7 +83,7 @@ export component ColorPicker inherits Rectangle {
                 fill: transparent;
                 enabled: !root.busy;
                 accessible-role: button;
-                accessible-label: root.german ? "Schließen" : "Close";
+                accessible-label: I18n.text("close");
                 accessible-action-default => { if !root.busy { root.close(); } }
                 clicked => { root.close(); }
             }
@@ -123,7 +124,7 @@ export component ColorPicker inherits Rectangle {
             }
 
             if root.extras.length > 0: Label {
-                text: root.german ? "Andere Farben" : "Other colors";
+                text: I18n.text("other_colors");
                 font-size: 18px;
                 height: 22px;
             }

@@ -22,6 +22,9 @@ comments and shortcut sections. The native UI honors the configured dark
 mode and primary and secondary colors. Custom logos can sit alongside the config file
 as `moondash_logo.png`, `.webp`, `.jpg`, or `.gif`.
 
+English and German interface strings live in `src/locales/en.json` and
+`src/locales/de.json`. Both Slint and Rust use these catalogs.
+
 At startup Moondash tries **Vulkan → OpenGL → software**. The GPU candidates use
 Slint's FemtoVG renderer. The last candidate uses Slint's software renderer.
 Startup logs report the renderer used. To force a particular renderer while

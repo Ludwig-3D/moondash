@@ -128,7 +128,6 @@ export component Moondash inherits Window {
     out property <int> file-columns: root.file-columns-config > 0 ? root.file-columns-config : root.width < 800px || root.height < 480px ? 3 : root.width >= 1920px && root.height >= 1080px ? 6 : 4;
     out property <int> file-rows: root.file-rows-config > 0 ? root.file-rows-config : root.width < 800px || root.height < 480px ? 2 : root.width >= 1920px && root.height >= 1080px ? 4 : 3;
     in-out property <int> file-page;
-    in property <string> config-view;
     in property <float> progress;
     in property <string> layers: "—";
     in property <string> remaining: "—";
@@ -144,8 +143,7 @@ export component Moondash inherits Window {
     in property <bool> file-loading;
     in-out property <string> file-feedback;
     in-out property <string> filter;
-    in-out property <string> config-text;
-    in property <bool> config-dirty;
+    in property <string> config-text;
     in property <string> diagnostics;
     in property <color> picker-selected;
     in property <string> picker-extras-title;
@@ -196,7 +194,6 @@ export component Moondash inherits Window {
 
     callback navigate(string, string);
     callback action(string, string);
-    callback config-edited;
     callback dialog-submit(string, bool);
     callback adjust-speed(int);
     pure callback format-speed-percent(int) -> string;
@@ -367,21 +364,12 @@ export component Moondash inherits Window {
                 action(name, argument) => { root.action(name, argument); }
             }
 
-            if root.page == "settings" && root.tab == "config" && root.config-view != "raw": VerticalLayout {
+            if root.page == "settings" && root.tab == "config": VerticalLayout {
                 vertical-stretch: 1;
                 padding: 8px;
-                ConfigForm { entries: root.rows; action(name, argument) => { root.action(name, argument); } }
-            }
-
-            if root.page == "settings" && root.tab == "config" && root.config-view == "raw": VerticalLayout {
-                padding: 8px;
-                spacing: 6px;
-                TextEdit { text <=> root.config-text; vertical-stretch: 1; edited(_) => { root.config-edited(); } }
-                HorizontalLayout {
-                    spacing: 6px;
-                    Tile { icon: Icons.arrow-left; clicked => { root.action("config-form", ""); } }
-                    Tile { icon: Icons.reload; label: I18n.text("reload"); clicked => { root.action("reload-config", ""); } }
-                    Tile { icon: Icons.content-save; label: I18n.text("save"); active: root.config-dirty; enabled: root.config-dirty; clicked => { root.action("save-config", root.config-text); } }
+                ConfigForm {
+                    entries: root.rows;
+                    action(name, argument) => { root.action(name, argument); }
                 }
             }
 

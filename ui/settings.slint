@@ -1,5 +1,7 @@
 import { ScrollView } from "std-widgets.slint";
-import { BusyCircle, Palette, Row, Label, Tile } from "widgets.slint";
+import { I18n } from "i18n.slint";
+import { Icons } from "icons.slint";
+import { BusyCircle, Palette, Row, Label, Mdi, Tile } from "widgets.slint";
 
 export component Toggle inherits Rectangle {
     in property <bool> checked;
@@ -32,24 +34,114 @@ export component Toggle inherits Rectangle {
     TouchArea { enabled: root.enabled; mouse-cursor: pointer; clicked => { root.toggled(); } }
 }
 
+struct SettingOption {
+    label: string,
+    value: string,
+}
+
+component SettingField inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> icon;
+    callback activated;
+
+    height: 48px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: field-touch.has-hover || field-focus.has-focus ? Palette.ink : Palette.ink.transparentize(65%);
+    forward-focus: field-focus;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 12px;
+        spacing: 8px;
+        Label { text: root.value; horizontal-stretch: 1; }
+        Mdi { text: root.icon; width: 22px; font-size: 20px; color: Palette.muted; }
+    }
+    field-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { field-focus.focus(); root.activated(); }
+    }
+    field-focus := FocusScope {
+        focus-on-click: false;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " ") {
+                root.activated();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component SettingSelect inherits SettingField {
+    in property <[SettingOption]> options;
+    in property <int> selected: -1;
+    in property <string> custom-value;
+    callback open([SettingOption], int, length, length, length);
+
+    icon: Icons.menu-down;
+    value: root.selected >= 0 ? root.options[root.selected].label : root.custom-value;
+    accessible-role: combobox;
+    accessible-label: root.label;
+    accessible-value: root.value;
+    accessible-action-expand => { root.activated(); }
+    accessible-action-default => { root.activated(); }
+    activated => {
+        root.open(root.options, root.selected, root.absolute-position.x, root.absolute-position.y, root.width);
+    }
+}
+
 export component ConfigForm inherits Rectangle {
     in property <[Row]> entries;
     callback action(string, string);
     background: Palette.surface;
     border-radius: 8px;
 
+    private property <[SettingOption]> menu-options;
+    private property <string> menu-action;
+    private property <int> selected-option;
+    private property <int> focused-option;
+    private property <length> menu-x;
+    private property <length> menu-y;
+    private property <length> menu-width;
+    private property <length> menu-height: root.menu-options.length * 40px + 8px;
+
+    function open-menu(action: string, options: [SettingOption], selected: int, x: length, y: length, width: length) {
+        root.menu-options = options;
+        root.selected-option = selected;
+        root.focused-option = max(0, selected);
+        root.menu-x = x - root.absolute-position.x;
+        root.menu-width = width;
+        let field-y = y - root.absolute-position.y;
+        root.menu-y = field-y + 52px + root.menu-height <= root.height
+            ? field-y + 52px : max(0px, field-y - root.menu-height - 4px);
+        root.menu-action = action;
+        menu-focus.focus();
+    }
+
+    function choose(index: int) {
+        let action = root.menu-action;
+        root.menu-action = "";
+        if index != root.selected-option {
+            root.action(action, root.menu-options[index].value);
+        }
+    }
+
     ScrollView {
         x: 0px;
         y: 0px;
         width: root.width;
         height: root.height;
+        horizontal-scrollbar-policy: always-off;
+        mouse-drag-pan-enabled: true;
         VerticalLayout {
-            padding: 13px;
-            spacing: 13px;
+            padding: 16px;
+            spacing: 18px;
+            alignment: start;
 
             for entry in root.entries: HorizontalLayout {
-                min-height: 38px;
-                spacing: 16px;
+                spacing: 20px;
 
                 Label {
                     text: entry.title;
@@ -57,31 +149,124 @@ export component ConfigForm inherits Rectangle {
                     font-weight: 600;
                 }
 
-                HorizontalLayout {
+                if entry.action == "config-toggle": HorizontalLayout {
                     horizontal-stretch: 1;
                     alignment: start;
-                    spacing: 10px;
-                    if entry.action == "config-toggle": Toggle {
+                    Toggle {
                         description: entry.title;
                         checked: entry.active;
                         toggled => { root.action(entry.action, entry.argument); }
                     }
-                    if entry.argument == "styling.primary": Tile {
+                }
+                if entry.action == "config-color": HorizontalLayout {
+                    horizontal-stretch: 1;
+                    alignment: start;
+                    spacing: 12px;
+                    Tile {
                         accessible-role: button; accessible-label: entry.button;
-                        fill: Palette.accent; width: 42px; height: 42px; border-radius: 9px;
+                        accessible-action-default => { self.clicked(); }
+                        fill: Palette.accent; width: 42px; height: 42px; border-radius: 10px;
+                        border-width: 2px; border-color: #00000040;
                         clicked => { root.action(entry.action, entry.argument); }
                     }
-                    if entry.argument == "styling.primary": Tile {
+                    Tile {
                         accessible-role: button; accessible-label: entry.alternate-button;
-                        fill: Palette.secondary; width: 42px; height: 42px; border-radius: 9px;
+                        accessible-action-default => { self.clicked(); }
+                        fill: Palette.secondary; width: 42px; height: 42px; border-radius: 10px;
+                        border-width: 2px; border-color: #00000040;
                         clicked => { root.action(entry.alternate, entry.argument); }
                     }
-                    if entry.action != "config-toggle" && entry.argument != "styling.primary": Tile {
-                        width: min(230px, root.width * 0.5 - 13px);
-                        icon: entry.icon;
-                        label: entry.detail == "" || entry.action == "config-raw" ? entry.button : entry.detail;
-                        fill: Palette.raised;
-                        clicked => { root.action(entry.action, entry.argument); }
+                }
+                if entry.action == "config-language": SettingSelect {
+                    label: entry.title;
+                    selected: entry.argument == "en" ? 1 : entry.argument == "de" ? 2 : 0;
+                    options: [
+                        { label: I18n.text("system_default"), value: "auto" },
+                        { label: I18n.text("english"), value: "en" },
+                        { label: I18n.text("german"), value: "de" },
+                    ];
+                    open(options, selected, x, y, width) => { root.open-menu(entry.action, options, selected, x, y, width); }
+                }
+                if entry.action == "config-profile": SettingSelect {
+                    label: entry.title;
+                    selected: entry.argument == "small" ? 1 : entry.argument == "normal" ? 2 : entry.argument == "highres" ? 3 : 0;
+                    options: [
+                        { label: I18n.text("auto"), value: "auto" },
+                        { label: I18n.text("display_profile_small"), value: "small" },
+                        { label: I18n.text("display_profile_normal"), value: "normal" },
+                        { label: I18n.text("display_profile_highres"), value: "highres" },
+                    ];
+                    open(options, selected, x, y, width) => { root.open-menu(entry.action, options, selected, x, y, width); }
+                }
+                if entry.action == "config-timeout": SettingSelect {
+                    label: entry.title;
+                    selected: entry.argument == "60" ? 0 : entry.argument == "300" ? 1 : entry.argument == "900" ? 2
+                        : entry.argument == "1800" ? 3 : entry.argument == "3600" ? 4 : -1;
+                    custom-value: entry.detail;
+                    options: [
+                        { label: I18n.text("idle_one_minute"), value: "60" },
+                        { label: I18n.text("idle_five_minutes"), value: "300" },
+                        { label: I18n.text("idle_fifteen_minutes"), value: "900" },
+                        { label: I18n.text("idle_thirty_minutes"), value: "1800" },
+                        { label: I18n.text("idle_one_hour"), value: "3600" },
+                    ];
+                    open(options, selected, x, y, width) => { root.open-menu(entry.action, options, selected, x, y, width); }
+                }
+                if entry.action == "config-edit": SettingField {
+                    label: entry.title;
+                    value: entry.detail;
+                    icon: Icons.pencil;
+                    accessible-role: button;
+                    accessible-label: entry.title;
+                    accessible-value: entry.detail;
+                    accessible-action-default => { self.activated(); }
+                    activated => { root.action(entry.action, entry.argument); }
+                }
+                }
+            }
+        }
+
+    menu-focus := FocusScope {
+        enabled: root.menu-action != "";
+        focus-on-click: false;
+        width: root.width;
+        height: root.height;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.menu-action = ""; return accept; }
+            if (event.text == Key.UpArrow) { root.focused-option = max(0, root.focused-option - 1); return accept; }
+            if (event.text == Key.DownArrow) { root.focused-option = min(root.menu-options.length - 1, root.focused-option + 1); return accept; }
+            if (event.text == Key.Return || event.text == " ") { root.choose(root.focused-option); return accept; }
+            return reject;
+        }
+        if root.menu-action != "": Rectangle {
+            width: root.width;
+            height: root.height;
+            TouchArea { clicked => { root.menu-action = ""; } }
+            Rectangle {
+                x: root.menu-x;
+                y: root.menu-y;
+                width: root.menu-width;
+                height: root.menu-height;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: Palette.divider;
+                background: Palette.raised;
+                VerticalLayout {
+                    padding: 4px;
+                    for option[index] in root.menu-options: Tile {
+                        height: 40px;
+                        accessible-role: button;
+                        accessible-label: option.label;
+                        accessible-action-default => { root.choose(index); }
+                        fill: root.focused-option == index ? Palette.accent.transparentize(86%) : transparent;
+                        ink: root.selected-option == index ? Palette.accent : Palette.ink;
+                        clicked => { root.choose(index); }
+                        Label {
+                            x: 12px;
+                            width: parent.width - 24px;
+                            color: parent.ink;
+                            text: option.label;
+                        }
                     }
                 }
             }

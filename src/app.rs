@@ -185,12 +185,6 @@ pub fn start(
         }
     });
     let weak = ui.as_weak();
-    ui.on_config_edited(move || {
-        if let Some(ui) = weak.upgrade() {
-            ui.set_config_dirty(true);
-        }
-    });
-    let weak = ui.as_weak();
     let shared = state.clone();
     ui.on_dialog_submit(move |value, queue| {
         if let Some(ui) = weak.upgrade() {
@@ -324,10 +318,7 @@ impl State {
         match config::parse(&text) {
             Ok(value) => {
                 self.config = value;
-                if force || !ui.get_config_dirty() {
-                    ui.set_config_text(text.into());
-                    ui.set_config_dirty(false);
-                }
+                ui.set_config_text(text.into());
             }
             Err(error) => {
                 ui.set_message(error.into());
@@ -362,9 +353,15 @@ impl State {
         palette.set_dark(dark);
         let [primary, secondary] = theme::theme_defaults(dark);
         palette.set_accent(config_color(&self.config["styling"]["primary"], primary));
-        let german = self.config["system"]["language"].as_str() == Some("de");
-        ui.global::<I18n>()
-            .set_language(if german { "de" } else { "en" }.into());
+        let language = match self.config["system"]["language"].as_str() {
+            Some(language @ ("en" | "de")) => language,
+            _ => ["LC_ALL", "LC_MESSAGES", "LANG"]
+                .into_iter()
+                .find_map(|key| std::env::var(key).ok().filter(|value| !value.is_empty()))
+                .filter(|locale| locale.split(['_', '-', '.', '@']).next() == Some("de"))
+                .map_or("en", |_| "de"),
+        };
+        ui.global::<I18n>().set_language(language.into());
         ui.set_debug(self.config["dev"]["debug"].as_bool().unwrap_or(false));
         if let Some(logo) = theme::custom_logo(&self.config_path) {
             ui.set_logo(logo);
@@ -1760,18 +1757,18 @@ impl State {
                     tr(ui, "language"),
                     "",
                     "config-language",
+                    system["language"].as_str().unwrap_or("auto"),
                     "",
-                    tr(ui, "english"),
                 ));
                 rows.push(row(
                     tr(ui, "display_profile"),
                     "",
                     "config-profile",
-                    "",
                     system["display_profile"]
                         .as_str()
                         .or_else(|| styling["display_profile"].as_str())
-                        .unwrap_or(tr(ui, "auto")),
+                        .unwrap_or("auto"),
+                    "",
                 ));
                 let mut idle = row(
                     tr(ui, "display_idle_timeout"),
@@ -1786,27 +1783,21 @@ impl State {
                 }
                 rows.push(idle);
                 if system["use_idle_timeout"].as_bool().unwrap_or(true) {
+                    let timeout = system["idle_timeout"].as_u64().unwrap_or(900);
                     rows.push(row(
                         tr(ui, "idle_timeout"),
-                        format!("{} s", system["idle_timeout"]),
-                        "config-edit",
-                        "system.idle_timeout",
-                        tr(ui, "edit"),
+                        format!("{timeout} s"),
+                        "config-timeout",
+                        &timeout.to_string(),
+                        "",
                     ));
                 }
                 rows.push(row(
-                    "Moonraker",
+                    tr(ui, "moonraker_ip"),
                     self.endpoint.borrow().as_str(),
                     "config-edit",
                     "websocket.ip",
                     tr(ui, "edit"),
-                ));
-                rows.push(row(
-                    tr(ui, "configuration_file"),
-                    self.config_path.display().to_string(),
-                    "config-raw",
-                    "",
-                    tr(ui, "edit_file"),
                 ));
             }
             ("settings", "shortcuts") => {
@@ -2029,7 +2020,6 @@ impl State {
                 "history" => "clock-outline",
                 "restart-klipper" | "restart-service" => "restart",
                 "reboot" | "sleep" => "power",
-                "config-raw" => "code-json",
                 "config-edit" => "pencil",
                 "add-shortcut" => "lightning-bolt",
                 _ => "",
@@ -2557,34 +2547,21 @@ impl State {
                     },
                 );
             }
-            "config-raw" => ui.set_config_view("raw".into()),
-            "config-form" => ui.set_config_view("".into()),
-            "config-language" => self.change_setting(
-                ui,
-                "system.language",
-                if ui.global::<I18n>().get_german() {
-                    "en"
-                } else {
-                    "de"
-                },
-            ),
+            "config-language" if matches!(argument, "auto" | "en" | "de") => {
+                let value = if argument == "auto" { "null" } else { argument };
+                self.change_setting(ui, "system.language", value);
+            }
             "config-toggle" => {
                 if let Some((section, key)) = argument.split_once('.') {
                     let value = !self.config[section][key].as_bool().unwrap_or_default();
                     self.change_setting(ui, argument, if value { "true" } else { "false" });
                 }
             }
-            "config-profile" => {
-                let next = match self.config["system"]["display_profile"]
-                    .as_str()
-                    .or_else(|| self.config["styling"]["display_profile"].as_str())
-                {
-                    Some("small") => "normal",
-                    Some("normal") => "highres",
-                    Some("highres") => "auto",
-                    _ => "small",
-                };
-                self.change_setting(ui, "system.display_profile", next);
+            "config-profile" if matches!(argument, "auto" | "small" | "normal" | "highres") => {
+                self.change_setting(ui, "system.display_profile", argument);
+            }
+            "config-timeout" if matches!(argument, "60" | "300" | "900" | "1800" | "3600") => {
+                self.change_setting(ui, "system.idle_timeout", argument);
             }
             "config-color" | "config-secondary" => {
                 let key = if action == "config-secondary" {
@@ -2605,19 +2582,16 @@ impl State {
                 };
                 self.show_color_picker(ui, title, "theme-color", key, selected, defaults.to_vec());
             }
-            "config-edit" => {
-                let Some((section, key)) = argument.split_once('.') else {
-                    return;
-                };
-                let value = &self.config[section][key];
-                let initial = value
-                    .as_str()
-                    .map_or_else(|| value.to_string(), str::to_owned);
-                let (title, detail) = match argument {
-                    "system.idle_timeout" => (tr(ui, "idle_timeout"), tr(ui, "seconds")),
-                    _ => ("Moonraker", tr(ui, "host_and_port_or_url")),
-                };
-                self.dialog(ui, title, detail, "text", action, argument);
+            "config-edit" if argument == "websocket.ip" => {
+                let initial = self.endpoint.borrow().clone();
+                self.dialog(
+                    ui,
+                    tr(ui, "moonraker_ip"),
+                    tr(ui, "host_and_port_or_url"),
+                    "text",
+                    action,
+                    argument,
+                );
                 ui.set_dialog_value(initial.into());
             }
             "edit-shortcut" => {
@@ -3091,8 +3065,6 @@ impl State {
                     ui.set_keyboard_target("".into());
                 }
             }
-            "reload-config" => self.load_config(ui, true),
-            "save-config" => self.store_config(ui, argument),
             "sleep" => {
                 if std::env::var_os("WAYLAND_DISPLAY").is_some() {
                     self.manual_sleep.store(true, Ordering::Relaxed);
@@ -3180,13 +3152,8 @@ impl State {
                 self.apply_picked_color(ui, &action, &argument, value);
                 return;
             }
-            "config-edit" => {
-                let valid = match argument.as_str() {
-                    "system.idle_timeout" => value.parse::<u64>().is_ok_and(|seconds| seconds > 0),
-                    "websocket.ip" => moonraker::endpoint(value).is_ok(),
-                    _ => false,
-                };
-                if !valid || value.contains(['\n', '\r']) {
+            "config-edit" if argument == "websocket.ip" => {
+                if moonraker::endpoint(value).is_err() || value.contains(['\n', '\r']) {
                     ui.set_dialog_detail(tr(ui, "enter_a_valid_value").into());
                     return;
                 }

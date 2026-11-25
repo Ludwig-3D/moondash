@@ -1,0 +1,523 @@
+import { I18n } from "i18n.slint";
+import { Icons } from "icons.slint";
+import { ComboBox, ScrollView } from "std-widgets.slint";
+import { Label, Mdi, Palette, Row, Tile } from "widgets.slint";
+
+export struct MeshCell {
+    fill: color,
+}
+
+export struct MeshRow {
+    cells: [MeshCell],
+}
+
+component MeshGrid inherits Rectangle {
+    in property <[MeshRow]> rows;
+    in property <int> columns;
+    in property <int> row-count;
+    private property <length> cell-size: root.columns > 0 && root.row-count > 0
+        ? max(0px, min((root.width + 1px) / root.columns, (root.height + 1px) / root.row-count) - 1px)
+        : 0px;
+    clip: true;
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: (root.cell-size + 1px) * root.columns - 1px;
+        height: (root.cell-size + 1px) * root.row-count - 1px;
+        VerticalLayout {
+            spacing: 1px;
+            for mesh-row in root.rows: HorizontalLayout {
+                height: root.cell-size;
+                spacing: 1px;
+                for cell in mesh-row.cells: Rectangle {
+                    horizontal-stretch: 1;
+                    background: cell.fill;
+                }
+            }
+        }
+    }
+}
+
+component MeshGraphCard inherits Rectangle {
+    in property <[MeshRow]> mesh;
+    callback action(string, string);
+    min-height: 220px;
+    background: Palette.surface;
+    border-radius: 10px;
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            height: 40px;
+            spacing: 8px;
+            Tile {
+                icon: Icons.home-variant;
+                accessible-role: button;
+                accessible-label: I18n.text("home_axes");
+                accessible-action-default => { root.action("home", ""); }
+                clicked => { root.action("home", ""); }
+            }
+            Tile {
+                label: I18n.text("clear_mesh");
+                clicked => { root.action("mesh-clear", ""); }
+            }
+            Tile {
+                label: I18n.text("calibrate");
+                clicked => { root.action("mesh-calibrate", ""); }
+            }
+        }
+
+        if root.mesh.length > 0: MeshGrid {
+            vertical-stretch: 1;
+            rows: root.mesh;
+            columns: root.mesh[0].cells.length;
+            row-count: root.mesh.length;
+        }
+        if root.mesh.length == 0: VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            spacing: 8px;
+            Mdi {
+                text: Icons.grid;
+                font-size: 56px;
+                color: Palette.muted;
+            }
+            Label {
+                text: I18n.text("no_loaded_mesh");
+                color: Palette.muted;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+component MeshProfilesCard inherits Rectangle {
+    in property <[Row]> entries;
+    callback action(string, string);
+    min-height: 220px;
+    background: Palette.surface;
+    border-radius: 10px;
+
+    VerticalLayout {
+        padding-top: 8px;
+        padding-bottom: 4px;
+        spacing: 4px;
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            Label {
+                text: I18n.text("available_meshes");
+                font-size: 16px;
+                font-weight: 600;
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            horizontal-scrollbar-policy: always-off;
+            VerticalLayout {
+                if root.entries.length == 0: Rectangle {
+                    height: 48px;
+                    vertical-stretch: 0;
+                    background: Palette.info.transparentize(88%);
+                    border-radius: 6px;
+                    Label {
+                        x: 12px;
+                        text: I18n.text("no_bed_mesh_profiles");
+                        color: Palette.muted;
+                    }
+                }
+                for entry in root.entries: Rectangle {
+                    height: 56px;
+                    vertical-stretch: 0;
+                    background: entry.active ? Palette.accent.transparentize(84%) : transparent;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 4px;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            background: transparent;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Label {
+                                    text: entry.title;
+                                    horizontal-stretch: 1;
+                                    font-weight: 700;
+                                }
+                                Label {
+                                    text: entry.detail;
+                                    horizontal-alignment: right;
+                                    color: Palette.muted;
+                                }
+                            }
+                            TouchArea {
+                                width: parent.width;
+                                height: parent.height;
+                                mouse-cursor: pointer;
+                                clicked => { root.action(entry.action, entry.argument); }
+                            }
+                        }
+                        if !entry.active: Tile {
+                            width: 40px;
+                            height: 36px;
+                            fill: transparent;
+                            icon: Icons.progress-upload;
+                            clicked => { root.action("mesh-calibrate", ""); }
+                        }
+                        if entry.alternate != "": Tile {
+                            width: 40px;
+                            height: 36px;
+                            fill: transparent;
+                            icon: Icons.delete;
+                            ink: Palette.error;
+                            clicked => { root.action(entry.alternate, entry.argument); }
+                        }
+                    }
+                    Rectangle {
+                        y: parent.height - self.height;
+                        height: 1px;
+                        background: Palette.divider;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component WebcamViewer inherits Rectangle {
+    in property <image> webcam-image;
+    in property <bool> webcam-loading;
+    background: #000000;
+    border-radius: 10px;
+    clip: true;
+    height: root.width * (root.webcam-image.width > 0
+        ? root.webcam-image.height / root.webcam-image.width : 9 / 16);
+
+    if root.webcam-image.width > 0: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.webcam-image;
+        image-fit: contain;
+    }
+    if root.webcam-image.width == 0: Label {
+        width: parent.width;
+        height: parent.height;
+        text: root.webcam-loading ? I18n.text("loading_webcams") : I18n.text("webcam_preview_unavailable");
+        color: #ffffff;
+        horizontal-alignment: center;
+    }
+}
+
+component WebcamControls inherits Rectangle {
+    in property <[string]> options;
+    in property <int> selected-index;
+    in property <bool> loading;
+    callback action(string, string);
+    background: transparent;
+    VerticalLayout {
+        spacing: 16px;
+        Label { text: I18n.text("select_webcam"); color: Palette.muted; }
+        camera-selector := ComboBox {
+            horizontal-stretch: 1;
+            model: root.options;
+            current-index: root.selected-index;
+            enabled: root.options.length > 0;
+            selected => { root.action("webcam-select", "\{camera-selector.current-index}"); }
+        }
+        VerticalLayout {
+            spacing: 8px;
+            Tile {
+                icon: Icons.refresh;
+                label: I18n.text("refresh_webcam");
+                enabled: root.options.length > 0 && !root.loading;
+                clicked => { root.action("webcam-refresh-image", ""); }
+            }
+            Tile {
+                icon: Icons.reload;
+                label: I18n.text("reload_webcams");
+                enabled: !root.loading;
+                clicked => { root.action("webcam-refresh-list", ""); }
+            }
+        }
+    }
+}
+
+export component ToolsPanel inherits Rectangle {
+    in property <string> view;
+    in property <string> title;
+    in property <[Row]> entries;
+    in property <[MeshRow]> mesh;
+    in property <string> pid-target;
+    in property <string> pid-current;
+    in property <[string]> heater-options;
+    in property <int> heater-index;
+    in property <bool> pid-ready;
+    in property <bool> pid-running;
+    in property <bool> pid-complete;
+    in property <bool> webcam-loading;
+    in property <image> webcam-image;
+    in property <[string]> webcam-options;
+    in property <int> webcam-index;
+    callback action(string, string);
+
+    clip: true;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        if root.view != "": Rectangle {
+            height: 48px;
+            background: transparent;
+            HorizontalLayout {
+                spacing: 16px;
+                Mdi { text: Icons.arrow-left; color: Palette.ink; }
+                Label { text: root.title; font-size: 19px; font-weight: 700; }
+                Rectangle { horizontal-stretch: 1; background: transparent; }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.action("tools-home", ""); }
+            }
+        }
+
+        if root.view == "": ScrollView {
+            vertical-stretch: 1;
+            horizontal-scrollbar-policy: always-off;
+            VerticalLayout {
+                spacing: 0px;
+                for entry[index] in root.entries: Rectangle {
+                    height: 56px;
+                    vertical-stretch: 0;
+                    background: home-touch.has-hover ? Palette.raised : transparent;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 16px;
+                        if entry.icon != "": Mdi {
+                            text: entry.icon;
+                            width: 24px;
+                            font-size: 20px;
+                            color: Palette.muted;
+                        }
+                        Label {
+                            text: entry.title;
+                            horizontal-stretch: 1;
+                            font-weight: 600;
+                        }
+                    }
+                    home-touch := TouchArea {
+                        width: parent.width;
+                        height: parent.height;
+                        mouse-cursor: pointer;
+                        clicked => { root.action(entry.action, entry.argument); }
+                    }
+                    if index < root.entries.length - 1: Rectangle {
+                        x: 0px;
+                        y: parent.height - self.height;
+                        width: parent.width;
+                        height: 1px;
+                        background: Palette.divider;
+                    }
+                }
+            }
+        }
+
+        if root.view == "mesh": ScrollView {
+            vertical-stretch: 1;
+            horizontal-scrollbar-policy: always-off;
+            if root.width >= 640px: HorizontalLayout {
+                spacing: 12px;
+                MeshGraphCard {
+                    horizontal-stretch: 1.15;
+                    vertical-stretch: 1;
+                    mesh: root.mesh;
+                    action(name, argument) => { root.action(name, argument); }
+                }
+                MeshProfilesCard {
+                    horizontal-stretch: 0.85;
+                    vertical-stretch: 1;
+                    entries: root.entries;
+                    action(name, argument) => { root.action(name, argument); }
+                }
+            }
+            if root.width < 640px: VerticalLayout {
+                spacing: 12px;
+                MeshGraphCard {
+                    vertical-stretch: 1;
+                    mesh: root.mesh;
+                    action(name, argument) => { root.action(name, argument); }
+                }
+                MeshProfilesCard {
+                    vertical-stretch: 1;
+                    entries: root.entries;
+                    action(name, argument) => { root.action(name, argument); }
+                }
+            }
+        }
+
+        if root.view == "pid": ScrollView {
+            vertical-stretch: 1;
+            horizontal-scrollbar-policy: always-off;
+            mouse-drag-pan-enabled: true;
+            VerticalLayout {
+              Rectangle {
+                height: pid-card.preferred-height;
+                background: Palette.surface;
+                border-radius: 10px;
+                pid-card := VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+                    HorizontalLayout {
+                        vertical-stretch: 1;
+                        spacing: 20px;
+                        VerticalLayout {
+                            width: min(320px, root.width * 0.42);
+                            spacing: 8px;
+                            alignment: start;
+                            Rectangle {
+                                height: 62px;
+                                background: Palette.raised;
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Label { text: I18n.text("target_temperature"); color: Palette.muted; horizontal-alignment: center; }
+                                    Label {
+                                        text: (root.pid-target == "" ? "0" : root.pid-target) + "°C";
+                                        font-size: 24px;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                height: 62px;
+                                background: Palette.raised;
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Label { text: I18n.text("current_temperature"); color: Palette.muted; horizontal-alignment: center; }
+                                    Label { text: root.pid-current + "°C"; font-size: 24px; font-weight: 700; horizontal-alignment: center; }
+                                }
+                            }
+                            Label { text: I18n.text("heater"); color: Palette.muted; }
+                            heater-selector := ComboBox {
+                                horizontal-stretch: 1;
+                                model: root.heater-options;
+                                current-index: root.heater-index;
+                                enabled: root.heater-options.length > 0 && !root.pid-running;
+                                selected => { root.action("pid-heater", "\{heater-selector.current-index}"); }
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 8px;
+                            VerticalLayout {
+                                vertical-stretch: 1;
+                                spacing: 5px;
+                                for keys in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]]: HorizontalLayout {
+                                    spacing: 5px;
+                                    for key in keys: Tile {
+                                        label: key;
+                                        horizontal-stretch: 1;
+                                        min-height: 56px;
+                                        enabled: !root.pid-running;
+                                        clicked => { root.action("pid-digit", key); }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 5px;
+                                    Tile {
+                                        icon: Icons.delete-outline;
+                                        horizontal-stretch: 1;
+                                        min-height: 56px;
+                                        enabled: !root.pid-running;
+                                        clicked => { root.action("pid-clear", ""); }
+                                    }
+                                    Tile {
+                                        label: "0";
+                                        horizontal-stretch: 1;
+                                        min-height: 56px;
+                                        enabled: !root.pid-running;
+                                        clicked => { root.action("pid-digit", "0"); }
+                                    }
+                                    Tile {
+                                        icon: Icons.backspace-outline;
+                                        horizontal-stretch: 1;
+                                        min-height: 56px;
+                                        enabled: !root.pid-running;
+                                        clicked => { root.action("pid-backspace", ""); }
+                                    }
+                                }
+                            }
+                            if root.pid-running: Label {
+                                text: I18n.text("pid_calibration_running");
+                                color: Palette.info;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: end;
+                        spacing: 8px;
+                        if root.pid-complete: Tile {
+                            width: min(210px, (root.width - 32px) / 2);
+                            label: I18n.text("save_configuration");
+                            fill: Palette.secondary;
+                            clicked => { root.action("save-printer", ""); }
+                        }
+                        Tile {
+                            width: min(210px, root.pid-complete ? (root.width - 32px) / 2 : root.width - 24px);
+                            label: I18n.text("run_pid_calibration");
+                            fill: Palette.accent;
+                            enabled: root.pid-ready && root.pid-target != "" && !root.pid-running;
+                            clicked => { root.action("pid-run", ""); }
+                        }
+                    }
+                }
+              }
+            }
+        }
+
+        if root.view == "camera": ScrollView {
+            vertical-stretch: 1;
+            horizontal-scrollbar-policy: always-off;
+            mouse-drag-pan-enabled: true;
+            if root.width >= 600px: HorizontalLayout {
+                padding: 12px;
+                spacing: 16px;
+                WebcamViewer {
+                    horizontal-stretch: 1;
+                    webcam-image: root.webcam-image;
+                    webcam-loading: root.webcam-loading;
+                }
+                WebcamControls {
+                    width: 280px;
+                    options: root.webcam-options;
+                    selected-index: root.webcam-index;
+                    loading: root.webcam-loading;
+                    action(name, argument) => { root.action(name, argument); }
+                }
+            }
+            if root.width < 600px: VerticalLayout {
+                padding: 12px;
+                spacing: 12px;
+                WebcamViewer {
+                    webcam-image: root.webcam-image;
+                    webcam-loading: root.webcam-loading;
+                }
+                WebcamControls {
+                    horizontal-stretch: 1;
+                    options: root.webcam-options;
+                    selected-index: root.webcam-index;
+                    loading: root.webcam-loading;
+                    action(name, argument) => { root.action(name, argument); }
+                }
+            }
+        }
+    }
+}

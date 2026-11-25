@@ -15,7 +15,8 @@ import { PrintDialog, FolderPicker, PrintTool } from "print-dialogs.slint";
 import { ConfigForm } from "settings.slint";
 import { NetworkPanel, WifiDialogs, WifiEntry } from "network-settings.slint";
 import { ColorPicker, ColorSwatch } from "color-picker.slint";
-export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry }
+import { ToolsPanel, MeshCell, MeshRow } from "tools.slint";
+export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshCell, MeshRow }
 
 component RowList inherits ScrollView {
     in property <[Row]> rows;
@@ -139,6 +140,18 @@ export component Moondash inherits Window {
     in property <[Row]> rows;
     in-out property <string> page: "home";
     in-out property <string> tab: "motion";
+    in property <string> tool-view;
+    in property <[MeshRow]> tool-mesh;
+    in property <string> tool-pid-target;
+    in property <string> tool-pid-current;
+    in property <[string]> tool-heater-options;
+    in property <int> tool-heater-index;
+    in property <bool> tool-pid-ready;
+    in property <bool> tool-pid-running;
+    in property <bool> tool-pid-complete;
+    in property <bool> tool-webcam-loading;
+    in property <[string]> tool-webcam-options;
+    in property <int> tool-webcam-index;
     in property <[Row]> breadcrumbs;
     in property <bool> file-loading;
     in-out property <string> file-feedback;
@@ -396,17 +409,24 @@ export component Moondash inherits Window {
                 Tile { icon: Icons.power; label: I18n.text("sleep_display"); clicked => { root.action("sleep", ""); } }
             }
 
-            if root.page == "settings" && root.tab == "tools" && root.tool-title != "": HorizontalLayout {
-                spacing: 6px;
-                padding: 8px;
-                Tile { icon: Icons.arrow-left; fill: transparent; clicked => { root.action("tools-home", ""); } }
-                Label { text: root.tool-title; font-size: 18px; font-weight: 600; horizontal-stretch: 1; }
-            }
-
-            if root.page == "settings" && root.tab == "tools" && root.tool-image.width > 0: Image {
-                source: root.tool-image;
-                image-fit: contain;
+            if root.page == "settings" && root.tab == "tools": ToolsPanel {
                 vertical-stretch: 1;
+                view: root.tool-view;
+                title: root.tool-title;
+                entries: root.rows;
+                mesh: root.tool-mesh;
+                pid-target: root.tool-pid-target;
+                pid-current: root.tool-pid-current;
+                heater-options: root.tool-heater-options;
+                heater-index: root.tool-heater-index;
+                pid-ready: root.tool-pid-ready;
+                pid-running: root.tool-pid-running;
+                pid-complete: root.tool-pid-complete;
+                webcam-loading: root.tool-webcam-loading;
+                webcam-image: root.tool-image;
+                webcam-options: root.tool-webcam-options;
+                webcam-index: root.tool-webcam-index;
+                action(name, argument) => { root.action(name, argument); }
             }
 
             if root.page == "settings" && root.tab == "host": HorizontalLayout {
@@ -418,7 +438,7 @@ export component Moondash inherits Window {
             }
 
             if (root.page == "tune" && root.tab != "motion" && root.tab != "print" && root.tab != "afc") ||
-               (root.page == "settings" && root.tab != "network" && root.tab != "config" && root.tab != "host" && (root.tab != "tools" || root.tool-image.width == 0)): VerticalLayout {
+               (root.page == "settings" && root.tab != "network" && root.tab != "config" && root.tab != "host" && root.tab != "tools"): VerticalLayout {
                 vertical-stretch: 1;
                 padding: 8px;
                 RowList { rows: root.rows; action(name, argument) => { root.action(name, argument); } }

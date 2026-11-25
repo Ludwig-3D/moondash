@@ -8,6 +8,7 @@ mod network;
 mod print_files;
 mod renderer;
 mod theme;
+mod tools;
 mod version;
 mod wayland_power;
 

@@ -1,10 +1,10 @@
 use crate::icons;
 use crate::print_files::{self, array};
 use crate::{
-    ColorSwatch, FilamentSensor, I18n, Lane, Moondash, Notification, Palette, PrintTool, Row,
-    WifiEntry, config, input_idle, locale,
+    ColorSwatch, FilamentSensor, I18n, Lane, MeshCell, MeshRow, Moondash, Notification, Palette,
+    PrintTool, Row, WifiEntry, config, input_idle, locale,
     moonraker::{self, Call, Event},
-    network, theme, version, wayland_power,
+    network, theme, tools, version, wayland_power,
 };
 use serde_json::{Map, Value, json};
 use slint::{ComponentHandle, Image, ModelRc, Timer, TimerMode, VecModel};
@@ -91,8 +91,18 @@ struct State {
     jog_step: f64,
     config_checked: Instant,
     refresh_at: Instant,
+    webcams: Vec<tools::Webcam>,
+    webcam_id: Option<String>,
+    webcams_pending: bool,
     webcam: Option<String>,
     webcam_image_pending: bool,
+    webcam_generation: u64,
+    webcam_image_tag: String,
+    webcam_refresh_at: Instant,
+    pid_heater: String,
+    pid_target: String,
+    pid_running: bool,
+    pid_complete: bool,
 }
 
 pub fn start(
@@ -154,8 +164,18 @@ pub fn start(
         jog_step: 10.,
         config_checked: Instant::now(),
         refresh_at: Instant::now(),
+        webcams: Vec::new(),
+        webcam_id: None,
+        webcams_pending: false,
         webcam: None,
         webcam_image_pending: false,
+        webcam_generation: 0,
+        webcam_image_tag: String::new(),
+        webcam_refresh_at: Instant::now(),
+        pid_heater: String::new(),
+        pid_target: String::new(),
+        pid_running: false,
+        pid_complete: false,
     }));
 
     ui.global::<I18n>()
@@ -406,6 +426,7 @@ impl State {
             }
             match (self.page.as_str(), self.tab.as_str()) {
                 ("settings", "network") => self.network_action(ui, "network", "", ""),
+                ("settings", "tools") => self.request_webcams(ui),
                 ("settings", "host") if self.online => {
                     self.call(ui, "machine.proc_stats", json!({}), "host-stats")
                 }
@@ -417,11 +438,11 @@ impl State {
         }
         if self.page == "settings"
             && self.tab == "tools"
+            && self.tool_view == "camera"
             && !self.webcam_image_pending
-            && let Some(url) = self.webcam.clone()
+            && self.webcam_refresh_at.elapsed() >= Duration::from_secs(2)
         {
-            self.webcam_image_pending = true;
-            self.fetch_image("webcam".into(), &url);
+            self.refresh_webcam_image(ui);
         }
     }
 
@@ -434,7 +455,12 @@ impl State {
             self.update_afc(ui);
         }
         if (page, tab) != ("settings", "tools") {
+            self.webcams.clear();
+            self.webcam_id = None;
             self.webcam = None;
+            self.webcam_image_pending = false;
+            self.webcam_generation = self.webcam_generation.wrapping_add(1);
+            self.webcam_image_tag.clear();
             self.tool_view.clear();
             ui.set_tool_title("".into());
             ui.set_tool_image(Image::default());
@@ -479,9 +505,149 @@ impl State {
                 self.call(ui, "machine.system_info", json!({}), "host-info");
                 self.call(ui, "machine.proc_stats", json!({}), "host-stats");
             }
+            ("settings", "tools") => self.request_webcams(ui),
             _ => {}
         }
         self.render_rows(ui);
+    }
+
+    fn request_webcams(&mut self, ui: &Moondash) {
+        if self.webcams_pending || !self.online {
+            return;
+        }
+        self.webcams_pending = self.try_call(ui, "server.webcams.list", json!({}), "webcams");
+    }
+
+    fn has_bed_mesh(&self) -> bool {
+        self.object("configfile")["config"]
+            .get("bed_mesh")
+            .is_some()
+    }
+
+    fn refresh_webcam_image(&mut self, ui: &Moondash) {
+        if self.page != "settings" || self.tab != "tools" || self.tool_view != "camera" {
+            return;
+        }
+        let Some(url) = self.webcam.as_deref() else {
+            return;
+        };
+        self.webcam_generation = self.webcam_generation.wrapping_add(1);
+        let Some(url) = tools::cache_bust_webcam_url(url, self.webcam_generation) else {
+            return;
+        };
+        self.webcam_image_pending = true;
+        ui.set_tool_webcam_loading(true);
+        self.webcam_image_tag = format!("webcam:{}", self.webcam_generation);
+        self.webcam_refresh_at = Instant::now();
+        self.fetch_image(self.webcam_image_tag.clone(), &url);
+    }
+
+    fn update_tool_panel(&self, ui: &Moondash) {
+        let title = match self.tool_view.as_str() {
+            "mesh" => tr(ui, "bed_mesh"),
+            "pid" => tr(ui, "pid_tuning"),
+            "camera" => tr(ui, "webcam"),
+            _ => "",
+        };
+        ui.set_tool_view(self.tool_view.clone().into());
+        ui.set_tool_title(title.into());
+
+        let matrix = tools::bed_mesh_matrix(self.object("bed_mesh"));
+        let range = tools::mesh_range(&matrix);
+        let cells = matrix
+            .iter()
+            .rev()
+            .map(|row| MeshRow {
+                cells: ModelRc::new(VecModel::from(
+                    row.iter()
+                        .map(|value| MeshCell {
+                            fill: {
+                                let (red, green, blue) = tools::mesh_color(*value, range);
+                                slint::Color::from_rgb_u8(red, green, blue)
+                            },
+                        })
+                        .collect::<Vec<_>>(),
+                )),
+            })
+            .collect::<Vec<_>>();
+        ui.set_tool_mesh(ModelRc::new(VecModel::from(cells)));
+
+        let heaters = self.heater_rows(ui).collect::<Vec<_>>();
+        let heater_options = heaters
+            .iter()
+            .map(|heater| self.heater_title(ui, heater.argument.as_str()).into())
+            .collect::<Vec<_>>();
+        let heater_index = heaters
+            .iter()
+            .position(|heater| heater.argument == self.pid_heater)
+            .map_or(-1, |index| index as i32);
+        ui.set_tool_heater_options(ModelRc::new(VecModel::from(heater_options)));
+        ui.set_tool_heater_index(heater_index);
+
+        let webcam_options = self
+            .webcams
+            .iter()
+            .map(|camera| camera.name.as_str().into())
+            .collect::<Vec<_>>();
+        let webcam_index = self
+            .webcams
+            .iter()
+            .position(|camera| Some(camera.id.as_str()) == self.webcam_id.as_deref())
+            .map_or(-1, |index| index as i32);
+        ui.set_tool_webcam_options(ModelRc::new(VecModel::from(webcam_options)));
+        ui.set_tool_webcam_index(webcam_index);
+        ui.set_tool_pid_target(self.pid_target.clone().into());
+        ui.set_tool_pid_current(
+            number(&self.object(&self.pid_heater)["temperature"])
+                .map_or_else(|| "—".to_owned(), |value| format!("{value:.0}"))
+                .into(),
+        );
+        let target_valid = tools::pid_target(&self.pid_target).is_some_and(|target| {
+            target > 0 && f64::from(target) <= self.heater_limit(&self.pid_heater)
+        });
+        ui.set_tool_pid_ready(
+            ui.get_ready()
+                && !ui.get_printing()
+                && !ui.get_paused()
+                && !self.pid_heater.is_empty()
+                && target_valid,
+        );
+        ui.set_tool_pid_running(self.pid_running);
+        ui.set_tool_pid_complete(self.pid_complete);
+        ui.set_tool_webcam_loading(self.webcams_pending || self.webcam_image_pending);
+    }
+
+    fn run_pid_calibration(&mut self, ui: &Moondash) {
+        let Some(target) = tools::pid_target(&self.pid_target) else {
+            ui.set_message(tr(ui, "enter_a_valid_value").into());
+            return;
+        };
+        let valid_heater = self
+            .heater_rows(ui)
+            .any(|heater| heater.argument == self.pid_heater);
+        let limit = self.heater_limit(&self.pid_heater);
+        if !valid_heater || target == 0 || f64::from(target) > limit {
+            ui.set_message(tr(ui, "enter_a_valid_value").into());
+            return;
+        }
+        if !ui.get_ready() || ui.get_printing() || ui.get_paused() || self.pid_running {
+            return;
+        }
+
+        let heater = self
+            .pid_heater
+            .split_once(' ')
+            .map_or(self.pid_heater.as_str(), |(_, name)| name);
+        if self.try_call(
+            ui,
+            "printer.gcode.script",
+            json!({"script": format!("PID_CALIBRATE HEATER={} TARGET={target}", gcode_arg(heater))}),
+            "pid-tune",
+        ) {
+            self.pid_running = true;
+            self.pid_complete = false;
+            self.render_rows(ui);
+        }
     }
 
     fn call(&self, ui: &Moondash, method: &'static str, params: Value, tag: impl Into<String>) {
@@ -581,6 +747,16 @@ impl State {
                 ui.set_connection(reason.into());
                 if self.online {
                     self.online = false;
+                    self.webcams.clear();
+                    self.webcam_id = None;
+                    self.webcam = None;
+                    self.webcams_pending = false;
+                    self.webcam_image_pending = false;
+                    self.webcam_image_tag.clear();
+                    self.pid_running = false;
+                    self.pid_complete = false;
+                    self.tool_view.clear();
+                    ui.set_tool_image(Image::default());
                     self.status.clear();
                     self.moonraker_warnings = Value::Null;
                     self.updates = Value::Null;
@@ -956,6 +1132,18 @@ impl State {
                     tr(ui, "set"),
                 ))
             })
+    }
+
+    fn heater_title(&self, ui: &Moondash, name: &str) -> String {
+        match name {
+            "heater_bed" => tr(ui, "heater_bed").to_owned(),
+            "extruder" => tr(ui, "extruder").to_owned(),
+            _ => name
+                .strip_prefix("heater_generic ")
+                .or_else(|| name.strip_prefix("extruder "))
+                .unwrap_or(name)
+                .to_owned(),
+        }
     }
 
     fn update_shortcuts(&self, ui: &Moondash) {
@@ -1820,77 +2008,43 @@ impl State {
             ("settings", "network") => self.update_network_models(ui),
             ("settings", "tools") => match self.tool_view.as_str() {
                 "mesh" => {
-                    rows.push(row(
-                        tr(ui, "bed_mesh"),
-                        self.object("bed_mesh")["profile_name"]
-                            .as_str()
-                            .unwrap_or_default(),
-                        "mesh-info",
-                        "",
-                        tr(ui, "inspect"),
-                    ));
-                    rows.push(alternate(
-                        row(
-                            tr(ui, "bed_mesh_calibration"),
-                            "",
-                            "mesh-calibrate",
-                            "",
-                            tr(ui, "calibrate"),
-                        ),
-                        "mesh-clear",
-                        tr(ui, "clear"),
-                    ));
-                    if let Some(profiles) = self.object("bed_mesh")["profiles"].as_object() {
-                        for name in profiles.keys() {
-                            rows.push(alternate(
-                                row(
-                                    name.as_str(),
-                                    tr(ui, "bed_mesh_profile"),
-                                    "mesh-load",
-                                    name,
-                                    tr(ui, "load"),
-                                ),
-                                "mesh-remove",
-                                tr(ui, "remove"),
-                            ));
-                        }
+                    let bed_mesh = self.object("bed_mesh");
+                    let active = ["profile_name", "profile", "mesh_name"]
+                        .into_iter()
+                        .find_map(|key| bed_mesh[key].as_str())
+                        .unwrap_or_default()
+                        .trim();
+                    for profile in tools::mesh_profiles(&bed_mesh["profiles"]) {
+                        let detail = profile
+                            .variance
+                            .map_or_else(|| "--".to_owned(), |variance| format!("{variance:.3}"));
+                        let mut entry = row(
+                            &profile.name,
+                            detail,
+                            "mesh-load",
+                            &profile.name,
+                            tr(ui, "load"),
+                        );
+                        entry.active = profile.name == active;
+                        rows.push(alternate(entry, "mesh-remove", tr(ui, "remove")));
                     }
-                    rows.push(row(
-                        tr(ui, "save_printer_configuration"),
-                        tr(ui, "klipper_restarts_after_saving"),
-                        "save-printer",
-                        "",
-                        tr(ui, "save"),
-                    ));
                 }
-                "pid" => {
-                    for heater in self.heater_rows(ui) {
-                        rows.push(row(
-                            heater.argument.clone(),
-                            tr(ui, "pid_calibration"),
-                            "pid",
-                            heater.argument.as_str(),
-                            tr(ui, "tune"),
-                        ));
-                    }
-                    rows.push(row(
-                        tr(ui, "save_printer_configuration"),
-                        tr(ui, "klipper_restarts_after_saving"),
-                        "save-printer",
-                        "",
-                        tr(ui, "save"),
-                    ));
-                }
-                "camera" => {}
+                "pid" | "camera" => {}
                 _ => {
-                    for (title, action, icon) in [
-                        (tr(ui, "bed_mesh"), "tool-mesh", "grid"),
-                        (tr(ui, "pid_tuning"), "tool-pid", "tune-variant"),
-                        (tr(ui, "webcam"), "tool-camera", "webcam"),
-                    ] {
+                    if self.has_bed_mesh() {
                         rows.push(Row {
-                            icon: icons::glyph(icon),
-                            ..row(title, "", action, "", "")
+                            icon: icons::glyph("grid"),
+                            ..row(tr(ui, "bed_mesh"), "", "tool-mesh", "", "")
+                        });
+                    }
+                    rows.push(Row {
+                        icon: icons::glyph("tune-variant"),
+                        ..row(tr(ui, "pid_tuning"), "", "tool-pid", "", "")
+                    });
+                    if !self.webcams.is_empty() {
+                        rows.push(Row {
+                            icon: icons::glyph("webcam"),
+                            ..row(tr(ui, "webcam"), "", "tool-camera", "", "")
                         });
                     }
                 }
@@ -2025,6 +2179,7 @@ impl State {
                 _ => "",
             });
         }
+        self.update_tool_panel(ui);
         set_model(&ui.get_rows(), &rows, |model| ui.set_rows(model));
     }
 
@@ -2337,26 +2492,100 @@ impl State {
             "reconnect-moonraker" if !self.online => self.endpoint.send_modify(|_| {}),
             "show-updates" => self.navigate(ui, "settings", "updates"),
             "refresh" => self.refresh(ui),
-            "tool-mesh" | "tool-pid" | "tool-camera" => {
-                let (view, title) = match action {
-                    "tool-mesh" => ("mesh", tr(ui, "bed_mesh")),
-                    "tool-pid" => ("pid", tr(ui, "pid_tuning")),
-                    _ => ("camera", tr(ui, "webcam")),
-                };
-                self.tool_view = view.into();
-                ui.set_tool_title(title.into());
-                if view == "camera" {
-                    self.call(ui, "server.webcams.list", json!({}), "webcams");
+            "tool-mesh" if self.has_bed_mesh() => {
+                self.tool_view = "mesh".into();
+                self.render_rows(ui);
+            }
+            "tool-pid" => {
+                let first_heater = self
+                    .heater_rows(ui)
+                    .next()
+                    .map(|heater| heater.argument.to_string());
+                if let Some(heater) = first_heater {
+                    self.pid_heater = heater;
+                    if self.pid_target.is_empty() {
+                        self.pid_target = if self.pid_heater == "heater_bed" {
+                            "60".into()
+                        } else {
+                            "200".into()
+                        };
+                    }
                 }
+                self.tool_view = "pid".into();
+                self.render_rows(ui);
+            }
+            "tool-camera" if !self.webcams.is_empty() => {
+                if !self
+                    .webcams
+                    .iter()
+                    .any(|camera| Some(camera.id.as_str()) == self.webcam_id.as_deref())
+                {
+                    self.webcam_id = self.webcams.first().map(|camera| camera.id.clone());
+                }
+                self.webcam = self
+                    .webcams
+                    .iter()
+                    .find(|camera| Some(camera.id.as_str()) == self.webcam_id.as_deref())
+                    .map(|camera| camera.url.clone());
+                self.tool_view = "camera".into();
+                ui.set_tool_image(Image::default());
+                self.refresh_webcam_image(ui);
                 self.render_rows(ui);
             }
             "tools-home" => {
                 self.tool_view.clear();
-                self.webcam = None;
-                ui.set_tool_title("".into());
                 ui.set_tool_image(Image::default());
                 self.render_rows(ui);
             }
+            "webcam-select" => {
+                let camera = argument
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| self.webcams.get(index));
+                if let Some(camera) = camera {
+                    self.webcam_id = Some(camera.id.clone());
+                    self.webcam = Some(camera.url.clone());
+                    ui.set_tool_image(Image::default());
+                    self.refresh_webcam_image(ui);
+                    self.render_rows(ui);
+                }
+            }
+            "webcam-refresh-list" => {
+                self.request_webcams(ui);
+                self.render_rows(ui);
+            }
+            "webcam-refresh-image" => {
+                ui.set_tool_image(Image::default());
+                self.refresh_webcam_image(ui);
+            }
+            "pid-heater" => {
+                let selected = argument
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| self.heater_rows(ui).nth(index))
+                    .map(|heater| heater.argument.to_string());
+                if let Some(heater) = selected {
+                    self.pid_heater = heater;
+                    self.pid_complete = false;
+                    self.render_rows(ui);
+                }
+            }
+            "pid-digit" => {
+                self.pid_target = tools::append_pid_digit(&self.pid_target, argument);
+                self.pid_complete = false;
+                self.render_rows(ui);
+            }
+            "pid-clear" => {
+                self.pid_target.clear();
+                self.pid_complete = false;
+                self.render_rows(ui);
+            }
+            "pid-backspace" => {
+                self.pid_target.pop();
+                self.pid_complete = false;
+                self.render_rows(ui);
+            }
+            "pid-run" => self.run_pid_calibration(ui),
             "power" => self.dialog(ui, tr(ui, "power_options"), "", "power", "", ""),
             "clear-message" => self.script(ui, "M117"),
             "clear-file" => self.script(ui, "SDCARD_RESET_FILE"),
@@ -3428,6 +3657,21 @@ impl State {
         let result = match reply {
             Ok(result) => result,
             Err(error) => {
+                if tag == "webcams" {
+                    self.webcams_pending = false;
+                    if self.page == "settings" && self.tab == "tools" {
+                        ui.set_message(error.into());
+                        self.render_rows(ui);
+                    }
+                    return;
+                }
+                if tag == "pid-tune" {
+                    self.pid_running = false;
+                    self.pid_complete = false;
+                    ui.set_message(error.into());
+                    self.render_rows(ui);
+                    return;
+                }
                 if let Some(path) = tag.strip_prefix("file:") {
                     if self.dialog.argument == path
                         && (ui.get_dialog_mode().starts_with("file-")
@@ -3621,24 +3865,38 @@ impl State {
                     .replace("{filament}", &format!("{filament:.1}"));
                 self.dialog(ui, tr(ui, "print_history"), &details, "info", "", "");
             }
-            "webcams" if self.page == "settings" && self.tab == "tools" => {
-                let candidate = array(&result["webcams"]).iter().find_map(|camera| {
-                    (camera["enabled"].as_bool() != Some(false))
-                        .then(|| {
-                            camera["snapshot_url"]
-                                .as_str()
-                                .filter(|url| !url.is_empty())
-                        })
-                        .flatten()
-                });
-                if let Some(url) = candidate {
-                    self.webcam = moonraker::http_endpoint(self.endpoint.borrow().as_str(), &[])
-                        .ok()
-                        .and_then(|base| base.join(url).ok())
-                        .map(|url| url.to_string());
-                } else {
-                    ui.set_message(tr(ui, "no_webcam_snapshot_url_is_configured").into());
+            "webcams" => {
+                self.webcams_pending = false;
+                if self.page == "settings" && self.tab == "tools" {
+                    let previous_id = self.webcam_id.clone();
+                    let previous_url = self.webcam.clone();
+                    self.webcams = tools::webcams(&result, self.endpoint.borrow().as_str());
+                    self.webcam_id = previous_id
+                        .filter(|id| self.webcams.iter().any(|camera| camera.id == *id))
+                        .or_else(|| self.webcams.first().map(|camera| camera.id.clone()));
+                    self.webcam = self
+                        .webcams
+                        .iter()
+                        .find(|camera| Some(camera.id.as_str()) == self.webcam_id.as_deref())
+                        .map(|camera| camera.url.clone());
+                    if self.webcams.is_empty() && self.tool_view == "camera" {
+                        self.tool_view.clear();
+                        self.webcam = None;
+                        self.webcam_id = None;
+                        self.webcam_image_pending = false;
+                        self.webcam_generation = self.webcam_generation.wrapping_add(1);
+                        ui.set_tool_image(Image::default());
+                    } else if self.tool_view == "camera" && previous_url != self.webcam {
+                        ui.set_tool_image(Image::default());
+                        self.refresh_webcam_image(ui);
+                    }
+                    self.render_rows(ui);
                 }
+            }
+            "pid-tune" => {
+                self.pid_running = false;
+                self.pid_complete = true;
+                self.render_rows(ui);
             }
             "gcode" | "start" | "emergency" | "pause" | "resume" | "cancel" | "restart"
             | "shutdown" | "reboot" => {}
@@ -3691,15 +3949,18 @@ impl State {
             Background::Reply(tag, result) => self.reply(ui, &tag, result),
             Background::Sleeping(sleeping) => ui.set_sleeping(sleeping),
             Background::Image(tag, result) => {
-                if tag == "webcam" {
+                let current_webcam = tag == self.webcam_image_tag
+                    && self.page == "settings"
+                    && self.tab == "tools"
+                    && self.tool_view == "camera";
+                if current_webcam {
                     self.webcam_image_pending = false;
+                    ui.set_tool_webcam_loading(self.webcams_pending);
                 }
                 match result.and_then(|bytes| {
                     Image::load_from_data(&bytes, None).map_err(|error| format!("{error:?}"))
                 }) {
-                    Ok(image) if tag == "webcam" && self.webcam.is_some() => {
-                        ui.set_tool_image(image)
-                    }
+                    Ok(image) if current_webcam => ui.set_tool_image(image),
                     Ok(image) if tag.strip_prefix("preview:") == Some(self.filename.as_str()) => {
                         ui.set_preview(image)
                     }
@@ -3716,10 +3977,6 @@ impl State {
                         if self.page == "files" {
                             self.render_rows(ui);
                         }
-                    }
-                    Err(error) if tag == "webcam" && self.webcam.is_some() => {
-                        self.webcam = None;
-                        ui.set_message(error.into());
                     }
                     _ => {}
                 }

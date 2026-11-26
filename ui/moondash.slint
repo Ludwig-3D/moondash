@@ -150,6 +150,8 @@ export component Moondash inherits Window {
     in property <bool> tool-pid-running;
     in property <bool> tool-pid-complete;
     in property <bool> tool-webcam-loading;
+    in property <string> tool-webcam-status;
+    in property <int> tool-webcam-fps: -1;
     in property <[string]> tool-webcam-options;
     in property <int> tool-webcam-index;
     in property <[Row]> breadcrumbs;
@@ -205,7 +207,9 @@ export component Moondash inherits Window {
     private property <bool> first-number-key;
     changed dialog-mode => { root.first-number-key = root.dialog-mode == "number"; }
 
+    callback webcam-frame-tick(float, float);
     callback navigate(string, string);
+
     callback action(string, string);
     callback dialog-submit(string, bool);
     callback adjust-speed(int);
@@ -422,7 +426,11 @@ export component Moondash inherits Window {
                 pid-ready: root.tool-pid-ready;
                 pid-running: root.tool-pid-running;
                 pid-complete: root.tool-pid-complete;
+                awake: !root.sleeping;
+                webcam-frame-tick(width, height) => { root.webcam-frame-tick(width, height); }
                 webcam-loading: root.tool-webcam-loading;
+                webcam-status: root.tool-webcam-status;
+                webcam-fps: root.tool-webcam-fps;
                 webcam-image: root.tool-image;
                 webcam-options: root.tool-webcam-options;
                 webcam-index: root.tool-webcam-index;

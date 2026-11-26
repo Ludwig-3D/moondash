@@ -4,7 +4,7 @@ use crate::{
     ColorSwatch, FilamentSensor, I18n, Lane, MeshCell, MeshRow, Moondash, Notification, Palette,
     PrintTool, Row, WifiEntry, config, input_idle, locale,
     moonraker::{self, Call, Event},
-    network, theme, tools, version, wayland_power,
+    network, theme, tools, version, wayland_power, webcam,
 };
 use serde_json::{Map, Value, json};
 use slint::{ComponentHandle, Image, ModelRc, Timer, TimerMode, VecModel};
@@ -55,6 +55,7 @@ struct State {
     runtime: Handle,
     background: mpsc::Sender<Background>,
     http: reqwest::Client,
+    webcam_http: reqwest::Client,
     idle_config: Arc<Mutex<Value>>,
     manual_sleep: Arc<AtomicBool>,
     online: bool,
@@ -91,14 +92,10 @@ struct State {
     jog_step: f64,
     config_checked: Instant,
     refresh_at: Instant,
-    webcams: Vec<tools::Webcam>,
+    webcams: Vec<webcam::Camera>,
     webcam_id: Option<String>,
     webcams_pending: bool,
-    webcam: Option<String>,
-    webcam_image_pending: bool,
-    webcam_generation: u64,
-    webcam_image_tag: String,
-    webcam_refresh_at: Instant,
+    webcam_feed: Option<webcam::Feed>,
     pid_heater: String,
     pid_target: String,
     pid_running: bool,
@@ -127,6 +124,10 @@ pub fn start(
         background: background.clone(),
         http: reqwest::Client::builder()
             .timeout(Duration::from_secs(8))
+            .build()?,
+        webcam_http: reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(4))
+            .read_timeout(Duration::from_secs(5))
             .build()?,
         idle_config: idle_config.clone(),
         manual_sleep: manual_sleep.clone(),
@@ -167,11 +168,7 @@ pub fn start(
         webcams: Vec::new(),
         webcam_id: None,
         webcams_pending: false,
-        webcam: None,
-        webcam_image_pending: false,
-        webcam_generation: 0,
-        webcam_image_tag: String::new(),
-        webcam_refresh_at: Instant::now(),
+        webcam_feed: None,
         pid_heater: String::new(),
         pid_target: String::new(),
         pid_running: false,
@@ -280,6 +277,14 @@ pub fn start(
     ui.on_picker_edited(move || {
         if let Some(ui) = weak.upgrade() {
             shared.borrow().validate_picker(&ui);
+        }
+    });
+
+    let weak = ui.as_weak();
+    let shared = state.clone();
+    ui.on_webcam_frame_tick(move |width, height| {
+        if let Some(ui) = weak.upgrade() {
+            shared.borrow_mut().present_webcam_frame(&ui, width, height);
         }
     });
 
@@ -436,13 +441,36 @@ impl State {
                 _ => {}
             }
         }
-        if self.page == "settings"
-            && self.tab == "tools"
-            && self.tool_view == "camera"
-            && !self.webcam_image_pending
-            && self.webcam_refresh_at.elapsed() >= Duration::from_secs(2)
-        {
-            self.refresh_webcam_image(ui);
+    }
+
+    fn present_webcam_frame(&mut self, ui: &Moondash, width: f32, height: f32) {
+        let Some(feed) = self.webcam_feed.as_mut() else {
+            return;
+        };
+        let scale = ui.window().scale_factor();
+        feed.set_viewport((
+            (width * scale).ceil() as u32,
+            (height * scale).ceil() as u32,
+        ));
+        let mut presented_live = false;
+        if let Some(frame) = feed.next() {
+            match frame {
+                Ok((image, live)) => {
+                    ui.set_tool_image(image);
+                    presented_live = live;
+                    let status = if live { "live" } else { "snapshot" };
+                    if ui.get_tool_webcam_status() != status {
+                        ui.set_tool_webcam_status(status.into());
+                    }
+                }
+                Err(()) => ui.set_tool_webcam_status("unavailable".into()),
+            }
+        }
+        let live = ui.get_tool_webcam_status() == "live";
+        if let Some(fps) = feed.preview_fps(live, presented_live) {
+            ui.set_tool_webcam_fps(fps);
+        } else if !live && ui.get_tool_webcam_fps() >= 0 {
+            ui.set_tool_webcam_fps(-1);
         }
     }
 
@@ -457,10 +485,7 @@ impl State {
         if (page, tab) != ("settings", "tools") {
             self.webcams.clear();
             self.webcam_id = None;
-            self.webcam = None;
-            self.webcam_image_pending = false;
-            self.webcam_generation = self.webcam_generation.wrapping_add(1);
-            self.webcam_image_tag.clear();
+            self.webcam_feed = None;
             self.tool_view.clear();
             ui.set_tool_title("".into());
             ui.set_tool_image(Image::default());
@@ -516,6 +541,7 @@ impl State {
             return;
         }
         self.webcams_pending = self.try_call(ui, "server.webcams.list", json!({}), "webcams");
+        ui.set_tool_webcam_loading(self.webcams_pending);
     }
 
     fn has_bed_mesh(&self) -> bool {
@@ -524,22 +550,34 @@ impl State {
             .is_some()
     }
 
+    fn selected_webcam(&self) -> Option<&webcam::Camera> {
+        self.webcams
+            .iter()
+            .find(|camera| Some(camera.id.as_str()) == self.webcam_id.as_deref())
+    }
+
     fn refresh_webcam_image(&mut self, ui: &Moondash) {
-        if self.page != "settings" || self.tab != "tools" || self.tool_view != "camera" {
+        if (
+            self.page.as_str(),
+            self.tab.as_str(),
+            self.tool_view.as_str(),
+        ) != ("settings", "tools", "camera")
+        {
             return;
         }
-        let Some(url) = self.webcam.as_deref() else {
-            return;
-        };
-        self.webcam_generation = self.webcam_generation.wrapping_add(1);
-        let Some(url) = tools::cache_bust_webcam_url(url, self.webcam_generation) else {
-            return;
-        };
-        self.webcam_image_pending = true;
-        ui.set_tool_webcam_loading(true);
-        self.webcam_image_tag = format!("webcam:{}", self.webcam_generation);
-        self.webcam_refresh_at = Instant::now();
-        self.fetch_image(self.webcam_image_tag.clone(), &url);
+        self.webcam_feed = self
+            .selected_webcam()
+            .cloned()
+            .map(|camera| webcam::Feed::start(&self.runtime, self.webcam_http.clone(), camera));
+        ui.set_tool_webcam_fps(-1);
+        ui.set_tool_webcam_status(
+            if self.webcam_feed.is_some() {
+                "loading"
+            } else {
+                "empty"
+            }
+            .into(),
+        );
     }
 
     fn update_tool_panel(&self, ui: &Moondash) {
@@ -614,7 +652,7 @@ impl State {
         );
         ui.set_tool_pid_running(self.pid_running);
         ui.set_tool_pid_complete(self.pid_complete);
-        ui.set_tool_webcam_loading(self.webcams_pending || self.webcam_image_pending);
+        ui.set_tool_webcam_loading(self.webcams_pending);
     }
 
     fn run_pid_calibration(&mut self, ui: &Moondash) {
@@ -749,10 +787,8 @@ impl State {
                     self.online = false;
                     self.webcams.clear();
                     self.webcam_id = None;
-                    self.webcam = None;
+                    self.webcam_feed = None;
                     self.webcams_pending = false;
-                    self.webcam_image_pending = false;
-                    self.webcam_image_tag.clear();
                     self.pid_running = false;
                     self.pid_complete = false;
                     self.tool_view.clear();
@@ -2522,17 +2558,13 @@ impl State {
                 {
                     self.webcam_id = self.webcams.first().map(|camera| camera.id.clone());
                 }
-                self.webcam = self
-                    .webcams
-                    .iter()
-                    .find(|camera| Some(camera.id.as_str()) == self.webcam_id.as_deref())
-                    .map(|camera| camera.url.clone());
                 self.tool_view = "camera".into();
                 ui.set_tool_image(Image::default());
                 self.refresh_webcam_image(ui);
                 self.render_rows(ui);
             }
             "tools-home" => {
+                self.webcam_feed = None;
                 self.tool_view.clear();
                 ui.set_tool_image(Image::default());
                 self.render_rows(ui);
@@ -2544,7 +2576,6 @@ impl State {
                     .and_then(|index| self.webcams.get(index));
                 if let Some(camera) = camera {
                     self.webcam_id = Some(camera.id.clone());
-                    self.webcam = Some(camera.url.clone());
                     ui.set_tool_image(Image::default());
                     self.refresh_webcam_image(ui);
                     self.render_rows(ui);
@@ -2553,10 +2584,6 @@ impl State {
             "webcam-refresh-list" => {
                 self.request_webcams(ui);
                 self.render_rows(ui);
-            }
-            "webcam-refresh-image" => {
-                ui.set_tool_image(Image::default());
-                self.refresh_webcam_image(ui);
             }
             "pid-heater" => {
                 let selected = argument
@@ -3200,11 +3227,6 @@ impl State {
                 "storage",
             ),
             "history" => self.call(ui, "server.history.totals", json!({}), "history"),
-            "webcam" if self.webcam.is_some() => {
-                self.webcam = None;
-                ui.set_tool_image(Image::default());
-            }
-            "webcam" => self.call(ui, "server.webcams.list", json!({}), "webcams"),
             "update-refresh" => self.call(
                 ui,
                 "machine.update.status",
@@ -3868,25 +3890,14 @@ impl State {
             "webcams" => {
                 self.webcams_pending = false;
                 if self.page == "settings" && self.tab == "tools" {
-                    let previous_id = self.webcam_id.clone();
-                    let previous_url = self.webcam.clone();
-                    self.webcams = tools::webcams(&result, self.endpoint.borrow().as_str());
-                    self.webcam_id = previous_id
-                        .filter(|id| self.webcams.iter().any(|camera| camera.id == *id))
-                        .or_else(|| self.webcams.first().map(|camera| camera.id.clone()));
-                    self.webcam = self
-                        .webcams
-                        .iter()
-                        .find(|camera| Some(camera.id.as_str()) == self.webcam_id.as_deref())
-                        .map(|camera| camera.url.clone());
-                    if self.webcams.is_empty() && self.tool_view == "camera" {
-                        self.tool_view.clear();
-                        self.webcam = None;
-                        self.webcam_id = None;
-                        self.webcam_image_pending = false;
-                        self.webcam_generation = self.webcam_generation.wrapping_add(1);
-                        ui.set_tool_image(Image::default());
-                    } else if self.tool_view == "camera" && previous_url != self.webcam {
+                    let previous_camera = self.selected_webcam().cloned();
+                    self.webcams = webcam::cameras(&result, self.endpoint.borrow().as_str());
+                    if self.selected_webcam().is_none() {
+                        self.webcam_id = self.webcams.first().map(|camera| camera.id.clone());
+                    }
+                    if self.tool_view == "camera"
+                        && previous_camera.as_ref() != self.selected_webcam()
+                    {
                         ui.set_tool_image(Image::default());
                         self.refresh_webcam_image(ui);
                     }
@@ -3949,18 +3960,9 @@ impl State {
             Background::Reply(tag, result) => self.reply(ui, &tag, result),
             Background::Sleeping(sleeping) => ui.set_sleeping(sleeping),
             Background::Image(tag, result) => {
-                let current_webcam = tag == self.webcam_image_tag
-                    && self.page == "settings"
-                    && self.tab == "tools"
-                    && self.tool_view == "camera";
-                if current_webcam {
-                    self.webcam_image_pending = false;
-                    ui.set_tool_webcam_loading(self.webcams_pending);
-                }
                 match result.and_then(|bytes| {
                     Image::load_from_data(&bytes, None).map_err(|error| format!("{error:?}"))
                 }) {
-                    Ok(image) if current_webcam => ui.set_tool_image(image),
                     Ok(image) if tag.strip_prefix("preview:") == Some(self.filename.as_str()) => {
                         ui.set_preview(image)
                     }

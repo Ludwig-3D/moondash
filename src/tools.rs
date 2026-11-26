@@ -1,13 +1,4 @@
-use crate::moonraker;
-use reqwest::Url;
 use serde_json::Value;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Webcam {
-    pub id: String,
-    pub name: String,
-    pub url: String,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MeshProfile {
@@ -149,76 +140,10 @@ pub fn append_pid_digit(value: &str, digit: &str) -> String {
     next.to_string()
 }
 
-pub fn webcams(result: &Value, endpoint: &str) -> Vec<Webcam> {
-    let Some(cameras) = result["webcams"]
-        .as_array()
-        .or_else(|| result["result"]["webcams"].as_array())
-    else {
-        return Vec::new();
-    };
-
-    cameras
-        .iter()
-        .enumerate()
-        .filter(|(_, camera)| camera["enabled"].as_bool() != Some(false))
-        .filter_map(|(index, camera)| {
-            let raw_url = [
-                "snapshot_url",
-                "url_snapshot",
-                "stream_url",
-                "url_stream",
-                "mjpg_url",
-                "webrtc_url",
-                "url",
-            ]
-            .into_iter()
-            .find_map(|key| camera[key].as_str().filter(|url| !url.trim().is_empty()))?;
-            let url = normalize_webcam_url(raw_url, endpoint)?;
-            let name = camera["name"]
-                .as_str()
-                .or_else(|| camera["title"].as_str())
-                .map(str::to_owned)
-                .unwrap_or_else(|| format!("Webcam {}", index + 1));
-            let id = camera["uid"]
-                .as_str()
-                .or_else(|| camera["id"].as_str())
-                .or_else(|| camera["name"].as_str())
-                .map(str::to_owned)
-                .unwrap_or_else(|| index.to_string());
-            Some(Webcam { id, name, url })
-        })
-        .collect()
-}
-
-pub fn normalize_webcam_url(raw: &str, endpoint: &str) -> Option<String> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    let base = Url::parse(moonraker::http_endpoint(endpoint, &[]).ok()?.as_str()).ok()?;
-    let mut url = Url::parse(raw).or_else(|_| base.join(raw)).ok()?;
-
-    if matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1")) {
-        url.set_host(base.host_str()).ok()?;
-    }
-    if url.path().contains("/webrtc") {
-        url.set_path(&url.path().replace("/webrtc", "/"));
-        url.set_query(Some("action=snapshot"));
-    }
-    Some(url.to_string())
-}
-
-pub fn cache_bust_webcam_url(raw: &str, nonce: u64) -> Option<String> {
-    let mut url = Url::parse(raw).ok()?;
-    url.query_pairs_mut().append_pair("_ts", &nonce.to_string());
-    Some(url.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        append_pid_digit, bed_mesh_matrix, cache_bust_webcam_url, mesh_color, mesh_profiles,
-        mesh_range, normalize_webcam_url, pid_target, webcams,
+        append_pid_digit, bed_mesh_matrix, mesh_color, mesh_profiles, mesh_range, pid_target,
     };
     use serde_json::json;
 
@@ -267,35 +192,5 @@ mod tests {
         assert_eq!(append_pid_digit("99", "9"), "999");
         assert_eq!(append_pid_digit("999", "9"), "999");
         assert_eq!(append_pid_digit("12", "x"), "12");
-    }
-
-    #[test]
-    fn discovers_enabled_webcams_and_normalizes_snapshot_urls() {
-        let cameras = webcams(
-            &json!({
-                "result": {"webcams": [
-                    {"name": "Front", "uid": "front", "enabled": true, "snapshot_url": "http://localhost:8080/webcam/?action=stream"},
-                    {"name": "Disabled", "enabled": false, "snapshot_url": "/off"},
-                    {"name": "No URL", "enabled": true}
-                ]}
-            }),
-            "http://printer.local:7125",
-        );
-        assert_eq!(cameras.len(), 1);
-        assert_eq!(cameras[0].id, "front");
-        assert_eq!(cameras[0].name, "Front");
-        assert_eq!(
-            cameras[0].url,
-            "http://printer.local:8080/webcam/?action=stream"
-        );
-        assert_eq!(
-            normalize_webcam_url("/webcam/webrtc", "http://printer.local:7125").as_deref(),
-            Some("http://printer.local:7125/webcam/?action=snapshot")
-        );
-        assert_eq!(
-            cache_bust_webcam_url("http://printer.local/snapshot?action=snapshot", 7).as_deref(),
-            Some("http://printer.local/snapshot?action=snapshot&_ts=7")
-        );
-        assert!(webcams(&json!({"webcams": []}), "printer.local").is_empty());
     }
 }

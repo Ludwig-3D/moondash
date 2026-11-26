@@ -1,7 +1,7 @@
 import { I18n } from "i18n.slint";
 import { Icons } from "icons.slint";
 import { ComboBox, ScrollView } from "std-widgets.slint";
-import { Label, Mdi, Palette, Row, Tile } from "widgets.slint";
+import { BusyCircle, Label, Mdi, Palette, Row, Tile } from "widgets.slint";
 
 export struct MeshCell {
     fill: color,
@@ -189,59 +189,80 @@ component MeshProfilesCard inherits Rectangle {
     }
 }
 
-component WebcamViewer inherits Rectangle {
-    in property <image> webcam-image;
-    in property <bool> webcam-loading;
-    background: #000000;
-    border-radius: 10px;
-    clip: true;
-    height: root.width * (root.webcam-image.width > 0
-        ? root.webcam-image.height / root.webcam-image.width : 9 / 16);
+component WebcamPanel inherits Rectangle {
+    in property <image> frame;
+    in property <string> status;
+    in property <int> fps: -1;
+    in property <bool> awake;
+    callback frame-tick(float, float);
 
-    if root.webcam-image.width > 0: Image {
-        width: parent.width;
-        height: parent.height;
-        source: root.webcam-image;
-        image-fit: contain;
-    }
-    if root.webcam-image.width == 0: Label {
-        width: parent.width;
-        height: parent.height;
-        text: root.webcam-loading ? I18n.text("loading_webcams") : I18n.text("webcam_preview_unavailable");
-        color: #ffffff;
-        horizontal-alignment: center;
-    }
-}
+    private property <bool> loading: root.status == "loading";
+    private property <bool> live: root.status == "live";
+    private property <bool> has-frame: root.frame.width > 0;
 
-component WebcamControls inherits Rectangle {
-    in property <[string]> options;
-    in property <int> selected-index;
-    in property <bool> loading;
-    callback action(string, string);
-    background: transparent;
-    VerticalLayout {
-        spacing: 16px;
-        Label { text: I18n.text("select_webcam"); color: Palette.muted; }
-        camera-selector := ComboBox {
+    Timer {
+        interval: 16ms;
+        running: root.awake;
+        triggered => { root.frame-tick(preview.width / 1px, preview.height / 1px); }
+    }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 4px;
+        padding-bottom: 10px;
+        spacing: 8px;
+
+        preview := Rectangle {
             horizontal-stretch: 1;
-            model: root.options;
-            current-index: root.selected-index;
-            enabled: root.options.length > 0;
-            selected => { root.action("webcam-select", "\{camera-selector.current-index}"); }
-        }
-        VerticalLayout {
-            spacing: 8px;
-            Tile {
-                icon: Icons.refresh;
-                label: I18n.text("refresh_webcam");
-                enabled: root.options.length > 0 && !root.loading;
-                clicked => { root.action("webcam-refresh-image", ""); }
+            background: #08090b;
+            border-radius: 12px;
+            clip: true;
+
+            if root.has-frame: Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.frame;
+                image-fit: contain;
             }
-            Tile {
-                icon: Icons.reload;
-                label: I18n.text("reload_webcams");
-                enabled: !root.loading;
-                clicked => { root.action("webcam-refresh-list", ""); }
+
+            if root.has-frame && root.live && root.fps >= 0: Rectangle {
+                private property <length> image-width: min(parent.width, parent.height * root.frame.width / root.frame.height);
+                private property <length> image-height: min(parent.height, parent.width * root.frame.height / root.frame.width);
+                x: (parent.width + self.image-width) / 2 - self.width - 10px;
+                y: (parent.height + self.image-height) / 2 - self.height - 10px;
+                width: fps-label.preferred-width + 16px;
+                height: 25px;
+                border-radius: 5px;
+                background: #101114c9;
+
+                fps-label := Label {
+                    text: "\{root.fps} " + I18n.text("webcam_fps_unit");
+                    color: #ffffff;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            if !root.live && root.status != "snapshot": Rectangle {
+                y: root.has-frame ? parent.height - self.height - 12px : (parent.height - self.height) / 2;
+                width: min(parent.width - 24px, status-row.preferred-width);
+                height: 40px;
+                border-radius: 20px;
+                background: #1c2026ee;
+                status-row := HorizontalLayout {
+                    alignment: center;
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    spacing: 9px;
+                    if root.loading: BusyCircle { width: 18px; height: 18px; cross-axis-self-alignment: center; }
+                    Label {
+                        text: I18n.text(root.loading ? "loading_webcams"
+                            : root.status == "empty" ? "no_webcams" : "webcam_preview_unavailable");
+                        color: #ffffff;
+                        font-size: 14px;
+                    }
+                }
             }
         }
     }
@@ -260,6 +281,13 @@ export component ToolsPanel inherits Rectangle {
     in property <bool> pid-running;
     in property <bool> pid-complete;
     in property <bool> webcam-loading;
+    in property <bool> awake;
+    callback webcam-frame-tick(float, float);
+    in property <string> webcam-status;
+    in property <int> webcam-fps: -1;
+    private property <bool> camera-menu-open;
+    private property <length> camera-menu-width: 220px;
+    changed view => { root.camera-menu-open = false; }
     in property <image> webcam-image;
     in property <[string]> webcam-options;
     in property <int> webcam-index;
@@ -270,18 +298,49 @@ export component ToolsPanel inherits Rectangle {
     VerticalLayout {
         spacing: 0px;
 
-        if root.view != "": Rectangle {
+        if root.view != "": HorizontalLayout {
             height: 48px;
-            background: transparent;
-            HorizontalLayout {
-                spacing: 16px;
-                Mdi { text: Icons.arrow-left; color: Palette.ink; }
-                Label { text: root.title; font-size: 19px; font-weight: 700; }
-                Rectangle { horizontal-stretch: 1; background: transparent; }
+            padding-right: 8px;
+            spacing: 8px;
+            Rectangle {
+                horizontal-stretch: 1;
+                HorizontalLayout {
+                    alignment: start;
+                    spacing: 16px;
+                    Mdi { text: Icons.arrow-left; color: Palette.ink; }
+                    Label { text: root.title; font-size: 19px; font-weight: 700; }
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.action("tools-home", ""); }
+                }
             }
-            TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.action("tools-home", ""); }
+            if root.view == "camera": Tile {
+                width: root.camera-menu-width;
+                height: 36px;
+                cross-axis-self-alignment: center;
+                fill: Palette.surface;
+                accessible-role: button;
+                accessible-label: I18n.text("select_webcam");
+                accessible-expandable: true;
+                accessible-expanded: root.camera-menu-open;
+                accessible-action-default => { self.clicked(); }
+                clicked => {
+                    root.camera-menu-open = !root.camera-menu-open;
+                    if root.camera-menu-open { camera-menu-focus.focus(); }
+                }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 8px;
+                    spacing: 8px;
+                    Mdi { text: Icons.webcam; width: 20px; font-size: 19px; color: Palette.muted; }
+                    Label {
+                        horizontal-stretch: 1;
+                        text: root.webcam-index >= 0 && root.webcam-index < root.webcam-options.length
+                            ? root.webcam-options[root.webcam-index] : I18n.text("select_webcam");
+                    }
+                    Mdi { text: Icons.chevron-down; width: 19px; font-size: 18px; color: Palette.muted; }
+                }
             }
         }
 
@@ -483,41 +542,83 @@ export component ToolsPanel inherits Rectangle {
             }
         }
 
-        if root.view == "camera": ScrollView {
+        if root.view == "camera": WebcamPanel {
             vertical-stretch: 1;
-            horizontal-scrollbar-policy: always-off;
-            mouse-drag-pan-enabled: true;
-            if root.width >= 600px: HorizontalLayout {
-                padding: 12px;
-                spacing: 16px;
-                WebcamViewer {
-                    horizontal-stretch: 1;
-                    webcam-image: root.webcam-image;
-                    webcam-loading: root.webcam-loading;
-                }
-                WebcamControls {
-                    width: 280px;
-                    options: root.webcam-options;
-                    selected-index: root.webcam-index;
-                    loading: root.webcam-loading;
-                    action(name, argument) => { root.action(name, argument); }
-                }
+            awake: root.awake;
+            frame-tick(width, height) => { root.webcam-frame-tick(width, height); }
+            frame: root.webcam-image;
+            status: root.webcam-status;
+            fps: root.webcam-fps;
+        }
+    }
+    camera-menu-focus := FocusScope {
+        enabled: root.camera-menu-open;
+        focus-on-click: false;
+        width: root.width;
+        height: root.height;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.camera-menu-open = false;
+                return accept;
             }
-            if root.width < 600px: VerticalLayout {
-                padding: 12px;
-                spacing: 12px;
-                WebcamViewer {
-                    webcam-image: root.webcam-image;
-                    webcam-loading: root.webcam-loading;
-                }
-                WebcamControls {
-                    horizontal-stretch: 1;
-                    options: root.webcam-options;
-                    selected-index: root.webcam-index;
-                    loading: root.webcam-loading;
-                    action(name, argument) => { root.action(name, argument); }
+            return reject;
+        }
+
+        if root.camera-menu-open: Rectangle {
+            width: parent.width;
+            height: parent.height;
+            TouchArea { clicked => { root.camera-menu-open = false; } }
+
+            Rectangle {
+                x: parent.width - self.width - 8px;
+                y: 45px;
+                width: root.camera-menu-width;
+                height: min(parent.height - self.y - 6px, 50px + root.webcam-options.length * 40px);
+                background: Palette.surface;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Palette.divider;
+                ScrollView {
+                    horizontal-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 5px;
+                        for name[index] in root.webcam-options: Tile {
+                            height: 40px;
+                            fill: root.webcam-index == index ? Palette.accent.transparentize(86%) : transparent;
+                            accessible-role: button;
+                            accessible-label: name;
+                            accessible-action-default => { self.clicked(); }
+                            clicked => {
+                                root.camera-menu-open = false;
+                                if index != root.webcam-index {
+                                    root.action("webcam-select", "\{index}");
+                                }
+                            }
+                            Label { x: 10px; width: parent.width - 20px; text: name; }
+                        }
+                        Tile {
+                            height: 40px;
+                            fill: transparent;
+                            enabled: !root.webcam-loading;
+                            accessible-role: button;
+                            accessible-label: I18n.text("reload_webcams");
+                            accessible-action-default => { if self.enabled { self.clicked(); } }
+                            clicked => { root.action("webcam-refresh-list", ""); }
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                spacing: 8px;
+                                if root.webcam-loading: BusyCircle {
+                                    width: 17px; height: 17px; cross-axis-self-alignment: center;
+                                }
+                                if !root.webcam-loading: Mdi { text: Icons.reload; width: 17px; font-size: 17px; }
+                                Label { text: I18n.text("reload_webcams"); horizontal-stretch: 1; }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+
 }

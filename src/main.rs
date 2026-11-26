@@ -11,6 +11,7 @@ mod theme;
 mod tools;
 mod version;
 mod wayland_power;
+mod webcam;
 
 use renderer::Renderer;
 use slint::ComponentHandle;

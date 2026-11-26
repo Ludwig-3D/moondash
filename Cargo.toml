@@ -10,6 +10,7 @@ license = "MIT"
 evdev = "0.13"
 futures-util = { version = "0.3", features = ["sink"] }
 get_if_addrs = "0.5"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 nmrs = "2.2"
 qrcode = { version = "0.14", default-features = false }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
@@ -22,7 +23,7 @@ slint = { version = "=1.19.0", default-features = false, features = [
     "software-renderer-path",
 ] }
 tempfile = "3"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "process", "io-util"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
@@ -33,3 +34,10 @@ zbus = "5"
 
 [build-dependencies]
 slint-build = "=1.19.0"
+
+# Keep live webcam decoding responsive in development builds.
+[profile.dev.package.image]
+opt-level = 2
+
+[profile.dev.package.zune-jpeg]
+opt-level = 3

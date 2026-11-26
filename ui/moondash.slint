@@ -17,7 +17,8 @@ import { NetworkPanel, WifiDialogs, WifiEntry } from "network-settings.slint";
 import { ColorPicker, ColorSwatch } from "color-picker.slint";
 import { ToolsPanel } from "tools.slint";
 import { MeshMarker, MeshViewDialog } from "mesh-view.slint";
-export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshMarker }
+import { ResourceMetric, McuResource, HistoryStatus, ResourcesPanel } from "resources.slint";
+export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshMarker, ResourceMetric, McuResource, HistoryStatus }
 
 component RowList inherits ScrollView {
     in property <[Row]> rows;
@@ -105,6 +106,25 @@ export component Moondash inherits Window {
     in property <[Row]> jobs;
     in property <[Row]> details;
     in property <[Row]> trailing-rows;
+    in property <[ResourceMetric]> resource-metrics;
+    in property <image> resource-host-chart;
+    in property <image> resource-history-chart;
+    in property <[McuResource]> resource-mcus;
+    in property <[HistoryStatus]> resource-history-statuses;
+    in property <string> resource-system-description;
+    in property <string> resource-print-count;
+    in property <string> resource-total-time;
+    in property <string> resource-longest-time;
+    in property <string> resource-average-time;
+    in property <string> resource-filament;
+    in property <bool> resource-history-unavailable;
+    in property <bool> resource-history-loading;
+    in property <bool> resource-history-has-data;
+    in property <bool> resource-history-empty;
+    in property <bool> resource-history-stale;
+    in property <string> resource-history-coverage;
+    in-out property <bool> resource-history-details: false;
+    in property <bool> resource-has-mcus;
     in property <image> web-qr;
     in property <string> web-url;
     in property <bool> network-wifi-available;
@@ -448,12 +468,29 @@ export component Moondash inherits Window {
                 action(name, argument) => { root.action(name, argument); }
             }
 
-            if root.page == "settings" && root.tab == "host": HorizontalLayout {
+            if root.page == "settings" && root.tab == "host": ResourcesPanel {
                 vertical-stretch: 1;
-                padding: 8px;
-                spacing: 12px;
-                RowList { horizontal-stretch: 1; rows: root.rows; action(name, argument) => { root.action(name, argument); } }
-                RowList { horizontal-stretch: 1; rows: root.trailing-rows; action(name, argument) => { root.action(name, argument); } }
+                metrics: root.resource-metrics;
+                host-chart: root.resource-host-chart;
+                history-chart: root.resource-history-chart;
+                mcus: root.resource-mcus;
+                history-statuses: root.resource-history-statuses;
+                system-description: root.resource-system-description;
+                print-count: root.resource-print-count;
+                total-time: root.resource-total-time;
+                longest-time: root.resource-longest-time;
+                average-time: root.resource-average-time;
+                filament: root.resource-filament;
+                history-unavailable: root.resource-history-unavailable;
+                history-loading: root.resource-history-loading;
+                history-has-data: root.resource-history-has-data;
+                history-empty: root.resource-history-empty;
+                history-stale: root.resource-history-stale;
+                history-coverage: root.resource-history-coverage;
+                history-details: root.resource-history-details;
+                history-view-changed(details) => { root.resource-history-details = details; }
+                history-refresh-requested => { root.action("history-refresh", ""); }
+                has-mcus: root.resource-has-mcus;
             }
 
             if (root.page == "tune" && root.tab != "motion" && root.tab != "print" && root.tab != "afc") ||

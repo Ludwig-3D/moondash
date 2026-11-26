@@ -8,6 +8,7 @@ mod moonraker;
 mod network;
 mod print_files;
 mod renderer;
+mod resources;
 mod theme;
 mod tools;
 mod version;

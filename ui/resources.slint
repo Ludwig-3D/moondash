@@ -1,0 +1,400 @@
+import { I18n } from "i18n.slint";
+import { Icons } from "icons.slint";
+import { ScrollView } from "std-widgets.slint";
+import { BusyCircle, Palette, Label, Mdi } from "widgets.slint";
+
+export struct ResourceMetric {
+    label: string,
+    value: string,
+    detail: string,
+    color: color,
+}
+
+export struct McuResource {
+    name: string,
+    version: string,
+    chipset: string,
+    frequency: string,
+    temperature: string,
+    usage: string,
+    usage_percent: float,
+    has_temperature: bool,
+    has_usage: bool,
+}
+
+export struct HistoryStatus {
+    label: string,
+    count: string,
+    color: color,
+}
+
+component MetricRow inherits Rectangle {
+    in property <ResourceMetric> metric;
+    min-height: 40px;
+    background: transparent;
+
+    HorizontalLayout {
+        spacing: 4px;
+        Rectangle { width: 8px; height: 8px; border-radius: 4px; background: root.metric.color; }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Label { text: root.metric.label; font-weight: 500; }
+            Label { text: root.metric.detail; color: Palette.muted; font-size: 12px; }
+        }
+        Label { text: root.metric.value; font-weight: 600; vertical-alignment: top; }
+    }
+}
+
+component HistoryIconButton inherits Rectangle {
+    in property <string> icon;
+    in property <bool> enabled: true;
+    in property <bool> busy;
+    callback clicked();
+    width: 34px;
+    height: 34px;
+    border-radius: 5px;
+    background: !root.enabled ? Palette.raised.transparentize(55%) : touch.pressed ? Palette.raised.transparentize(28%) : touch.has-hover ? Palette.raised.mix(Palette.ink, 88%) : Palette.raised;
+    accessible-role: button;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
+
+    if root.busy: BusyCircle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 18px;
+        height: 18px;
+        ink: Palette.accent;
+    }
+    if !root.busy: Mdi {
+        text: root.icon;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 20px;
+        height: 20px;
+        font-size: 20px;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component HostResourcesCard inherits Rectangle {
+    in property <[ResourceMetric]> metrics;
+    in property <image> chart;
+    in property <string> system-description;
+    vertical-stretch: 1;
+    border-radius: 10px;
+    background: Palette.surface;
+
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 8px;
+        padding-bottom: 16px;
+        spacing: 12px;
+        alignment: start;
+        HorizontalLayout {
+            height: 34px;
+            Label { text: I18n.text("resources_system_information"); font-size: 17px; font-weight: 600; horizontal-stretch: 1; vertical-alignment: center; }
+        }
+        if root.system-description != "": Label {
+            text: root.system-description;
+            color: Palette.muted;
+            font-size: 12px;
+        }
+        HorizontalLayout {
+            spacing: 16px;
+            Image { source: root.chart; width: 96px; height: 96px; }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                for metric in root.metrics: MetricRow { metric: metric; }
+            }
+        }
+    }
+}
+
+component HistoryResourcesCard inherits Rectangle {
+    in property <[HistoryStatus]> statuses;
+    in property <image> chart;
+    in property <string> print-count;
+    in property <string> total-time;
+    in property <string> longest-time;
+    in property <string> average-time;
+    in property <string> filament;
+    in property <bool> unavailable;
+    in property <bool> loading;
+    in property <bool> has-data;
+    in property <bool> empty;
+    in property <bool> stale;
+    in property <string> coverage;
+    in property <bool> details;
+    callback view-changed(bool);
+    callback refresh-requested();
+    vertical-stretch: 0;
+    border-radius: 10px;
+    background: Palette.surface;
+
+    VerticalLayout {
+        padding-left: 16px;
+        padding-right: 8px;
+        padding-top: 8px;
+        padding-bottom: 16px;
+        spacing: 8px;
+        alignment: start;
+        HorizontalLayout {
+            height: 34px;
+            Label { text: I18n.text("print_history"); font-size: 17px; font-weight: 600; horizontal-stretch: 1; vertical-alignment: center; }
+            HorizontalLayout {
+                horizontal-stretch: 0;
+                spacing: 4px;
+                Label { text: I18n.text("history_total_jobs"); color: Palette.muted; font-size: 12px; }
+                Label { text: root.print-count; color: Palette.muted; font-size: 12px; }
+                Rectangle { width: 5px; height: 1px; background: transparent; }
+                if root.has-data && !root.unavailable && !root.empty: HistoryIconButton {
+                    icon: root.details ? Icons.chart-donut : Icons.view-list;
+                    accessible-label: root.details ? I18n.text("history_show_chart") : I18n.text("history_show_list");
+                    clicked => { root.view-changed(!root.details); }
+                }
+                HistoryIconButton {
+                    icon: Icons.refresh;
+                    accessible-label: I18n.text("history_refresh");
+                    busy: root.loading;
+                    enabled: !root.loading;
+                    clicked => { root.refresh-requested(); }
+                }
+            }
+        }
+        if root.stale || root.coverage != "": VerticalLayout {
+            spacing: 2px;
+            alignment: start;
+            if root.stale: Label {
+                text: I18n.text("history_showing_previous");
+                color: Palette.warning;
+                font-size: 12px;
+            }
+            if root.coverage != "": Label {
+                text: root.coverage;
+                color: Palette.muted;
+                font-size: 12px;
+            }
+        }
+        VerticalLayout {
+            height: 104px;
+            alignment: start;
+            if root.unavailable && !root.loading: Label {
+                text: I18n.text("history_unavailable");
+                color: Palette.muted;
+                font-size: 13px;
+            }
+            if root.empty && !root.unavailable: Label {
+                text: I18n.text("history_empty");
+                color: Palette.muted;
+                font-size: 13px;
+            }
+            if root.has-data && !root.unavailable && !root.empty: VerticalLayout {
+                height: 104px;
+                alignment: center;
+                if !root.details: HorizontalLayout {
+                    spacing: 14px;
+                    Image { source: root.chart; width: 96px; height: 96px; }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 7px;
+                        alignment: center;
+                        for status in root.statuses: HorizontalLayout {
+                            spacing: 8px;
+                            Rectangle { width: 9px; height: 9px; border-radius: 5px; background: status.color; }
+                            Label { text: status.label; horizontal-stretch: 1; font-size: 12px; }
+                            Label { text: status.count; color: Palette.muted; font-size: 12px; }
+                        }
+                    }
+                }
+                if root.details: VerticalLayout {
+                    spacing: 8px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            Label { text: I18n.text("history_total_print_time"); color: Palette.muted; font-size: 12px; }
+                            Label { text: root.total-time; font-weight: 600; }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            Label { text: I18n.text("history_longest_print"); color: Palette.muted; font-size: 12px; }
+                            Label { text: root.longest-time; font-weight: 600; }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            Label { text: I18n.text("history_average_print"); color: Palette.muted; font-size: 12px; }
+                            Label { text: root.average-time; font-weight: 600; }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            Label { text: I18n.text("filament"); color: Palette.muted; font-size: 12px; }
+                            Label { text: root.filament; font-weight: 600; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component McuResourcesCard inherits Rectangle {
+    in property <McuResource> mcu;
+    vertical-stretch: 0;
+    border-radius: 10px;
+    background: Palette.surface;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 10px;
+        HorizontalLayout {
+            Label { text: root.mcu.name; font-size: 16px; font-weight: 600; horizontal-stretch: 1; }
+            if root.mcu.has-usage: Label { text: root.mcu.usage; font-weight: 600; }
+        }
+        if root.mcu.has-usage: Rectangle {
+            horizontal-stretch: 1;
+            height: 6px;
+            border-radius: 4px;
+            background: Palette.raised;
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: parent.width * max(0, min(root.mcu.usage_percent, 100)) / 100;
+                height: parent.height;
+                border-radius: parent.border-radius;
+                background: root.mcu.usage_percent >= 90 ? Palette.error : root.mcu.usage_percent >= 70 ? Palette.warning : Palette.accent;
+            }
+        }
+        if root.mcu.has-temperature: Label {
+            text: I18n.text("temperature") + " · " + root.mcu.temperature;
+            color: Palette.muted;
+            font-size: 12px;
+        }
+        Label { text: root.mcu.chipset; color: Palette.muted; font-size: 12px; }
+        Label { text: I18n.text("version") + " · " + root.mcu.version; color: Palette.muted; font-size: 12px; }
+        Label { text: I18n.text("frequency") + " · " + root.mcu.frequency; color: Palette.muted; font-size: 12px; }
+    }
+}
+
+export component ResourcesPanel inherits Rectangle {
+    in property <image> host-chart;
+    in property <image> history-chart;
+    in property <[ResourceMetric]> metrics;
+    in property <[McuResource]> mcus;
+    in property <[HistoryStatus]> history-statuses;
+    in property <string> system-description;
+    in property <string> print-count;
+    in property <string> total-time;
+    in property <string> longest-time;
+    in property <string> average-time;
+    in property <string> filament;
+    in property <bool> history-unavailable;
+    in property <bool> history-loading;
+    in property <bool> history-has-data;
+    in property <bool> history-empty;
+    in property <bool> history-stale;
+    in property <string> history-coverage;
+    in property <bool> history-details;
+    in property <bool> has-mcus;
+    callback history-view-changed(bool);
+    callback history-refresh-requested();
+    private property <bool> compact: root.width < 700px;
+    background: transparent;
+
+    VerticalLayout {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        padding: 8px;
+        spacing: 12px;
+        if root.compact: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 12px;
+            alignment: start;
+            HostResourcesCard {
+                vertical-stretch: 0;
+                metrics: root.metrics;
+                chart: root.host-chart;
+                system-description: root.system-description;
+            }
+            HistoryResourcesCard {
+                vertical-stretch: 0;
+                statuses: root.history-statuses;
+                chart: root.history-chart;
+                print-count: root.print-count;
+                total-time: root.total-time;
+                longest-time: root.longest-time;
+                average-time: root.average-time;
+                filament: root.filament;
+                unavailable: root.history-unavailable;
+                loading: root.history-loading;
+                has-data: root.history-has-data;
+                empty: root.history-empty;
+                stale: root.history-stale;
+                coverage: root.history-coverage;
+                details: root.history-details;
+                view-changed(details) => { root.history-view-changed(details); }
+                refresh-requested => { root.history-refresh-requested(); }
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    width: parent.width;
+                    spacing: 12px;
+                    if !root.has-mcus: Label { text: I18n.text("no_mcus"); color: Palette.muted; }
+                    for mcu in root.mcus: McuResourcesCard { mcu: mcu; }
+                }
+            }
+        }
+        if !root.compact: HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 12px;
+            VerticalLayout {
+                width: (root.width - 40px) * 0.53;
+                vertical-stretch: 1;
+                spacing: 12px;
+                HostResourcesCard {
+                    metrics: root.metrics;
+                    chart: root.host-chart;
+                    system-description: root.system-description;
+                }
+                HistoryResourcesCard {
+                    statuses: root.history-statuses;
+                    chart: root.history-chart;
+                    print-count: root.print-count;
+                    total-time: root.total-time;
+                    longest-time: root.longest-time;
+                    average-time: root.average-time;
+                    filament: root.filament;
+                    unavailable: root.history-unavailable;
+                    loading: root.history-loading;
+                    has-data: root.history-has-data;
+                    empty: root.history-empty;
+                    stale: root.history-stale;
+                    coverage: root.history-coverage;
+                    details: root.history-details;
+                    view-changed(details) => { root.history-view-changed(details); }
+                    refresh-requested => { root.history-refresh-requested(); }
+                }
+            }
+            ScrollView {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                VerticalLayout {
+                    width: parent.width;
+                    spacing: 12px;
+                    if !root.has-mcus: Label { text: I18n.text("no_mcus"); color: Palette.muted; }
+                    for mcu in root.mcus: McuResourcesCard { mcu: mcu; }
+                }
+            }
+        }
+    }
+}

@@ -1,10 +1,10 @@
 use crate::icons;
 use crate::print_files::{self, array};
 use crate::{
-    ColorSwatch, FilamentSensor, I18n, Lane, Moondash, Notification, Palette, PrintTool, Row,
-    WifiEntry, config, input_idle, locale, mesh_view,
+    ColorSwatch, FilamentSensor, HistoryStatus, I18n, Lane, McuResource, Moondash, Notification,
+    Palette, PrintTool, ResourceMetric, Row, WifiEntry, config, input_idle, locale, mesh_view,
     moonraker::{self, Call, Event},
-    network, theme, tools, version, wayland_power, webcam,
+    network, resources, theme, tools, version, wayland_power, webcam,
 };
 use serde_json::{Map, Value, json};
 use slint::{ComponentHandle, Image, ModelRc, Timer, TimerMode, VecModel};
@@ -28,6 +28,7 @@ use tokio::{
 
 const DEFAULT_CONFIG: &str = "[websocket]\nip: 127.0.0.1:7125\n\n[styling]\ndarkmode: true\n\n[system]\nlanguage: en\nuse_idle_timeout: true\nidle_timeout: 900\nidle_unlock: 500\n";
 const NOTIFICATION_DISMISSALS: &str = "notification_dismissals";
+const RESOURCE_HISTORY_PAGE_SIZE: usize = 500;
 
 pub struct App {
     _timer: Timer,
@@ -88,6 +89,16 @@ struct State {
     network: Value,
     updates: Value,
     host: Value,
+    resource_history_totals: Value,
+    resource_history_jobs: Vec<Value>,
+    resource_history_expected: Option<usize>,
+    resource_history_pages: resources::HistoryPages,
+    resource_history_checked: Option<Instant>,
+    resource_history_loaded: bool,
+    resource_history_partial: bool,
+    resource_history_loading: bool,
+    resource_history_unavailable: bool,
+    resource_history_stale: bool,
     dialog: Dialog,
     edited_speed_percent: Option<i32>,
     initial_speed_acceleration: Option<f64>,
@@ -165,6 +176,16 @@ pub fn start(
         network: Value::Null,
         updates: Value::Null,
         host: Value::Null,
+        resource_history_totals: Value::Null,
+        resource_history_jobs: Vec::new(),
+        resource_history_expected: None,
+        resource_history_pages: resources::HistoryPages::default(),
+        resource_history_checked: None,
+        resource_history_loaded: false,
+        resource_history_partial: false,
+        resource_history_loading: false,
+        resource_history_unavailable: false,
+        resource_history_stale: false,
         dialog: Dialog::default(),
         edited_speed_percent: None,
         initial_speed_acceleration: None,
@@ -459,7 +480,20 @@ impl State {
                 ("settings", "network") => self.network_action(ui, "network", "", ""),
                 ("settings", "tools") => self.request_webcams(ui),
                 ("settings", "host") if self.online => {
-                    self.call(ui, "machine.proc_stats", json!({}), "host-stats")
+                    self.call(ui, "machine.proc_stats", json!({}), "host-stats");
+                    self.call(
+                        ui,
+                        "server.files.get_directory",
+                        json!({"path": "gcodes", "extended": true}),
+                        "host-storage",
+                    );
+                    if !self.resource_history_loading
+                        && self
+                            .resource_history_checked
+                            .is_none_or(|checked| checked.elapsed() >= Duration::from_secs(60))
+                    {
+                        self.request_resource_history(ui);
+                    }
                 }
                 ("home", _) | ("tune", "queue") if self.online => {
                     self.call(ui, "server.job_queue.status", json!({}), "queue")
@@ -556,6 +590,13 @@ impl State {
             ("settings", "host") if self.online => {
                 self.call(ui, "machine.system_info", json!({}), "host-info");
                 self.call(ui, "machine.proc_stats", json!({}), "host-stats");
+                self.call(
+                    ui,
+                    "server.files.get_directory",
+                    json!({"path": "gcodes", "extended": true}),
+                    "host-storage",
+                );
+                self.request_resource_history(ui);
             }
             ("settings", "tools") => self.request_webcams(ui),
             _ => {}
@@ -838,6 +879,17 @@ impl State {
                     self.status.clear();
                     self.moonraker_warnings = Value::Null;
                     self.updates = Value::Null;
+                    self.host = Value::Null;
+                    self.resource_history_totals = Value::Null;
+                    self.resource_history_jobs.clear();
+                    self.resource_history_expected = None;
+                    self.resource_history_pages = resources::HistoryPages::default();
+                    self.resource_history_checked = None;
+                    self.resource_history_loaded = false;
+                    self.resource_history_partial = false;
+                    self.resource_history_loading = false;
+                    self.resource_history_unavailable = true;
+                    self.resource_history_stale = false;
                     self.file_listing = Value::Null;
                     self.file_history = Value::Null;
                     self.file_history_checked = None;
@@ -1027,6 +1079,13 @@ impl State {
             || (self.page == "settings" && self.tab == "tools")
         {
             self.render_rows(ui);
+        }
+        if self.page == "settings" && self.tab == "host" {
+            if self.online {
+                self.update_resource_mcus(ui);
+            } else {
+                self.update_resources(ui);
+            }
         }
     }
 
@@ -1892,6 +1951,283 @@ impl State {
         }
     }
 
+    fn request_resource_history(&mut self, ui: &Moondash) {
+        if !self.online || self.resource_history_loading {
+            return;
+        }
+        self.resource_history_pages = resources::HistoryPages::default();
+        self.resource_history_loading = true;
+        self.resource_history_unavailable = !self.resource_history_loaded;
+        self.resource_history_stale = false;
+        if self
+            .calls
+            .try_send(Call::new(
+                "server.history.totals",
+                json!({}),
+                "resource-history-totals",
+            ))
+            .is_err()
+        {
+            self.fail_resource_history(ui);
+            return;
+        }
+        self.update_resources(ui);
+    }
+
+    fn request_resource_history_page(&mut self, ui: &Moondash) {
+        let start = self.resource_history_pages.jobs.len();
+        if self
+            .calls
+            .try_send(Call::new(
+                "server.history.list",
+                json!({"limit": RESOURCE_HISTORY_PAGE_SIZE, "start": start, "order": "desc"}),
+                "resource-history-page",
+            ))
+            .is_err()
+        {
+            self.fail_resource_history(ui);
+        }
+    }
+
+    fn fail_resource_history(&mut self, ui: &Moondash) {
+        if !self.resource_history_loading {
+            return;
+        }
+        self.resource_history_pages = resources::HistoryPages::default();
+        self.resource_history_loading = false;
+        self.resource_history_unavailable = !self.resource_history_loaded;
+        self.resource_history_stale = self.resource_history_loaded;
+        self.resource_history_checked = Some(Instant::now());
+        self.update_resources(ui);
+    }
+
+    fn publish_resource_history(&mut self, ui: &Moondash) {
+        self.resource_history_totals = std::mem::take(&mut self.resource_history_pages.totals);
+        self.resource_history_jobs = std::mem::take(&mut self.resource_history_pages.jobs);
+        self.resource_history_expected = self.resource_history_pages.expected();
+        self.resource_history_partial = false;
+        self.resource_history_loaded = true;
+        self.resource_history_loading = false;
+        self.resource_history_unavailable = false;
+        self.resource_history_stale = false;
+        self.resource_history_checked = Some(Instant::now());
+        self.update_resources(ui);
+    }
+
+    fn update_resources(&self, ui: &Moondash) {
+        let host = resources::host_metrics(
+            &self.host["info"]["system_info"],
+            &self.host["stats"],
+            &self.host["storage"],
+        );
+        let palette = ui.global::<Palette>();
+        let colors = [
+            palette.get_accent(),
+            palette.get_secondary(),
+            palette.get_success(),
+        ];
+        let track = palette.get_raised();
+        let radii = [62., 47., 32.];
+        let arcs = radii
+            .into_iter()
+            .zip([host.cpu_usage, host.memory_usage, host.storage_usage])
+            .zip(colors)
+            .filter_map(|((radius, percent), color)| Some((radius, 0., percent? / 100., color)))
+            .collect::<Vec<_>>();
+        ui.set_resource_host_chart(resources::ring_chart(&radii, &arcs, track));
+        let metric = |label: &str, value: String, detail: String, color| ResourceMetric {
+            label: tr(ui, label).into(),
+            value: value.into(),
+            detail: detail.into(),
+            color,
+        };
+        let missing = "—".to_owned();
+        let temperature = host
+            .cpu_temperature
+            .map_or_else(|| missing.clone(), |value| format!("{value:.1}°C"));
+        let memory_detail = match (host.memory_used, host.memory_total) {
+            (Some(used), Some(total)) => format!(
+                "{} / {}",
+                resources::format_bytes(Some(used)),
+                resources::format_bytes(Some(total))
+            ),
+            _ => missing.clone(),
+        };
+        let storage_detail = match (host.storage_used, host.storage_total) {
+            (Some(used), Some(total)) => format!(
+                "{} / {}",
+                resources::format_bytes(Some(used)),
+                resources::format_bytes(Some(total))
+            ),
+            _ => missing.clone(),
+        };
+        ui.set_resource_metrics(ModelRc::new(VecModel::from(vec![
+            metric(
+                "cpu_usage",
+                host.cpu_usage
+                    .map_or_else(|| missing.clone(), |value| format!("{value:.1}%")),
+                format!("{} · {temperature}", tr(ui, "temperature")),
+                palette.get_accent(),
+            ),
+            metric(
+                "ram_usage",
+                host.memory_usage
+                    .map_or_else(|| missing.clone(), |value| format!("{value:.1}%")),
+                memory_detail,
+                palette.get_secondary(),
+            ),
+            metric(
+                "storage",
+                host.storage_usage
+                    .map_or_else(|| missing.clone(), |value| format!("{value:.1}%")),
+                storage_detail,
+                palette.get_success(),
+            ),
+        ])));
+
+        let description = [host.operating_system, host.processor]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" · ");
+        ui.set_resource_system_description(description.into());
+        self.update_resource_mcus(ui);
+        self.update_resource_history(ui);
+    }
+
+    fn update_resource_mcus(&self, ui: &Moondash) {
+        let missing = "—".to_owned();
+        let mcus = resources::mcu_metrics(&self.status)
+            .into_iter()
+            .map(|mcu| McuResource {
+                name: if mcu.key == "mcu" {
+                    "MCU".into()
+                } else {
+                    mcu.name.into()
+                },
+                version: mcu.version.unwrap_or_else(|| missing.clone()).into(),
+                chipset: mcu.chipset.unwrap_or_else(|| missing.clone()).into(),
+                frequency: mcu
+                    .frequency_hz
+                    .map_or_else(
+                        || missing.clone(),
+                        |frequency| format!("{:.1} MHz", frequency / 1_000_000.),
+                    )
+                    .into(),
+                temperature: mcu
+                    .temperature
+                    .map_or_else(
+                        || missing.clone(),
+                        |temperature| format!("{temperature:.1}°C"),
+                    )
+                    .into(),
+                usage: mcu
+                    .usage_percent
+                    .map_or_else(|| missing.clone(), |usage| format!("{usage:.1}%"))
+                    .into(),
+                usage_percent: mcu.usage_percent.unwrap_or_default().clamp(0., 100.) as f32,
+                has_temperature: mcu.temperature.is_some(),
+                has_usage: mcu.usage_percent.is_some(),
+            })
+            .collect::<Vec<_>>();
+        ui.set_resource_has_mcus(!mcus.is_empty());
+        set_model(&ui.get_resource_mcus(), &mcus, |model| {
+            ui.set_resource_mcus(model)
+        });
+    }
+
+    fn update_resource_history(&self, ui: &Moondash) {
+        let missing = "—".to_owned();
+        let palette = ui.global::<Palette>();
+        let shutdown_color = slint::Color::from_rgb_u8(156, 39, 176);
+        let history =
+            resources::history_stats(&self.resource_history_totals, &self.resource_history_jobs);
+        let counted = history
+            .statuses
+            .iter()
+            .map(|(_, count)| *count)
+            .sum::<u64>();
+        let status_label = |status: &str| match status {
+            "completed" => tr(ui, "history_status_completed"),
+            "cancelled" => tr(ui, "history_status_cancelled"),
+            "error" => tr(ui, "history_status_error"),
+            "klippy_shutdown" => tr(ui, "history_status_shutdown"),
+            "interrupted" => tr(ui, "history_status_interrupted"),
+            "in_progress" => tr(ui, "history_status_in_progress"),
+            _ => tr(ui, "history_status_other"),
+        };
+        let mut start = 0.;
+        let mut arcs = Vec::new();
+        let history_statuses = history
+            .statuses
+            .iter()
+            .map(|(status, count)| {
+                let fraction = *count as f64 / counted as f64;
+                let color = match status.as_str() {
+                    "completed" => palette.get_success(),
+                    "cancelled" => palette.get_warning(),
+                    "error" => palette.get_error(),
+                    "klippy_shutdown" => shutdown_color,
+                    "interrupted" => palette.get_secondary(),
+                    "in_progress" => palette.get_accent(),
+                    _ => palette.get_muted(),
+                };
+                arcs.push((60., start, fraction, color));
+                start += fraction;
+                HistoryStatus {
+                    label: status_label(status).into(),
+                    count: count.to_string().into(),
+                    color,
+                }
+            })
+            .collect::<Vec<_>>();
+        let total_jobs = if self.resource_history_loaded {
+            Some(self.resource_history_jobs.len() as u64)
+        } else {
+            history.total_jobs
+        };
+        ui.set_resource_history_chart(resources::ring_chart(&[60.], &arcs, palette.get_raised()));
+        ui.set_resource_history_statuses(ModelRc::new(VecModel::from(history_statuses)));
+        ui.set_resource_print_count(
+            total_jobs
+                .map_or_else(|| missing.clone(), |count| count.to_string())
+                .into(),
+        );
+        ui.set_resource_total_time(resources::format_duration(history.total_print_time).into());
+        ui.set_resource_longest_time(resources::format_duration(history.longest_job).into());
+        ui.set_resource_average_time(
+            history
+                .total_print_time
+                .zip(total_jobs.filter(|count| *count > 0))
+                .map(|(time, jobs)| resources::format_duration(Some(time / jobs as f64)))
+                .unwrap_or_else(|| missing.clone())
+                .into(),
+        );
+        ui.set_resource_filament(resources::format_filament(history.total_filament_used).into());
+        let coverage = if self.resource_history_partial {
+            self.resource_history_expected.map_or_else(
+                || tr(ui, "history_results_limited").to_owned(),
+                |total| {
+                    tr(ui, "history_showing_jobs")
+                        .replace("{loaded}", &self.resource_history_jobs.len().to_string())
+                        .replace("{total}", &total.to_string())
+                },
+            )
+        } else {
+            String::new()
+        };
+        ui.set_resource_history_has_data(self.resource_history_loaded);
+        ui.set_resource_history_empty(
+            self.resource_history_loaded
+                && self.resource_history_jobs.is_empty()
+                && history.total_jobs.is_none_or(|count| count == 0),
+        );
+        ui.set_resource_history_coverage(coverage.into());
+        ui.set_resource_history_unavailable(self.resource_history_unavailable);
+        ui.set_resource_history_loading(self.resource_history_loading);
+        ui.set_resource_history_stale(self.resource_history_stale);
+    }
+
     fn render_rows(&self, ui: &Moondash) {
         let mut rows = Vec::new();
         match (self.page.as_str(), self.tab.as_str()) {
@@ -2128,73 +2464,7 @@ impl State {
                 }
             },
             ("settings", "host") => {
-                rows.push(row(
-                    "Moondash",
-                    version::current_version(),
-                    "refresh",
-                    "",
-                    tr(ui, "refresh"),
-                ));
-                let system = &self.host["info"]["system_info"];
-                let stats = &self.host["stats"];
-                rows.push(info(
-                    tr(ui, "host"),
-                    system["distribution"]["pretty_name"]
-                        .as_str()
-                        .unwrap_or("—"),
-                ));
-                rows.push(info(
-                    "CPU",
-                    system["cpu_info"]["cpu_desc"].as_str().unwrap_or("—"),
-                ));
-                if let Some(cpu) = number(&stats["system_cpu_usage"]["cpu"]) {
-                    rows.push(info(tr(ui, "cpu_usage"), format!("{cpu:.1}%")));
-                }
-                if let Some(memory) = stats["system_memory"].as_object() {
-                    rows.push(info(
-                        tr(ui, "memory"),
-                        format!(
-                            "{} / {}",
-                            display_size(memory["used"].as_u64().unwrap_or_default() * 1024),
-                            display_size(memory["total"].as_u64().unwrap_or_default() * 1024)
-                        ),
-                    ));
-                }
-                rows.push(row(
-                    tr(ui, "g_code_storage"),
-                    "",
-                    "storage",
-                    "",
-                    tr(ui, "inspect"),
-                ));
-                rows.push(row(
-                    tr(ui, "print_history"),
-                    "",
-                    "history",
-                    "",
-                    tr(ui, "open"),
-                ));
-                let mcus: Vec<_> = self
-                    .status
-                    .iter()
-                    .filter(|(name, _)| name.as_str() == "mcu" || name.starts_with("mcu "))
-                    .map(|(name, data)| {
-                        let version = data["mcu_version"].as_str().unwrap_or_default();
-                        let chipset = data["mcu_constants"]["MCU"].as_str().unwrap_or_default();
-                        let detail = if chipset.is_empty() {
-                            version.into()
-                        } else {
-                            format!("{chipset} · {version}")
-                        };
-                        Row {
-                            icon: icons::glyph("chip"),
-                            ..info(name.as_str(), detail)
-                        }
-                    })
-                    .collect();
-                set_model(&ui.get_trailing_rows(), &mcus, |model| {
-                    ui.set_trailing_rows(model)
-                });
+                self.update_resources(ui);
             }
             ("settings", "updates") => {
                 rows.push(alternate(
@@ -2570,6 +2840,7 @@ impl State {
             "reconnect-moonraker" if !self.online => self.endpoint.send_modify(|_| {}),
             "show-updates" => self.navigate(ui, "settings", "updates"),
             "refresh" => self.refresh(ui),
+            "history-refresh" => self.request_resource_history(ui),
             "tool-mesh" if self.has_bed_mesh() => {
                 self.tool_view = "mesh".into();
                 self.render_rows(ui);
@@ -3271,13 +3542,6 @@ impl State {
                 };
                 self.dialog(ui, title, argument, "confirm", action, argument);
             }
-            "storage" => self.call(
-                ui,
-                "server.files.get_directory",
-                json!({"path": "gcodes", "extended": true}),
-                "storage",
-            ),
-            "history" => self.call(ui, "server.history.totals", json!({}), "history"),
             "update-refresh" => self.call(
                 ui,
                 "machine.update.status",
@@ -3730,6 +3994,21 @@ impl State {
         let result = match reply {
             Ok(result) => result,
             Err(error) => {
+                if tag == "resource-history-totals" {
+                    if self.resource_history_loading {
+                        self.resource_history_pages.totals = Value::Null;
+                        self.request_resource_history_page(ui);
+                    }
+                    return;
+                }
+                if tag == "resource-history-page" {
+                    self.fail_resource_history(ui);
+                    return;
+                }
+                if matches!(tag, "host-info" | "host-stats" | "host-storage") {
+                    self.update_resources(ui);
+                    return;
+                }
                 if tag == "webcams" {
                     self.webcams_pending = false;
                     if self.page == "settings" && self.tab == "tools" {
@@ -3906,38 +4185,32 @@ impl State {
                 }
                 self.host["stats"] = result;
             }
+            "host-storage" => {
+                if self.host.is_null() {
+                    self.host = json!({});
+                }
+                self.host["storage"] = result;
+            }
+            "resource-history-totals" => {
+                if !self.resource_history_loading {
+                    return;
+                }
+                if !self.resource_history_pages.set_totals(result) {
+                    self.resource_history_pages.totals = Value::Null;
+                }
+                self.request_resource_history_page(ui);
+            }
+            "resource-history-page" => {
+                if !self.resource_history_loading {
+                    return;
+                }
+                match self.resource_history_pages.push_page(&result) {
+                    Ok(true) => self.request_resource_history_page(ui),
+                    Ok(false) => self.publish_resource_history(ui),
+                    Err(()) => self.fail_resource_history(ui),
+                }
+            }
             "update-finished" => self.refresh(ui),
-            "storage" => {
-                let usage = &result["disk_usage"];
-                let space = tr(ui, "storage_usage")
-                    .replace(
-                        "{used}",
-                        &display_size(usage["used"].as_u64().unwrap_or_default()),
-                    )
-                    .replace(
-                        "{available}",
-                        &display_size(usage["free"].as_u64().unwrap_or_default()),
-                    );
-                self.dialog(ui, tr(ui, "g_code_storage"), &space, "info", "", "");
-            }
-            "history" => {
-                let totals = &result["job_totals"];
-                let filament = number(&totals["total_filament_used"]).unwrap_or_default() / 1000.;
-                let details = tr(ui, "print_history_summary")
-                    .replace(
-                        "{prints}",
-                        &totals["total_jobs"]
-                            .as_u64()
-                            .unwrap_or_default()
-                            .to_string(),
-                    )
-                    .replace(
-                        "{time}",
-                        &duration(number(&totals["total_print_time"]).unwrap_or_default()),
-                    )
-                    .replace("{filament}", &format!("{filament:.1}"));
-                self.dialog(ui, tr(ui, "print_history"), &details, "info", "", "");
-            }
             "webcams" => {
                 self.webcams_pending = false;
                 if self.page == "settings" && self.tab == "tools" {
@@ -3964,7 +4237,7 @@ impl State {
             | "shutdown" | "reboot" => {}
             _ => {}
         }
-        if matches!(tag, "queue" | "host-info" | "host-stats") {
+        if matches!(tag, "queue" | "host-info" | "host-stats" | "host-storage") {
             self.render_rows(ui);
         }
     }

@@ -1,6 +1,6 @@
 import { I18n } from "i18n.slint";
 import { Icons } from "icons.slint";
-import { ComboBox, ScrollView } from "std-widgets.slint";
+import { ScrollView } from "std-widgets.slint";
 import { BusyCircle, Label, Mdi, Palette, Row, Tile } from "widgets.slint";
 
 export struct MeshCell {
@@ -189,6 +189,55 @@ component MeshProfilesCard inherits Rectangle {
     }
 }
 
+component HeaterSelect inherits Tile {
+    in property <string> heater;
+    in property <bool> expanded;
+    callback open(length, length, length);
+
+    height: 40px;
+    fill: Palette.raised;
+    accessible-role: combobox;
+    accessible-label: I18n.text("heater");
+    accessible-value: root.heater;
+    accessible-expandable: true;
+    accessible-expanded: root.expanded;
+    accessible-action-expand => { if root.enabled { root.clicked(); } }
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    forward-focus: field-focus;
+    clicked => {
+        root.open(root.absolute-position.x, root.absolute-position.y, root.width);
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 8px;
+        Label {
+            text: root.heater;
+            color: root.enabled ? Palette.ink : Palette.muted;
+            horizontal-stretch: 1;
+        }
+        Mdi {
+            text: root.expanded ? Icons.chevron-up : Icons.chevron-down;
+            width: 19px;
+            font-size: 18px;
+            color: Palette.muted;
+        }
+    }
+
+    field-focus := FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        key-pressed(event) => {
+            if (event.text == Key.Return || event.text == " " || event.text == Key.DownArrow) {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
 component WebcamPanel inherits Rectangle {
     in property <image> frame;
     in property <string> status;
@@ -287,11 +336,43 @@ export component ToolsPanel inherits Rectangle {
     in property <int> webcam-fps: -1;
     private property <bool> camera-menu-open;
     private property <length> camera-menu-width: 220px;
-    changed view => { root.camera-menu-open = false; }
+    private property <bool> heater-menu-open;
+    private property <int> heater-highlight;
+    private property <length> heater-menu-x;
+    private property <length> heater-menu-y;
+    private property <length> heater-menu-width;
+    private property <length> heater-menu-height: min(5, root.heater-options.length) * 40px + 8px;
+    changed view => {
+        root.camera-menu-open = false;
+        root.heater-menu-open = false;
+    }
+    changed heater-options => { root.heater-menu-open = false; }
+    changed pid-running => { if root.pid-running { root.heater-menu-open = false; } }
+    changed width => { root.heater-menu-open = false; }
+    changed height => { root.heater-menu-open = false; }
     in property <image> webcam-image;
     in property <[string]> webcam-options;
     in property <int> webcam-index;
     callback action(string, string);
+
+    function open-heater-menu(x: length, y: length, width: length) {
+        root.heater-menu-x = x - root.absolute-position.x;
+        root.heater-menu-width = width;
+        let above = y - root.absolute-position.y;
+        let below = above + 44px;
+        root.heater-menu-y = below + root.heater-menu-height <= root.height
+            ? below : max(0px, above - root.heater-menu-height - 4px);
+        root.heater-highlight = max(0, root.heater-index);
+        root.heater-menu-open = true;
+        heater-menu-focus.focus();
+    }
+
+    function choose-heater(index: int) {
+        root.heater-menu-open = false;
+        if index != root.heater-index && index >= 0 && index < root.heater-options.length {
+            root.action("pid-heater", "\{index}");
+        }
+    }
 
     clip: true;
 
@@ -464,12 +545,12 @@ export component ToolsPanel inherits Rectangle {
                                 }
                             }
                             Label { text: I18n.text("heater"); color: Palette.muted; }
-                            heater-selector := ComboBox {
-                                horizontal-stretch: 1;
-                                model: root.heater-options;
-                                current-index: root.heater-index;
+                            HeaterSelect {
+                                heater: root.heater-index >= 0 && root.heater-index < root.heater-options.length
+                                    ? root.heater-options[root.heater-index] : "—";
+                                expanded: root.heater-menu-open;
                                 enabled: root.heater-options.length > 0 && !root.pid-running;
-                                selected => { root.action("pid-heater", "\{heater-selector.current-index}"); }
+                                open(x, y, width) => { root.open-heater-menu(x, y, width); }
                             }
                         }
                         VerticalLayout {
@@ -551,6 +632,54 @@ export component ToolsPanel inherits Rectangle {
             fps: root.webcam-fps;
         }
     }
+    heater-menu-focus := FocusScope {
+        enabled: root.heater-menu-open;
+        focus-on-click: false;
+        width: root.width;
+        height: root.height;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.heater-menu-open = false; return accept; }
+            if (event.text == Key.UpArrow) { root.heater-highlight = max(0, root.heater-highlight - 1); return accept; }
+            if (event.text == Key.DownArrow) { root.heater-highlight = min(root.heater-options.length - 1, root.heater-highlight + 1); return accept; }
+            if (event.text == Key.Return || event.text == " ") { root.choose-heater(root.heater-highlight); return accept; }
+            return reject;
+        }
+
+        if root.heater-menu-open: Rectangle {
+            width: parent.width;
+            height: parent.height;
+            TouchArea { clicked => { root.heater-menu-open = false; } }
+
+            Rectangle {
+                x: root.heater-menu-x;
+                y: root.heater-menu-y;
+                width: root.heater-menu-width;
+                height: root.heater-menu-height;
+                background: Palette.surface;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Palette.divider;
+                ScrollView {
+                    horizontal-scrollbar-policy: always-off;
+                    content-y: -max(0, root.heater-highlight - 4) * 40px;
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 4px;
+                        for heater[index] in root.heater-options: Tile {
+                            height: 40px;
+                            fill: index == root.heater-highlight ? Palette.accent.transparentize(86%) : transparent;
+                            accessible-role: button;
+                            accessible-label: heater;
+                            accessible-action-default => { self.clicked(); }
+                            clicked => { root.choose-heater(index); }
+                            Label { x: 8px; width: parent.width - 16px; text: heater; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     camera-menu-focus := FocusScope {
         enabled: root.camera-menu-open;
         focus-on-click: false;

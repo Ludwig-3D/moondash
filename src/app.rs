@@ -619,7 +619,9 @@ impl State {
             .iter()
             .position(|heater| heater.argument == self.pid_heater)
             .map_or(-1, |index| index as i32);
-        ui.set_tool_heater_options(ModelRc::new(VecModel::from(heater_options)));
+        set_model(&ui.get_tool_heater_options(), &heater_options, |model| {
+            ui.set_tool_heater_options(model);
+        });
         ui.set_tool_heater_index(heater_index);
 
         let webcam_options = self
@@ -653,6 +655,16 @@ impl State {
         ui.set_tool_pid_running(self.pid_running);
         ui.set_tool_pid_complete(self.pid_complete);
         ui.set_tool_webcam_loading(self.webcams_pending);
+    }
+
+    fn select_pid_heater(&mut self, heater: String) {
+        if self.pid_heater == heater {
+            return;
+        }
+        let default: f64 = if heater == "heater_bed" { 60. } else { 200. };
+        self.pid_target = (default.min(self.heater_limit(&heater)).floor() as u16).to_string();
+        self.pid_heater = heater;
+        self.pid_complete = false;
     }
 
     fn run_pid_calibration(&mut self, ui: &Moondash) {
@@ -2533,18 +2545,16 @@ impl State {
                 self.render_rows(ui);
             }
             "tool-pid" => {
-                let first_heater = self
+                if !self
                     .heater_rows(ui)
-                    .next()
-                    .map(|heater| heater.argument.to_string());
-                if let Some(heater) = first_heater {
-                    self.pid_heater = heater;
-                    if self.pid_target.is_empty() {
-                        self.pid_target = if self.pid_heater == "heater_bed" {
-                            "60".into()
-                        } else {
-                            "200".into()
-                        };
+                    .any(|heater| heater.argument == self.pid_heater)
+                {
+                    let first_heater = self
+                        .heater_rows(ui)
+                        .next()
+                        .map(|heater| heater.argument.to_string());
+                    if let Some(heater) = first_heater {
+                        self.select_pid_heater(heater);
                     }
                 }
                 self.tool_view = "pid".into();
@@ -2585,15 +2595,14 @@ impl State {
                 self.request_webcams(ui);
                 self.render_rows(ui);
             }
-            "pid-heater" => {
+            "pid-heater" if !self.pid_running => {
                 let selected = argument
                     .parse::<usize>()
                     .ok()
                     .and_then(|index| self.heater_rows(ui).nth(index))
                     .map(|heater| heater.argument.to_string());
                 if let Some(heater) = selected {
-                    self.pid_heater = heater;
-                    self.pid_complete = false;
+                    self.select_pid_heater(heater);
                     self.render_rows(ui);
                 }
             }

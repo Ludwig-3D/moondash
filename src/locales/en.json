@@ -141,6 +141,8 @@
   "maximum": "Max",
   "memory": "Memory",
   "mesh_range": "Mesh range",
+  "mesh_view_3d": "Bed mesh in 3D",
+  "mesh_view_drag": "Drag to rotate. Scroll or pinch to zoom. Coordinates in mm. Height exaggerated.",
   "millimetres": "Millimetres",
   "moondash_service": "Moondash service",
   "moonraker_disconnected": "Moonraker disconnected",

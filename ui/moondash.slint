@@ -15,8 +15,9 @@ import { PrintDialog, FolderPicker, PrintTool } from "print-dialogs.slint";
 import { ConfigForm } from "settings.slint";
 import { NetworkPanel, WifiDialogs, WifiEntry } from "network-settings.slint";
 import { ColorPicker, ColorSwatch } from "color-picker.slint";
-import { ToolsPanel, MeshCell, MeshRow } from "tools.slint";
-export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshCell, MeshRow }
+import { ToolsPanel } from "tools.slint";
+import { MeshMarker, MeshViewDialog } from "mesh-view.slint";
+export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshMarker }
 
 component RowList inherits ScrollView {
     in property <[Row]> rows;
@@ -141,7 +142,13 @@ export component Moondash inherits Window {
     in-out property <string> page: "home";
     in-out property <string> tab: "motion";
     in property <string> tool-view;
-    in property <[MeshRow]> tool-mesh;
+    in property <image> tool-mesh;
+    in property <bool> tool-mesh-3d-open;
+    in property <image> tool-mesh-3d;
+    in property <bool> tool-mesh-3d-available;
+    in property <[MeshMarker]> tool-mesh-markers;
+    in property <string> tool-mesh-low;
+    in property <string> tool-mesh-high;
     in property <string> tool-pid-target;
     in property <string> tool-pid-current;
     in property <[string]> tool-heater-options;
@@ -208,6 +215,7 @@ export component Moondash inherits Window {
     changed dialog-mode => { root.first-number-key = root.dialog-mode == "number"; }
 
     callback webcam-frame-tick(float, float);
+    callback rotate-mesh(float, float, float, float, float);
     callback navigate(string, string);
 
     callback action(string, string);
@@ -419,6 +427,9 @@ export component Moondash inherits Window {
                 title: root.tool-title;
                 entries: root.rows;
                 mesh: root.tool-mesh;
+                mesh-low: root.tool-mesh-low;
+                mesh-high: root.tool-mesh-high;
+                mesh-3d-available: root.tool-mesh-3d-available;
                 pid-target: root.tool-pid-target;
                 pid-current: root.tool-pid-current;
                 heater-options: root.tool-heater-options;
@@ -452,6 +463,15 @@ export component Moondash inherits Window {
                 RowList { rows: root.rows; action(name, argument) => { root.action(name, argument); } }
             }
         }
+    }
+
+    if root.tool-mesh-3d-available && root.tool-mesh-3d-open && root.page == "settings" && root.tab == "tools" && root.tool-view == "mesh": MeshViewDialog {
+        mesh: root.tool-mesh-3d;
+        markers: root.tool-mesh-markers;
+        rotate(yaw, pitch, zoom, viewport-width, viewport-height) => {
+            root.rotate-mesh(yaw, pitch, zoom, viewport-width, viewport-height);
+        }
+        close => { root.action("mesh-close-3d", ""); }
     }
 
     if root.dialog-mode == "power": Rectangle {

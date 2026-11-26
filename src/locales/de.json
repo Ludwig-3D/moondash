@@ -141,6 +141,8 @@
   "maximum": "Max",
   "memory": "Arbeitsspeicher",
   "mesh_range": "Mesh-Bereich",
+  "mesh_view_3d": "Bett-Mesh in 3D",
+  "mesh_view_drag": "Zum Drehen ziehen. Zum Zoomen scrollen oder zwei Finger verwenden. Koordinaten in mm. Höhe überzeichnet.",
   "millimetres": "Millimeter",
   "moondash_service": "Moondash-Dienst",
   "moonraker_disconnected": "Verbindung zu Moonraker unterbrochen",

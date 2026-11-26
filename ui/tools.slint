@@ -3,44 +3,11 @@ import { Icons } from "icons.slint";
 import { ScrollView } from "std-widgets.slint";
 import { BusyCircle, Label, Mdi, Palette, Row, Tile } from "widgets.slint";
 
-export struct MeshCell {
-    fill: color,
-}
-
-export struct MeshRow {
-    cells: [MeshCell],
-}
-
-component MeshGrid inherits Rectangle {
-    in property <[MeshRow]> rows;
-    in property <int> columns;
-    in property <int> row-count;
-    private property <length> cell-size: root.columns > 0 && root.row-count > 0
-        ? max(0px, min((root.width + 1px) / root.columns, (root.height + 1px) / root.row-count) - 1px)
-        : 0px;
-    clip: true;
-
-    Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        width: (root.cell-size + 1px) * root.columns - 1px;
-        height: (root.cell-size + 1px) * root.row-count - 1px;
-        VerticalLayout {
-            spacing: 1px;
-            for mesh-row in root.rows: HorizontalLayout {
-                height: root.cell-size;
-                spacing: 1px;
-                for cell in mesh-row.cells: Rectangle {
-                    horizontal-stretch: 1;
-                    background: cell.fill;
-                }
-            }
-        }
-    }
-}
-
 component MeshGraphCard inherits Rectangle {
-    in property <[MeshRow]> mesh;
+    in property <image> mesh;
+    in property <string> mesh-low;
+    in property <string> mesh-high;
+    in property <bool> mesh-3d-available;
     callback action(string, string);
     min-height: 220px;
     background: Palette.surface;
@@ -70,13 +37,47 @@ component MeshGraphCard inherits Rectangle {
             }
         }
 
-        if root.mesh.length > 0: MeshGrid {
+        if root.mesh.width > 0: VerticalLayout {
             vertical-stretch: 1;
-            rows: root.mesh;
-            columns: root.mesh[0].cells.length;
-            row-count: root.mesh.length;
+            spacing: 10px;
+            Rectangle {
+                vertical-stretch: 1;
+                Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: root.mesh;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    enabled: root.mesh-3d-available;
+                    mouse-cursor: root.mesh-3d-available ? pointer : default;
+                    accessible-role: button;
+                    accessible-label: I18n.text("mesh_view_3d");
+                    accessible-action-default => {
+                        if root.mesh-3d-available { root.action("mesh-open-3d", ""); }
+                    }
+                    clicked => {
+                        if root.mesh-3d-available { root.action("mesh-open-3d", ""); }
+                    }
+                }
+            }
+            HorizontalLayout {
+                height: 22px;
+                alignment: center;
+                spacing: 9px;
+                Label { text: root.mesh-low; font-size: 12px; color: Palette.muted; }
+                Rectangle {
+                    width: 112px;
+                    height: 6px;
+                    cross-axis-self-alignment: center;
+                    border-radius: 3px;
+                    background: root.mesh-low == root.mesh-high ? #c8c8c8
+                        : @linear-gradient(90deg, #3264ff 0%, #50c878 33%, #ffdc50 66%, #ff5046 100%);
+                }
+                Label { text: root.mesh-high; font-size: 12px; color: Palette.muted; }
+            }
         }
-        if root.mesh.length == 0: VerticalLayout {
+        if root.mesh.width == 0: VerticalLayout {
             vertical-stretch: 1;
             alignment: center;
             spacing: 8px;
@@ -102,86 +103,88 @@ component MeshProfilesCard inherits Rectangle {
     border-radius: 10px;
 
     VerticalLayout {
-        padding-top: 8px;
-        padding-bottom: 4px;
-        spacing: 4px;
-
-        HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 12px;
-            Label {
-                text: I18n.text("available_meshes");
-                font-size: 16px;
-                font-weight: 600;
-            }
+        padding: 10px;
+        spacing: 8px;
+        Label {
+            text: I18n.text("bed_mesh_profiles");
+            font-size: 16px;
+            font-weight: 600;
+            height: 28px;
         }
 
         ScrollView {
             vertical-stretch: 1;
             horizontal-scrollbar-policy: always-off;
+
             VerticalLayout {
+                alignment: start;
+                spacing: 6px;
                 if root.entries.length == 0: Rectangle {
                     height: 48px;
-                    vertical-stretch: 0;
-                    background: Palette.info.transparentize(88%);
-                    border-radius: 6px;
+                    background: Palette.raised;
+                    border-radius: 7px;
                     Label {
                         x: 12px;
+                        width: parent.width - 24px;
                         text: I18n.text("no_bed_mesh_profiles");
                         color: Palette.muted;
                     }
                 }
                 for entry in root.entries: Rectangle {
-                    height: 56px;
-                    vertical-stretch: 0;
-                    background: entry.active ? Palette.accent.transparentize(84%) : transparent;
+                    height: 62px;
+                    border-radius: 8px;
+                    background: entry.active ? Palette.accent.transparentize(89%) : Palette.raised;
+                    border-width: 1px;
+                    border-color: entry.active ? Palette.accent.transparentize(54%) : transparent;
+
                     HorizontalLayout {
-                        padding-left: 8px;
-                        padding-right: 8px;
-                        spacing: 4px;
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 8px;
                         Rectangle {
                             horizontal-stretch: 1;
-                            background: transparent;
+                            accessible-role: button;
+                            accessible-label: (entry.active ? I18n.text("active_bed_mesh") : entry.button) + " " + entry.title;
+                            accessible-action-default => { if !entry.active { root.action(entry.action, entry.argument); } }
+
                             HorizontalLayout {
-                                spacing: 8px;
-                                Label {
-                                    text: entry.title;
-                                    horizontal-stretch: 1;
-                                    font-weight: 700;
+                                spacing: 10px;
+                                Mdi {
+                                    width: 21px;
+                                    text: entry.active ? Icons.check : Icons.grid;
+                                    font-size: 19px;
+                                    color: entry.active ? Palette.accent : Palette.muted;
                                 }
-                                Label {
-                                    text: entry.detail;
-                                    horizontal-alignment: right;
-                                    color: Palette.muted;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    spacing: 2px;
+                                    Label { text: entry.title; font-weight: 650; }
+                                    Label {
+                                        text: entry.detail == "--" ? entry.detail : entry.detail + " mm";
+                                        color: Palette.muted;
+                                        font-size: 12px;
+                                    }
                                 }
                             }
                             TouchArea {
-                                width: parent.width;
-                                height: parent.height;
+                                enabled: !entry.active;
                                 mouse-cursor: pointer;
                                 clicked => { root.action(entry.action, entry.argument); }
                             }
                         }
-                        if !entry.active: Tile {
-                            width: 40px;
-                            height: 36px;
-                            fill: transparent;
-                            icon: Icons.progress-upload;
-                            clicked => { root.action("mesh-calibrate", ""); }
-                        }
                         if entry.alternate != "": Tile {
                             width: 40px;
                             height: 36px;
-                            fill: transparent;
+                            cross-axis-self-alignment: center;
+                            fill: Palette.error.transparentize(92%);
                             icon: Icons.delete;
                             ink: Palette.error;
+                            accessible-role: button;
+                            accessible-label: entry.alternate-button + " " + entry.title;
+                            accessible-action-default => { self.clicked(); }
                             clicked => { root.action(entry.alternate, entry.argument); }
                         }
-                    }
-                    Rectangle {
-                        y: parent.height - self.height;
-                        height: 1px;
-                        background: Palette.divider;
                     }
                 }
             }
@@ -321,7 +324,10 @@ export component ToolsPanel inherits Rectangle {
     in property <string> view;
     in property <string> title;
     in property <[Row]> entries;
-    in property <[MeshRow]> mesh;
+    in property <image> mesh;
+    in property <string> mesh-low;
+    in property <string> mesh-high;
+    in property <bool> mesh-3d-available;
     in property <string> pid-target;
     in property <string> pid-current;
     in property <[string]> heater-options;
@@ -476,6 +482,9 @@ export component ToolsPanel inherits Rectangle {
                     horizontal-stretch: 1.15;
                     vertical-stretch: 1;
                     mesh: root.mesh;
+                    mesh-low: root.mesh-low;
+                    mesh-high: root.mesh-high;
+                    mesh-3d-available: root.mesh-3d-available;
                     action(name, argument) => { root.action(name, argument); }
                 }
                 MeshProfilesCard {
@@ -490,6 +499,9 @@ export component ToolsPanel inherits Rectangle {
                 MeshGraphCard {
                     vertical-stretch: 1;
                     mesh: root.mesh;
+                    mesh-low: root.mesh-low;
+                    mesh-high: root.mesh-high;
+                    mesh-3d-available: root.mesh-3d-available;
                     action(name, argument) => { root.action(name, argument); }
                 }
                 MeshProfilesCard {

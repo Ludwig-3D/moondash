@@ -1,0 +1,244 @@
+import { I18n } from "i18n.slint";
+import { Label, Palette, Tile } from "widgets.slint";
+
+export struct MeshMarker {
+    x: float,
+    y: float,
+    label: string,
+}
+
+export component MeshViewDialog inherits Rectangle {
+    in property <image> mesh;
+    in property <[MeshMarker]> markers;
+    callback rotate(float, float, float, float, float);
+    callback close;
+    private property <float> initial-yaw: -34;
+    private property <float> initial-pitch: 37;
+    private property <float> yaw: root.initial-yaw;
+    private property <float> pitch: root.initial-pitch;
+    private property <float> zoom: 1;
+    private property <float> drag-yaw;
+    private property <float> drag-pitch;
+    private property <length> drag-origin-x;
+    private property <length> drag-origin-y;
+    private property <int> first-touch-id: -1;
+    private property <int> second-touch-id: -1;
+    private property <float> first-touch-x;
+    private property <float> first-touch-y;
+    private property <float> second-touch-x;
+    private property <float> second-touch-y;
+    private property <float> pinch-distance;
+    private property <float> pinch-zoom: 1;
+    private property <bool> block-touch-drag;
+    private property <bool> redraw;
+    private property <bool> compact: root.width < 700px;
+
+    background: #00000052;
+    TouchArea { clicked => { root.close(); } }
+    init => { keys.focus(); root.redraw = true; }
+    changed width => { root.redraw = true; }
+    changed height => { root.redraw = true; }
+
+    function set-angle(yaw: float, pitch: float) {
+        root.yaw = mod(yaw, 360);
+        root.pitch = clamp(pitch, 18, 76);
+        root.redraw = true;
+    }
+
+    function set-zoom(zoom: float) {
+        root.zoom = clamp(zoom, 0.65, 4);
+        root.redraw = true;
+    }
+
+    function reset-camera() {
+        root.set-angle(root.initial-yaw, root.initial-pitch);
+        root.set-zoom(1);
+    }
+
+    Timer {
+        running: root.redraw;
+        interval: 24ms;
+        triggered => {
+            root.redraw = false;
+            root.rotate(
+                root.yaw,
+                root.pitch,
+                root.zoom,
+                mesh-canvas.width / 1px,
+                mesh-canvas.height / 1px
+            );
+        }
+    }
+
+    keys := FocusScope {
+        width: parent.width;
+        height: parent.height;
+        focus-on-click: false;
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { root.close(); return accept; }
+            if (event.text == Key.LeftArrow) { root.set-angle(root.yaw - 8, root.pitch); return accept; }
+            if (event.text == Key.RightArrow) { root.set-angle(root.yaw + 8, root.pitch); return accept; }
+            if (event.text == Key.UpArrow) { root.set-angle(root.yaw, root.pitch + 6); return accept; }
+            if (event.text == Key.DownArrow) { root.set-angle(root.yaw, root.pitch - 6); return accept; }
+            return reject;
+        }
+
+        card := Rectangle {
+            width: parent.width;
+            height: parent.height;
+            x: 0px;
+            y: 0px;
+            background: Palette.surface;
+            clip: true;
+            TouchArea {}
+
+            image-panel := Rectangle {
+                x: 0px;
+                y: 0px;
+                width: root.compact ? card.width : card.width - max(card.width * 0.15, 201px);
+                height: root.compact ? card.height * 0.52 : card.height;
+                clip: true;
+                background: Palette.background;
+
+                mesh-canvas := Rectangle {
+                    x: 20px;
+                    y: 20px;
+                    width: parent.width - 40px;
+                    height: parent.height - 40px;
+                    Image {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
+                        source: root.mesh;
+                        image-fit: fill;
+                    }
+                    for marker in root.markers: Label {
+                        x: clamp(parent.width * marker.x - self.width / 2, 0px, parent.width - self.width);
+                        y: clamp(parent.height * marker.y - self.height / 2, 0px, parent.height - self.height);
+                        width: min(self.preferred-width, parent.width);
+                        height: 16px;
+                        text: marker.label;
+                        font-size: 12px;
+                        color: Palette.ink;
+                        horizontal-alignment: center;
+                    }
+
+                    TouchArea {
+                        mouse-cursor: move;
+                        scroll-event(event) => {
+                            root.set-zoom(root.zoom * (1 - event.delta-y / 600px));
+                            return accept;
+                        }
+                        pointer-event(event) => {
+                            if event.touch-finger-id != 0 {
+                                if event.kind == PointerEventKind.down {
+                                    if root.first-touch-id < 0 {
+                                        root.first-touch-id = event.touch-finger-id;
+                                        root.first-touch-x = self.mouse-x / 1px;
+                                        root.first-touch-y = self.mouse-y / 1px;
+                                    } else if root.second-touch-id < 0 && event.touch-finger-id != root.first-touch-id {
+                                        root.second-touch-id = event.touch-finger-id;
+                                        root.second-touch-x = self.mouse-x / 1px;
+                                        root.second-touch-y = self.mouse-y / 1px;
+                                        root.pinch-distance = sqrt(
+                                            (root.second-touch-x - root.first-touch-x) * (root.second-touch-x - root.first-touch-x)
+                                            + (root.second-touch-y - root.first-touch-y) * (root.second-touch-y - root.first-touch-y)
+                                        );
+                                        root.pinch-zoom = root.zoom;
+                                        root.block-touch-drag = true;
+                                    }
+                                }
+                                if event.kind == PointerEventKind.move {
+                                    if event.touch-finger-id == root.first-touch-id {
+                                        root.first-touch-x = self.mouse-x / 1px;
+                                        root.first-touch-y = self.mouse-y / 1px;
+                                    }
+                                    if event.touch-finger-id == root.second-touch-id {
+                                        root.second-touch-x = self.mouse-x / 1px;
+                                        root.second-touch-y = self.mouse-y / 1px;
+                                    }
+                                    if root.second-touch-id >= 0 && root.pinch-distance > 0 {
+                                        let current-distance = sqrt(
+                                            (root.second-touch-x - root.first-touch-x) * (root.second-touch-x - root.first-touch-x)
+                                            + (root.second-touch-y - root.first-touch-y) * (root.second-touch-y - root.first-touch-y)
+                                        );
+                                        root.set-zoom(root.pinch-zoom * current-distance / max(root.pinch-distance, 1));
+                                    }
+                                }
+                                if event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel {
+                                    if event.touch-finger-id == root.first-touch-id { root.first-touch-id = -1; }
+                                    if event.touch-finger-id == root.second-touch-id { root.second-touch-id = -1; }
+                                    if root.second-touch-id < 0 { root.pinch-distance = 0; }
+                                    if root.first-touch-id < 0 && root.second-touch-id < 0 {
+                                        root.block-touch-drag = false;
+                                    }
+                                }
+                            }
+                            if event.kind == PointerEventKind.down && (event.button == PointerEventButton.left || event.touch-finger-id != 0) {
+                                root.drag-yaw = root.yaw;
+                                root.drag-pitch = root.pitch;
+                                root.drag-origin-x = self.mouse-x;
+                                root.drag-origin-y = self.mouse-y;
+                                keys.focus();
+                            }
+                        }
+                        moved => {
+                            if self.pressed && !root.block-touch-drag {
+                                root.set-angle(
+                                    root.drag-yaw + (self.mouse-x - root.drag-origin-x) / 1px * 0.65,
+                                    root.drag-pitch + (self.mouse-y - root.drag-origin-y) / 1px * 0.45
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: root.compact ? 0px : image-panel.width;
+                y: root.compact ? image-panel.height : 0px;
+                width: card.width - self.x;
+                height: card.height - self.y;
+                background: Palette.ink.transparentize(92%);
+
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 9px;
+
+                    Label {
+                        text: I18n.text("mesh_view_drag");
+                        color: Palette.muted;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                        vertical-stretch: 0;
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                    HorizontalLayout {
+                        height: 40px;
+                        padding-top: 4px;
+                        spacing: 10px;
+                        alignment: end;
+                        Tile {
+                            min-width: 84px;
+                            label: I18n.text("close");
+                            fill: transparent;
+                            accessible-role: button;
+                            accessible-action-default => { root.close(); }
+                            clicked => { root.close(); }
+                        }
+                        Tile {
+                            min-width: 91px;
+                            label: I18n.text("reset");
+                            fill: Palette.accent.transparentize(86%);
+                            ink: Palette.accent;
+                            horizontal-stretch: 0;
+                            vertical-stretch: 0;
+                            clicked => { root.reset-camera(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

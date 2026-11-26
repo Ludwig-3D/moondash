@@ -3,6 +3,7 @@ mod config;
 mod icons;
 mod input_idle;
 mod locale;
+mod mesh_view;
 mod moonraker;
 mod network;
 mod print_files;
@@ -134,13 +135,13 @@ fn run(
 ) -> Result<(), Box<dyn std::error::Error>> {
     renderer.select(options.fullscreen)?;
     let ui = Moondash::new()?;
-    renderer.watch_first_frame(&ui, started)?;
     let _ = rustls::crypto::ring::default_provider().install_default();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()?;
     let _app = app::start(&ui, options.config.clone(), runtime.handle().clone())?;
+    renderer.watch_first_frame(&ui, started, _app.mesh_scene.clone())?;
     ui.run()?;
     Ok(())
 }

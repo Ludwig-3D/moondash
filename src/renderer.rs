@@ -63,18 +63,24 @@ impl Renderer {
         self,
         ui: &crate::Moondash,
         started: Rc<Cell<bool>>,
+        mesh_scene: crate::mesh_view::SceneHandle,
     ) -> Result<(), String> {
         if self == Self::Software {
             eprintln!("[renderer] using {}", self.name());
+            ui.set_tool_mesh_3d_available(false);
             return Ok(());
         }
 
         // Slint can substitute a software adapter at construction time. It doesn't
         // support render notifications, so continue to the next candidate if it does.
         let scheduled = Cell::new(false);
+        let weak = ui.as_weak();
+        let mut mesh_renderer = crate::mesh_view::gpu::GpuRenderer::default();
         ui.window()
-            .set_rendering_notifier(move |state, _api: &slint::GraphicsAPI| {
-                if matches!(state, RenderingState::AfterRendering) && !scheduled.replace(true) {
+            .set_rendering_notifier(move |state, api: &slint::GraphicsAPI| {
+                let after_rendering = matches!(&state, RenderingState::AfterRendering);
+                mesh_renderer.notify(state, api, &mesh_scene, &weak);
+                if after_rendering && !scheduled.replace(true) {
                     let started = started.clone();
                     // The notifier runs just before the surface is presented. Confirm
                     // startup on the next event-loop turn, after presentation succeeds.

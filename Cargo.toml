@@ -19,10 +19,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 slint = { version = "=1.19.0", default-features = false, features = [
     "std", "compat-1-2", "backend-winit", "unstable-winit-030",
-    "renderer-femtovg", "renderer-femtovg-wgpu", "renderer-software",
+    "renderer-femtovg", "renderer-femtovg-wgpu", "renderer-software", "unstable-wgpu-30",
     "software-renderer-path",
 ] }
 tempfile = "3"
+glow = "0.18"
+pollster = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "process", "io-util"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 wayland-client = "0.31"

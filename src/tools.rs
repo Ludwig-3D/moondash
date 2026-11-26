@@ -69,6 +69,38 @@ pub fn mesh_color(value: f64, range: Option<(f64, f64)>) -> (u8, u8, u8) {
     )
 }
 
+pub fn mesh_heatmap(matrix: &[Vec<f64>], range: (f64, f64)) -> slint::Image {
+    const LONG_EDGE: usize = 384;
+    let rows = matrix.len();
+    let columns = matrix[0].len();
+    let long_side = rows.max(columns);
+    let width = (LONG_EDGE * columns / long_side).max(2);
+    let height = (LONG_EDGE * rows / long_side).max(2);
+    let mut pixels = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(width as u32, height as u32);
+
+    let axis = |pixel: usize, pixels: usize, samples: usize| {
+        let at = pixel as f64 * (samples - 1) as f64 / (pixels - 1) as f64;
+        let first = at as usize;
+        (first, (first + 1).min(samples - 1), at - first as f64)
+    };
+    let x_coordinates: Vec<_> = (0..width).map(|x| axis(x, width, columns)).collect();
+    let mix = |a: f64, b: f64, weight: f64| a + (b - a) * weight;
+    for (row, pixels) in pixels.make_mut_slice().chunks_exact_mut(width).enumerate() {
+        // Klipper lists the lowest Y row first. Keep the front of the bed at the bottom.
+        let (y0, y1, fy) = axis(height - 1 - row, height, rows);
+        for (pixel, &(x0, x1, fx)) in pixels.iter_mut().zip(&x_coordinates) {
+            let value = mix(
+                mix(matrix[y0][x0], matrix[y0][x1], fx),
+                mix(matrix[y1][x0], matrix[y1][x1], fx),
+                fy,
+            );
+            let (r, g, b) = mesh_color(value, Some(range));
+            *pixel = slint::Rgb8Pixel { r, g, b };
+        }
+    }
+    slint::Image::from_rgb8(pixels)
+}
+
 pub fn mesh_profiles(profiles: &Value) -> Vec<MeshProfile> {
     let Some(profiles) = profiles.as_object() else {
         return Vec::new();

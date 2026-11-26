@@ -1,8 +1,8 @@
 use crate::icons;
 use crate::print_files::{self, array};
 use crate::{
-    ColorSwatch, FilamentSensor, I18n, Lane, MeshCell, MeshRow, Moondash, Notification, Palette,
-    PrintTool, Row, WifiEntry, config, input_idle, locale,
+    ColorSwatch, FilamentSensor, I18n, Lane, Moondash, Notification, Palette, PrintTool, Row,
+    WifiEntry, config, input_idle, locale, mesh_view,
     moonraker::{self, Call, Event},
     network, theme, tools, version, wayland_power, webcam,
 };
@@ -32,6 +32,7 @@ const NOTIFICATION_DISMISSALS: &str = "notification_dismissals";
 pub struct App {
     _timer: Timer,
     _state: Rc<RefCell<State>>,
+    pub mesh_scene: mesh_view::SceneHandle,
 }
 
 #[derive(Default)]
@@ -80,6 +81,9 @@ struct State {
     motion_busy: bool,
     afc_unit: String,
     tool_view: String,
+    mesh_preview: RefCell<Vec<Vec<f64>>>,
+    mesh_surface: Option<mesh_view::Surface>,
+    mesh_scene: mesh_view::SceneHandle,
     queue: Value,
     network: Value,
     updates: Value,
@@ -113,6 +117,7 @@ pub fn start(
     let (endpoint, endpoint_rx) = watch::channel(String::new());
     let idle_config = Arc::new(Mutex::new(Value::Null));
     let manual_sleep = Arc::new(AtomicBool::new(false));
+    let mesh_scene = Rc::new(RefCell::new(mesh_view::Scene::default()));
 
     let state = Rc::new(RefCell::new(State {
         config_path: path,
@@ -153,6 +158,9 @@ pub fn start(
         motion_busy: false,
         afc_unit: String::new(),
         tool_view: String::new(),
+        mesh_preview: RefCell::default(),
+        mesh_surface: None,
+        mesh_scene: mesh_scene.clone(),
         queue: Value::Null,
         network: Value::Null,
         updates: Value::Null,
@@ -288,6 +296,23 @@ pub fn start(
         }
     });
 
+    let weak = ui.as_weak();
+    let shared = state.clone();
+    let mesh_scene_for_rotation = mesh_scene.clone();
+    ui.on_rotate_mesh(move |yaw, pitch, zoom, viewport_width, viewport_height| {
+        if let Some(ui) = weak.upgrade() {
+            let rendered = shared.borrow().mesh_surface.as_ref().map(|surface| {
+                surface.render_in_view(yaw, pitch, zoom, viewport_width, viewport_height)
+            });
+            if let Some((geometry, markers)) = rendered {
+                mesh_scene_for_rotation
+                    .borrow_mut()
+                    .set_geometry(Some(geometry));
+                ui.set_tool_mesh_markers(ModelRc::new(VecModel::from(markers)));
+            }
+        }
+    });
+
     let timer = Timer::default();
     let weak = ui.as_weak();
     let shared = state.clone();
@@ -319,6 +344,7 @@ pub fn start(
     Ok(App {
         _timer: timer,
         _state: state,
+        mesh_scene,
     })
 }
 
@@ -483,6 +509,7 @@ impl State {
             self.update_afc(ui);
         }
         if (page, tab) != ("settings", "tools") {
+            self.close_mesh_view(ui);
             self.webcams.clear();
             self.webcam_id = None;
             self.webcam_feed = None;
@@ -580,6 +607,13 @@ impl State {
         );
     }
 
+    fn close_mesh_view(&mut self, ui: &Moondash) {
+        if self.mesh_surface.take().is_some() {
+            ui.set_tool_mesh_3d_open(false);
+            self.mesh_scene.borrow_mut().set_geometry(None);
+        }
+    }
+
     fn update_tool_panel(&self, ui: &Moondash) {
         let title = match self.tool_view.as_str() {
             "mesh" => tr(ui, "bed_mesh"),
@@ -590,25 +624,20 @@ impl State {
         ui.set_tool_view(self.tool_view.clone().into());
         ui.set_tool_title(title.into());
 
-        let matrix = tools::bed_mesh_matrix(self.object("bed_mesh"));
-        let range = tools::mesh_range(&matrix);
-        let cells = matrix
-            .iter()
-            .rev()
-            .map(|row| MeshRow {
-                cells: ModelRc::new(VecModel::from(
-                    row.iter()
-                        .map(|value| MeshCell {
-                            fill: {
-                                let (red, green, blue) = tools::mesh_color(*value, range);
-                                slint::Color::from_rgb_u8(red, green, blue)
-                            },
-                        })
-                        .collect::<Vec<_>>(),
-                )),
-            })
-            .collect::<Vec<_>>();
-        ui.set_tool_mesh(ModelRc::new(VecModel::from(cells)));
+        if self.tool_view == "mesh" {
+            let matrix = tools::bed_mesh_matrix(self.object("bed_mesh"));
+            let mut previous = self.mesh_preview.borrow_mut();
+            if matrix != *previous {
+                if let Some((low, high)) = tools::mesh_range(&matrix) {
+                    ui.set_tool_mesh(tools::mesh_heatmap(&matrix, (low, high)));
+                    ui.set_tool_mesh_low(format!("{low:+.3} mm").into());
+                    ui.set_tool_mesh_high(format!("{high:+.3} mm").into());
+                } else {
+                    ui.set_tool_mesh(Image::default());
+                }
+                *previous = matrix;
+            }
+        }
 
         let heaters = self.heater_rows(ui).collect::<Vec<_>>();
         let heater_options = heaters
@@ -804,6 +833,7 @@ impl State {
                     self.pid_running = false;
                     self.pid_complete = false;
                     self.tool_view.clear();
+                    self.close_mesh_view(ui);
                     ui.set_tool_image(Image::default());
                     self.status.clear();
                     self.moonraker_warnings = Value::Null;
@@ -2544,6 +2574,17 @@ impl State {
                 self.tool_view = "mesh".into();
                 self.render_rows(ui);
             }
+            "mesh-open-3d" if self.tool_view == "mesh" && ui.get_tool_mesh_3d_available() => {
+                self.mesh_surface =
+                    mesh_view::Surface::from_mesh(self.object("bed_mesh"), self.object("toolhead"));
+                if let Some(surface) = &self.mesh_surface {
+                    let (geometry, markers) = surface.render(-34., 37.);
+                    self.mesh_scene.borrow_mut().set_geometry(Some(geometry));
+                    ui.set_tool_mesh_markers(ModelRc::new(VecModel::from(markers)));
+                    ui.set_tool_mesh_3d_open(true);
+                }
+            }
+            "mesh-close-3d" => self.close_mesh_view(ui),
             "tool-pid" => {
                 if !self
                     .heater_rows(ui)
@@ -2574,6 +2615,7 @@ impl State {
                 self.render_rows(ui);
             }
             "tools-home" => {
+                self.close_mesh_view(ui);
                 self.webcam_feed = None;
                 self.tool_view.clear();
                 ui.set_tool_image(Image::default());

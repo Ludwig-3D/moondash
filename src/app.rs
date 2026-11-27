@@ -1,4 +1,5 @@
 mod activity;
+mod stats;
 
 use crate::icons;
 use crate::print_files::{self, array};
@@ -517,13 +518,7 @@ impl State {
                 ("settings", "network") => self.network_action(ui, "network", "", ""),
                 ("settings", "tools") => self.request_webcams(ui),
                 ("settings", "host") if self.online => {
-                    self.call(ui, "machine.proc_stats", json!({}), "host-stats");
-                    self.call(
-                        ui,
-                        "server.files.get_directory",
-                        json!({"path": "gcodes", "extended": true}),
-                        "host-storage",
-                    );
+                    self.request_host_metrics(ui);
                     if !self.resource_history_loading
                         && self
                             .resource_history_checked
@@ -533,6 +528,9 @@ impl State {
                     }
                 }
                 ("home", _) | ("tune", "queue") if self.online => {
+                    if self.page == "home" && self.dashboard_stats_enabled() {
+                        self.request_host_metrics(ui);
+                    }
                     self.call(ui, "server.job_queue.status", json!({}), "queue")
                 }
                 _ => {}
@@ -620,6 +618,9 @@ impl State {
                 }
             }
             ("home", _) | ("tune", "queue") if self.online => {
+                if self.page == "home" && self.dashboard_stats_enabled() {
+                    self.request_host_metrics(ui);
+                }
                 self.call(ui, "server.job_queue.status", json!({}), "queue")
             }
             ("settings", "network") => self.network_action(ui, "network", "", ""),
@@ -628,19 +629,37 @@ impl State {
             }
             ("settings", "host") if self.online => {
                 self.call(ui, "machine.system_info", json!({}), "host-info");
-                self.call(ui, "machine.proc_stats", json!({}), "host-stats");
-                self.call(
-                    ui,
-                    "server.files.get_directory",
-                    json!({"path": "gcodes", "extended": true}),
-                    "host-storage",
-                );
+                self.request_host_metrics(ui);
                 self.request_resource_history(ui);
             }
             ("settings", "tools") => self.request_webcams(ui),
             _ => {}
         }
+        self.update_dashboard_stats(ui);
         self.render_rows(ui);
+    }
+
+    fn request_host_metrics(&self, ui: &Moondash) {
+        self.call(ui, "machine.proc_stats", json!({}), "host-stats");
+        self.call(
+            ui,
+            "server.files.get_directory",
+            json!({"path": "gcodes", "extended": true}),
+            "host-storage",
+        );
+    }
+
+    fn dashboard_stats_enabled(&self) -> bool {
+        self.config["styling"]["advanced_states"].as_bool() == Some(true)
+    }
+
+    fn update_dashboard_stats(&self, ui: &Moondash) {
+        let enabled = self.dashboard_stats_enabled();
+        if enabled && self.page == "home" {
+            let german = ui.global::<I18n>().get_german();
+            ui.set_dashboard_stats(stats::dashboard(&self.status, &self.host, german));
+        }
+        ui.set_stats_enabled(enabled);
     }
 
     fn request_webcams(&mut self, ui: &Moondash) {
@@ -998,6 +1017,18 @@ impl State {
                     self.queue = value;
                     if self.page == "home" || self.page == "tune" && self.tab == "queue" {
                         self.call(ui, "server.job_queue.status", json!({}), "queue");
+                    }
+                }
+                "notify_proc_stat_update"
+                    if self.page == "home" && self.dashboard_stats_enabled() =>
+                {
+                    if let Value::Object(stats) = value {
+                        if let Some(cached) = self.host["stats"].as_object_mut() {
+                            cached.extend(stats);
+                        } else {
+                            self.host["stats"] = Value::Object(stats);
+                        }
+                        self.update_dashboard_stats(ui);
                     }
                 }
                 "notify_update_response" => self.update_event(ui, &value),
@@ -1725,16 +1756,6 @@ impl State {
             })
             .collect();
         sensors.sort_by_cached_key(|sensor| sensor.name.to_lowercase());
-        let mut details = Vec::new();
-        if self.config["styling"]["advanced_states"].as_bool() == Some(true) {
-            let position = &self.object("gcode_move")["gcode_position"];
-            for (axis, index) in [("X", 0), ("Y", 1), ("Z", 2)] {
-                if let Some(value) = number(&position[index]) {
-                    details.push(info(axis, format!("{value:.2} mm")));
-                }
-            }
-        }
-
         set_model(&ui.get_shortcuts(), &shortcuts, |model| {
             ui.set_shortcuts(model)
         });
@@ -1743,7 +1764,7 @@ impl State {
         });
         set_model(&ui.get_sensors(), &sensors, |model| ui.set_sensors(model));
         set_model(&ui.get_macros(), &macros, |model| ui.set_macros(model));
-        set_model(&ui.get_details(), &details, |model| ui.set_details(model));
+        self.update_dashboard_stats(ui);
     }
 
     fn update_afc(&mut self, ui: &Moondash) {
@@ -4727,6 +4748,9 @@ impl State {
             "gcode" | "start" | "emergency" | "pause" | "resume" | "cancel" | "restart"
             | "shutdown" | "reboot" => {}
             _ => {}
+        }
+        if matches!(tag, "host-info" | "host-stats" | "host-storage") {
+            self.update_dashboard_stats(ui);
         }
         if matches!(tag, "queue" | "host-info" | "host-stats" | "host-storage") {
             self.render_rows(ui);

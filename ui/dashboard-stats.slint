@@ -1,0 +1,315 @@
+import { I18n } from "i18n.slint";
+import { Label, Palette } from "widgets.slint";
+
+export struct StatsAxis {
+    value: string,
+    fraction: float,
+    travel: float,
+    bounded: bool,
+}
+
+export struct StatsUsage {
+    value: string,
+    fraction: float,
+}
+
+export struct DashboardStats {
+    x: StatsAxis,
+    y: StatsAxis,
+    z: StatsAxis,
+    speed: string,
+    max-speed: string,
+    acceleration: string,
+    flow: string,
+    filament: string,
+    cpu-temperature: string,
+    cpu-temperature-level: int,
+    cpu: StatsUsage,
+    ram: StatsUsage,
+    storage: StatsUsage,
+    uptime: string,
+    websockets: string,
+}
+
+component PositionMap inherits Rectangle {
+    in property <StatsAxis> x-axis;
+    in property <StatsAxis> y-axis;
+    in property <StatsAxis> z-axis;
+
+    scene := Rectangle {
+        width: min(parent.width, parent.height * 202 / 156);
+        height: self.width * 156 / 202;
+        private property <length> unit: self.width / 202;
+        private property <length> bed-unit: min(140 * unit / max(1, root.x-axis.travel), 120 * unit / max(1, root.y-axis.travel));
+        private property <length> head-x: bed.x + bed.width * root.x-axis.fraction;
+        private property <length> head-y: bed.y + bed.height * (1 - root.y-axis.fraction);
+        private property <length> z-marker-y: (134 - 126 * root.z-axis.fraction) * unit;
+        private property <bool> has-xy: root.x-axis.bounded && root.y-axis.bounded;
+
+        bed := Rectangle {
+            width: root.x-axis.travel * scene.bed-unit;
+            height: root.y-axis.travel * scene.bed-unit;
+            x: 82 * scene.unit - self.width / 2;
+            y: 74 * scene.unit - self.height / 2;
+            border-radius: 3 * scene.unit;
+            border-width: 1.4 * scene.unit;
+            border-color: Palette.ink.transparentize(43%);
+            background: Palette.accent.transparentize(96.5%);
+            for index in 3: Rectangle {
+                x: bed.width * (index + 1) / 4;
+                width: 0.7 * scene.unit;
+                background: Palette.ink.transparentize(85%);
+            }
+            for index in 3: Rectangle {
+                y: bed.height * (index + 1) / 4;
+                height: 0.7 * scene.unit;
+                background: Palette.ink.transparentize(85%);
+            }
+        }
+
+        if scene.has-xy: Rectangle {
+            x: bed.x; y: bed.y; width: bed.width; height: bed.height;
+            clip: true;
+            for index in 24: Rectangle {
+                x: index * 6 * scene.unit;
+                y: scene.head-y - bed.y;
+                width: 3 * scene.unit;
+                height: 1.2 * scene.unit;
+                background: Palette.accent.transparentize(20%);
+            }
+            for index in 20: Rectangle {
+                x: scene.head-x - bed.x;
+                y: index * 6 * scene.unit;
+                width: 1.2 * scene.unit;
+                height: 3 * scene.unit;
+                background: Palette.accent.transparentize(20%);
+            }
+        }
+        if scene.has-xy: Rectangle {
+            x: scene.head-x - self.width / 2;
+            y: scene.head-y - self.height / 2;
+            width: 13 * scene.unit; height: self.width;
+            border-radius: self.width / 2;
+            border-width: 2.5 * scene.unit;
+            border-color: Palette.accent;
+            background: Palette.surface;
+            Rectangle {
+                width: 5 * scene.unit; height: self.width;
+                border-radius: self.width / 2;
+                background: Palette.accent;
+            }
+        }
+        Rectangle {
+            x: 175 * scene.unit; y: 8 * scene.unit;
+            width: 6 * scene.unit; height: 126 * scene.unit;
+            border-radius: self.width / 2;
+            background: Palette.ink.transparentize(75%);
+        }
+        if root.z-axis.bounded: Rectangle {
+            x: 175 * scene.unit; y: scene.z-marker-y;
+            width: 6 * scene.unit; height: 134 * scene.unit - self.y;
+            border-radius: self.width / 2;
+            background: Palette.success;
+        }
+        if root.z-axis.bounded: Rectangle {
+            x: 170 * scene.unit; y: scene.z-marker-y - scene.unit;
+            width: 16 * scene.unit; height: 2 * scene.unit;
+            border-radius: scene.unit;
+            background: Palette.ink;
+        }
+
+        Label {
+            x: bed.x + bed.width / 2 - 7 * scene.unit; y: bed.y + bed.height + 2 * scene.unit;
+            width: 14 * scene.unit; height: 15 * scene.unit;
+            text: "X"; font-size: 10 * scene.unit; font-weight: 700; horizontal-alignment: center;
+        }
+        Label {
+            x: bed.x - 14 * scene.unit; y: bed.y + bed.height / 2 - 8 * scene.unit;
+            width: 12 * scene.unit; height: 16 * scene.unit;
+            text: "Y"; font-size: 10 * scene.unit; font-weight: 700;
+        }
+        Label {
+            x: 171 * scene.unit; y: 140 * scene.unit; width: 14 * scene.unit; height: 16 * scene.unit;
+            text: "Z"; font-size: 10 * scene.unit; font-weight: 700; horizontal-alignment: center;
+        }
+    }
+}
+
+component CoordinateTile inherits Rectangle {
+    in property <string> caption;
+    in property <string> value;
+    in property <color> tone;
+    height: 32px;
+    min-width: 0px;
+    preferred-width: 0px;
+    horizontal-stretch: 1;
+    border-radius: 5px;
+    background: Palette.ink.transparentize(93.5%);
+
+    VerticalLayout {
+        padding: 3px;
+        Label { text: root.caption; color: root.tone; font-size: 10px; font-weight: 750; height: 11px; }
+        Label { text: root.value; font-size: 13px; font-weight: 750; }
+    }
+}
+
+component MotionStat inherits HorizontalLayout {
+    in property <string> caption;
+    in property <string> value;
+    height: 16px;
+    spacing: 5px;
+    Label { text: root.caption; font-size: 11px; color: Palette.muted; horizontal-stretch: 1; }
+    Label { text: root.value; font-size: 13px; font-weight: 700; horizontal-alignment: right; }
+}
+
+component MeterTrack inherits Rectangle {
+    in property <float> fraction;
+    height: 3px;
+    border-radius: 2px;
+    background: Palette.ink.transparentize(88%);
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.fraction, 0, 1);
+        height: parent.height;
+        border-radius: 2px;
+        background: Palette.accent;
+        animate width { duration: 350ms; }
+    }
+}
+
+component StackStat inherits VerticalLayout {
+    in property <string> caption;
+    in property <string> value;
+    min-width: 0px;
+    preferred-width: 0px;
+    horizontal-stretch: 1;
+    alignment: center;
+    spacing: 1px;
+    Label { text: root.caption; font-size: 10px; color: Palette.muted; height: 12px; }
+    Label { text: root.value; font-size: 13px; font-weight: 730; height: 17px; }
+}
+
+component HostTile inherits Rectangle {
+    in property <string> caption;
+    in property <string> value;
+    in property <float> fraction: -1;
+    border-radius: 7px;
+    background: Palette.surface.transparentize(50%);
+    border-width: 1px;
+    border-color: Palette.ink.transparentize(94%);
+    min-width: 0px;
+    preferred-width: 0px;
+    horizontal-stretch: 1;
+    height: 41px;
+    VerticalLayout {
+        padding-top: 3px;
+        padding-bottom: 3px;
+        padding-left: 5px;
+        padding-right: 5px;
+        alignment: start;
+        StackStat { caption: root.caption; value: root.value; }
+        if root.fraction >= 0: MeterTrack { fraction: root.fraction; }
+    }
+}
+
+export component DashboardStatsCard inherits Rectangle {
+    in property <DashboardStats> stats;
+    background: Palette.surface;
+    border-radius: 8px;
+    clip: true;
+
+    VerticalLayout {
+        padding: 4px;
+        spacing: 4px;
+
+        Rectangle {
+            vertical-stretch: 1;
+            background: Palette.ink.transparentize(93.5%);
+            border-radius: 8px;
+            VerticalLayout {
+                padding: 6px;
+                spacing: 3px;
+                PositionMap { x-axis: root.stats.x; y-axis: root.stats.y; z-axis: root.stats.z; vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 4px;
+                    CoordinateTile { caption: "X"; value: root.stats.x.value; tone: Palette.accent; }
+                    CoordinateTile { caption: "Y"; value: root.stats.y.value; tone: Palette.secondary; }
+                    CoordinateTile { caption: "Z"; value: root.stats.z.value; tone: Palette.success; }
+                }
+                VerticalLayout {
+                    padding-left: 2px;
+                    padding-right: 2px;
+                    MotionStat { caption: I18n.text("stats_speed"); value: root.stats.speed; }
+                    MotionStat { caption: I18n.text("stats_max_speed"); value: root.stats.max-speed; }
+                    MotionStat { caption: I18n.text("stats_max_acceleration"); value: root.stats.acceleration; }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: Palette.ink.transparentize(93.5%);
+            HorizontalLayout {
+                padding: 6px;
+                spacing: 7px;
+                StackStat { caption: I18n.text("flow"); value: root.stats.flow; }
+                Rectangle { width: 1px; background: Palette.ink.transparentize(84%); }
+                StackStat { caption: I18n.text("stats_filament_length"); value: root.stats.filament; }
+            }
+        }
+
+        Rectangle {
+            height: 140px;
+            border-radius: 8px;
+            background: Palette.ink.transparentize(93.5%);
+            VerticalLayout {
+                padding: 4px;
+                spacing: 3px;
+                HorizontalLayout {
+                    spacing: 3px;
+                    Rectangle {
+                        min-width: 0px;
+                        preferred-width: 0px;
+                        horizontal-stretch: 1;
+                        height: 41px;
+                        border-radius: 7px;
+                        background: Palette.surface.transparentize(50%);
+                        border-width: 1px;
+                        border-color: Palette.ink.transparentize(94%);
+                        VerticalLayout {
+                            padding: 4px;
+                            spacing: 1px;
+                            HorizontalLayout {
+                                height: 12px;
+                                Label { text: "CPU"; font-size: 10px; color: Palette.muted; horizontal-stretch: 1; }
+                                Label {
+                                    text: root.stats.cpu-temperature; font-size: 10px; font-weight: 700;
+                                    color: root.stats.cpu-temperature-level == 2 ? Palette.error
+                                        : root.stats.cpu-temperature-level == 1 ? Palette.warning : Palette.ink;
+                                }
+                            }
+                            HorizontalLayout {
+                                height: 15px;
+                                Label { text: I18n.text("stats_load"); font-size: 10px; color: Palette.muted; horizontal-stretch: 1; }
+                                Label { text: root.stats.cpu.value; font-size: 13px; font-weight: 730; }
+                            }
+                            MeterTrack { fraction: root.stats.cpu.fraction; }
+                        }
+                    }
+                    HostTile { caption: I18n.text("stats_uptime"); value: root.stats.uptime; }
+                }
+                HorizontalLayout {
+                    spacing: 3px;
+                    HostTile { caption: "RAM"; value: root.stats.ram.value; fraction: root.stats.ram.fraction; }
+                    HostTile { caption: "WebSockets"; value: root.stats.websockets; }
+                }
+                HorizontalLayout {
+                    spacing: 3px;
+                    HostTile { caption: I18n.text("storage"); value: root.stats.storage.value; fraction: root.stats.storage.fraction; }
+                    Rectangle { preferred-width: 0px; horizontal-stretch: 1; }
+                }
+            }
+        }
+    }
+}

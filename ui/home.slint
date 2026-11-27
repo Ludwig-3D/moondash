@@ -1,5 +1,6 @@
 import { I18n } from "i18n.slint";
 import { ScrollView } from "std-widgets.slint";
+import { DashboardStats, DashboardStatsCard } from "dashboard-stats.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile } from "widgets.slint";
 
@@ -288,7 +289,9 @@ export component Dashboard inherits HorizontalLayout {
     in property <[Row]> macros;
     in property <[Row]> controls;
     in property <[Row]> jobs;
-    in property <[Row]> details;
+    in property <bool> stats-enabled;
+    in property <DashboardStats> stats;
+    in property <length> stats-width: 260px;
     in property <[Notification]> notifications;
     in property <length> notification-width: 260px;
     private property <bool> loaded: filename != "" && (printing || paused || finished);
@@ -432,7 +435,7 @@ export component Dashboard inherits HorizontalLayout {
         }
     }
 
-    if root.error != "" || root.notifications.length > 0 || (!root.printing && !root.paused && root.jobs.length > 0) || root.details.length > 0: Rectangle {
+    if root.error != "" || root.notifications.length > 0 || (!root.printing && !root.paused && root.jobs.length > 0): Rectangle {
         width: root.notifications.length > 0 ? root.notification-width : 174px;
         background: Palette.surface;
         border-radius: 8px;
@@ -466,13 +469,12 @@ export component Dashboard inherits HorizontalLayout {
                     }
                 }
 
-                if root.ready && root.error == "" && root.notifications.length == 0: VerticalLayout {
-                    for detail in root.details: Label {
-                        text: detail.title + "  " + detail.detail;
-                        font-size: 13px;
-                    }
-                }
             }
         }
+    }
+
+    if root.stats-enabled && root.notifications.length == 0 && root.error == "": DashboardStatsCard {
+        width: root.stats-width;
+        stats: root.stats;
     }
 }

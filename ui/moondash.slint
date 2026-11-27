@@ -2,6 +2,7 @@ import { I18n } from "i18n.slint";
 import { LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile, Tab, RailButton } from "widgets.slint";
+import { DashboardStats, StatsAxis, StatsUsage } from "dashboard-stats.slint";
 import { Dashboard, Notification } from "home.slint";
 import { FilamentSensor, MotionPanel, PrintOptions } from "tune.slint";
 import { FileBrowser } from "files.slint";
@@ -20,7 +21,7 @@ import { UpdatesPanel, UpdateDetailsDialog, UpdateDetails, UpdateProgressDialog,
 import { ShortcutsPanel, ShortcutEditor, ShortcutOption } from "shortcuts.slint";
 import { MeshMarker, MeshViewDialog } from "mesh-view.slint";
 import { ResourceMetric, McuResource, HistoryStatus, ResourcesPanel } from "resources.slint";
-export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshMarker, ResourceMetric, McuResource, HistoryStatus, ShortcutOption, UpdateDetails, UpdateService }
+export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshMarker, ResourceMetric, McuResource, HistoryStatus, ShortcutOption, UpdateDetails, UpdateService, DashboardStats, StatsAxis, StatsUsage }
 
 component RowList inherits ScrollView {
     in property <[Row]> rows;
@@ -106,7 +107,8 @@ export component Moondash inherits Window {
     in property <[Row]> afc-units;
     in property <[Row]> macros;
     in property <[Row]> jobs;
-    in property <[Row]> details;
+    in property <bool> stats-enabled;
+    in property <DashboardStats> dashboard-stats;
     in property <[Row]> trailing-rows;
     in property <[ResourceMetric]> resource-metrics;
     in property <image> resource-host-chart;
@@ -345,7 +347,9 @@ export component Moondash inherits Window {
             macros: root.macros;
             controls: root.shortcuts;
             jobs: root.jobs;
-            details: root.details;
+            stats-enabled: root.stats-enabled;
+            stats: root.dashboard-stats;
+            stats-width: min(260px, root.width * 0.34);
             notifications: root.notifications;
             notification-width: root.width * 0.4;
             action(name, argument) => { root.action(name, argument); }

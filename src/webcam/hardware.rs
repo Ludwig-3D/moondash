@@ -228,7 +228,7 @@ async fn run(
             let mut pixels = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
             timeout(FRAME_TIMEOUT, output.read_exact(pixels.make_mut_bytes())).await??;
             if !*started {
-                eprintln!("[webcam] using {} MJPEG decoding", backend.name());
+                log::info!("using {} MJPEG decoding", backend.name());
                 *started = true;
             }
             if decoded.send(Some(Ok((pixels, true)))).is_err() {

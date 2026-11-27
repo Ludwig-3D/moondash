@@ -1,9 +1,13 @@
+mod activity;
+
 use crate::icons;
 use crate::print_files::{self, array};
 use crate::{
     ColorSwatch, FilamentSensor, HistoryStatus, I18n, Lane, McuResource, Moondash, Notification,
     Palette, PrintTool, ResourceMetric, Row, ShortcutOption, UpdateDetails, UpdateService,
-    WifiEntry, config, input_idle, locale, mesh_view,
+    WifiEntry, config, input_idle, locale,
+    logging::Change,
+    mesh_view,
     moonraker::{self, Call, Event},
     network, resources, shortcuts, theme, tools, updates, version, wayland_power, webcam,
 };
@@ -243,22 +247,29 @@ pub fn start(
     let shared = state.clone();
     ui.on_action(move |action, argument| {
         if let Some(ui) = weak.upgrade() {
-            shared
-                .borrow_mut()
-                .action(&ui, action.as_str(), argument.as_str());
+            let mut state = shared.borrow_mut();
+            activity::pressed(&action, &argument, &state.page, &state.tab);
+            state.action(&ui, action.as_str(), argument.as_str());
         }
     });
     let weak = ui.as_weak();
     let shared = state.clone();
     ui.on_dialog_submit(move |value, queue| {
         if let Some(ui) = weak.upgrade() {
-            shared.borrow_mut().submit(&ui, value.as_str(), queue);
+            let mut state = shared.borrow_mut();
+            activity::submitted(
+                &ui.get_dialog_mode(),
+                &state.dialog.action,
+                &state.dialog.argument,
+            );
+            state.submit(&ui, value.as_str(), queue);
         }
     });
     let weak = ui.as_weak();
     let shared = state.clone();
     ui.on_adjust_speed(move |step| {
         if let Some(ui) = weak.upgrade() {
+            log::info!(target: "moondash::ui", "adjusted print speed step={step}");
             let percent = ui.get_speed_target().saturating_add(step).max(1);
             shared.borrow_mut().edited_speed_percent = Some(percent);
             ui.set_speed_target(percent);
@@ -270,6 +281,7 @@ pub fn start(
         if let Some(ui) = weak.upgrade()
             && !ui.get_file_busy()
         {
+            activity::closed(&ui.get_dialog_mode());
             ui.set_keyboard_target("".into());
             ui.set_dialog_mode("".into());
             ui.set_folder_picker(false);
@@ -405,6 +417,7 @@ impl State {
             Ok(text) => text,
             Err(error) if error.kind() == io::ErrorKind::NotFound => DEFAULT_CONFIG.to_owned(),
             Err(error) => {
+                log::warn!(target: "moondash::config", "could not read configuration: {}", error.kind());
                 ui.set_message(format!("{}: {error}", self.config_path.display()).into());
                 DEFAULT_CONFIG.to_owned()
             }
@@ -415,6 +428,7 @@ impl State {
                 ui.set_config_text(text.into());
             }
             Err(error) => {
+                log::warn!(target: "moondash::config", "configuration could not be parsed");
                 ui.set_message(error.into());
                 if force {
                     ui.set_config_text(text.into());
@@ -438,6 +452,7 @@ impl State {
             *endpoint = host;
             true
         }) {
+            log::info!(target: "moondash::config", "Moonraker endpoint changed");
             self.dismissed_notifications.clear();
         }
 
@@ -557,6 +572,7 @@ impl State {
     }
 
     fn navigate(&mut self, ui: &Moondash, page: &str, tab: &str) {
+        log::info!(target: "moondash::ui", "Opened {}", activity::screen(page, tab));
         if ui.get_shortcut_editor() && (page, tab) != ("settings", "shortcuts") {
             ui.set_shortcut_editor(false);
             ui.set_keyboard_target("".into());
@@ -731,7 +747,9 @@ impl State {
         ui.set_tool_webcam_index(webcam_index);
         ui.set_tool_pid_target(self.pid_target.clone().into());
         ui.set_tool_pid_current(
-            number(&self.object(&self.pid_heater)["temperature"])
+            (heater_index >= 0)
+                .then(|| number(&self.object(&self.pid_heater)["temperature"]))
+                .flatten()
                 .map_or_else(|| "—".to_owned(), |value| format!("{value:.0}"))
                 .into(),
         );
@@ -742,7 +760,7 @@ impl State {
             ui.get_ready()
                 && !ui.get_printing()
                 && !ui.get_paused()
-                && !self.pid_heater.is_empty()
+                && heater_index >= 0
                 && target_valid,
         );
         ui.set_tool_pid_running(self.pid_running);
@@ -787,6 +805,7 @@ impl State {
             json!({"script": format!("PID_CALIBRATE HEATER={} TARGET={target}", gcode_arg(heater))}),
             "pid-tune",
         ) {
+            log::info!(target: "moondash::ui", "Requested PID calibration for {}", self.pid_heater);
             self.pid_running = true;
             self.pid_complete = false;
             self.render_rows(ui);
@@ -820,9 +839,16 @@ impl State {
         params: Value,
         tag: impl Into<String>,
     ) -> bool {
+        self.send_call(ui, Call::new(method, params, tag))
+    }
+
+    fn send_call(&self, ui: &Moondash, call: Call) -> bool {
+        let method = call.method;
         if !self.online {
+            log::warn!(target: "moondash::moonraker", "request method={method} skipped while offline");
             ui.set_message(tr(ui, "moonraker_is_disconnected").into());
-        } else if self.calls.try_send(Call::new(method, params, tag)).is_err() {
+        } else if self.calls.try_send(call).is_err() {
+            log::warn!(target: "moondash::moonraker", "request method={method} dropped because the request queue is unavailable");
             ui.set_message(tr(ui, "moonraker_request_queue_is_busy").into());
         } else {
             return true;
@@ -834,10 +860,10 @@ impl State {
         if ui.get_printing() || ui.get_paused() {
             return;
         }
-        self.submit_control(ui, script);
+        self.submit_control(ui, script, Vec::new());
     }
 
-    fn submit_control(&mut self, ui: &Moondash, script: impl Into<String>) {
+    fn submit_control(&mut self, ui: &Moondash, script: impl Into<String>, changes: Vec<Change>) {
         if !ui.get_ready() || self.motion_busy {
             return;
         }
@@ -845,7 +871,8 @@ impl State {
             "printer.gcode.script",
             json!({"script": script.into()}),
             "motion",
-        );
+        )
+        .with_changes(changes);
         if self.calls.try_send(call).is_ok() {
             self.motion_busy = true;
             ui.set_motion_busy(true);
@@ -855,12 +882,19 @@ impl State {
     }
 
     fn script(&self, ui: &Moondash, script: impl Into<String>) {
+        self.script_with_changes(ui, script, Vec::new());
+    }
+
+    fn script_with_changes(&self, ui: &Moondash, script: impl Into<String>, changes: Vec<Change>) {
         if ui.get_ready() {
-            self.call(
+            self.send_call(
                 ui,
-                "printer.gcode.script",
-                json!({"script": script.into()}),
-                "gcode",
+                Call::new(
+                    "printer.gcode.script",
+                    json!({"script": script.into()}),
+                    "gcode",
+                )
+                .with_changes(changes),
             );
         } else {
             ui.set_message(tr(ui, "klipper_is_not_ready").into());
@@ -984,6 +1018,25 @@ impl State {
     }
 
     fn set_status(&mut self, ui: &Moondash, status: Map<String, Value>) {
+        for (object, label) in [("webhooks", "Klipper"), ("print_stats", "print")] {
+            let previous = self
+                .status
+                .get(object)
+                .and_then(|value| value["state"].as_str());
+            let next = status.get(object).and_then(|value| value["state"].as_str());
+            if previous != next {
+                let value = match next {
+                    Some(
+                        value @ ("ready" | "startup" | "shutdown" | "error" | "disconnected"
+                        | "printing" | "paused" | "pausing" | "resuming" | "complete"
+                        | "cancelled" | "cancelling" | "standby"),
+                    ) => value,
+                    Some(_) => "unknown",
+                    None => "unavailable",
+                };
+                log::info!(target: "moondash::printer", "{label} state={value}");
+            }
+        }
         self.status = status;
         if ui.get_dialog_mode() == "temperature" {
             self.update_temperature_dialog(ui, &self.dialog.argument);
@@ -1509,11 +1562,7 @@ impl State {
     fn heater_rows<'a>(&'a self, ui: &'a Moondash) -> impl Iterator<Item = Row> + 'a {
         self.status
             .iter()
-            .filter(|(name, _)| {
-                *name == "heater_bed"
-                    || name.starts_with("extruder") && !name.contains('_')
-                    || name.starts_with("heater_generic ")
-            })
+            .filter(|(name, _)| listed_heater(name))
             .filter_map(move |(name, data)| {
                 let current = number(&data["temperature"])?;
                 let target = number(&data["target"]).unwrap_or_default();
@@ -1569,17 +1618,17 @@ impl State {
             .as_str()
             .unwrap_or("extruder");
         let bed = tr(ui, "heater_bed");
-        let mut controls = vec![
-            heater(tool, tr(ui, "extruder"), "printer-3d-nozzle-heat"),
-            heater("heater_bed", bed, "radiator"),
-        ];
+        let mut controls = Vec::new();
+        if tools::public_device(tool) {
+            controls.push(heater(tool, tr(ui, "extruder"), "printer-3d-nozzle-heat"));
+        }
+        controls.push(heater("heater_bed", bed, "radiator"));
         let mut shortcuts = controls.clone();
         for control in &mut shortcuts {
             control.title = control.detail.clone();
         }
         for key in self.status.keys().filter(|name| {
-            name.starts_with("heater_generic ")
-                || name.starts_with("extruder") && !name.contains('_') && *name != tool
+            name.as_str() != "heater_bed" && name.as_str() != tool && listed_heater(name)
         }) {
             let name = key
                 .split_once(' ')
@@ -1588,6 +1637,9 @@ impl State {
         }
         let first_fan = controls.len();
         for (key, data) in &self.status {
+            if !tools::public_device(key) {
+                continue;
+            }
             let (name, action) = if key == "fan" {
                 (tr(ui, "part_fan"), "fan")
             } else if let Some((kind, name)) = key.split_once(' ') {
@@ -1881,11 +1933,18 @@ fn number(value: &Value) -> Option<f64> {
     value.as_f64().filter(|value| value.is_finite())
 }
 
+fn listed_heater(key: &str) -> bool {
+    tools::public_device(key)
+        && (key == "heater_bed"
+            || key.starts_with("extruder") && !key.contains('_')
+            || key.starts_with("heater_generic "))
+}
+
 fn filament_sensor_name(key: &str) -> Option<&str> {
     let name = key
         .strip_prefix("filament_switch_sensor ")
         .or_else(|| key.strip_prefix("filament_motion_sensor "))?;
-    (!name.is_empty() && !name.to_ascii_lowercase().starts_with("afc")).then_some(name)
+    (tools::public_device(key) && !name.to_ascii_lowercase().starts_with("afc")).then_some(name)
 }
 
 fn filament_sensor_enabled(data: &Value) -> bool {
@@ -2101,7 +2160,14 @@ impl State {
         } else {
             format!("SET_HEATER_TEMPERATURE HEATER={name} TARGET={target}")
         };
-        self.submit_printer_setting(ui, script);
+        let change = Change::number(
+            format!("Temperature target for {heater}"),
+            number(&self.object(heater)["target"]),
+            f64::from(target),
+            0,
+            " °C",
+        );
+        self.submit_printer_setting(ui, script, vec![change]);
     }
 
     fn set_fan(&self, ui: &Moondash, fan: &str, input: &str) {
@@ -2120,7 +2186,14 @@ impl State {
         } else {
             return;
         };
-        self.submit_printer_setting(ui, script);
+        let change = Change::number(
+            format!("Fan speed for {fan}"),
+            number(&self.object(fan)["speed"]).map(|speed| speed * 100.),
+            f64::from(target),
+            0,
+            "%",
+        );
+        self.submit_printer_setting(ui, script, vec![change]);
     }
 
     fn speed_percent(&self) -> Option<i32> {
@@ -2147,37 +2220,111 @@ impl State {
         }
 
         let mut commands = Vec::with_capacity(2);
+        let mut changes = Vec::with_capacity(2);
         if let Some(acceleration) = acceleration
             && Some(acceleration) != self.initial_speed_acceleration
             && Some(acceleration) != self.speed_acceleration()
         {
             commands.push(format!("SET_VELOCITY_LIMIT ACCEL={acceleration}"));
+            changes.push(Change::new(
+                "Acceleration",
+                self.speed_acceleration()
+                    .map(|value| format!("{value} mm/s²")),
+                format!("{acceleration} mm/s²"),
+            ));
         }
         if let Some(percent) = self.edited_speed_percent
             && Some(percent) != self.speed_percent()
         {
             commands.push(format!("M220 S{percent}"));
+            changes.push(Change::number(
+                "Print speed",
+                self.speed_percent().map(f64::from),
+                f64::from(percent),
+                0,
+                "%",
+            ));
         }
         if commands.is_empty() {
             ui.set_dialog_mode("".into());
         } else {
-            self.submit_printer_setting(ui, commands.join("\n"));
+            self.submit_printer_setting(ui, commands.join("\n"), changes);
         }
     }
 
-    fn submit_printer_setting(&self, ui: &Moondash, script: String) {
+    fn submit_printer_setting(&self, ui: &Moondash, script: String, changes: Vec<Change>) {
         if ui.get_printer_setting_busy() || !ui.get_ready() {
             return;
         }
         ui.set_dialog_detail("".into());
-        if self.try_call(
+        if self.send_call(
             ui,
-            "printer.gcode.script",
-            json!({"script": script}),
-            "printer-setting",
+            Call::new(
+                "printer.gcode.script",
+                json!({"script": script}),
+                "printer-setting",
+            )
+            .with_changes(changes),
         ) {
             ui.set_printer_setting_busy(true);
         }
+    }
+
+    fn set_print_option(&self, ui: &Moondash, action: &str, value: f64) {
+        let tool = self.object("toolhead")["extruder"]
+            .as_str()
+            .unwrap_or("extruder");
+        let (command, change) = match action {
+            "set-flow" => {
+                let target = value.clamp(1., 300.);
+                (format!("M221 S{target:.0}"), self.flow_change(target, 0))
+            }
+            "set-advance" => {
+                let target = value.clamp(0., 1.);
+                (
+                    format!("SET_PRESSURE_ADVANCE ADVANCE={target:.3}"),
+                    Change::number(
+                        format!("Pressure advance for {tool}"),
+                        number(&self.object(tool)["pressure_advance"]),
+                        target,
+                        3,
+                        "",
+                    ),
+                )
+            }
+            "set-smooth" => {
+                let target = value.clamp(0., 0.2);
+                (
+                    format!("SET_PRESSURE_ADVANCE SMOOTH_TIME={target:.3}"),
+                    Change::number(
+                        format!("Pressure advance smooth time for {tool}"),
+                        number(&self.object(tool)["smooth_time"])
+                            .or_else(|| number(&self.object(tool)["pressure_advance_smooth_time"])),
+                        target,
+                        3,
+                        " s",
+                    ),
+                )
+            }
+            _ => return,
+        };
+        self.script_with_changes(ui, command, vec![change]);
+    }
+
+    fn flow_change(&self, target: f64, precision: usize) -> Change {
+        let current =
+            number(&self.object("gcode_move")["extrude_factor"]).map(|value| value * 100.);
+        Change::number("Flow", current, target, precision, "%")
+    }
+
+    fn change_jog_step(&mut self, distance: f64) {
+        Change::new(
+            "Jog distance",
+            Some(format!("{} mm", self.jog_step)),
+            format!("{distance} mm"),
+        )
+        .record();
+        self.jog_step = distance;
     }
 
     fn request_resource_history(&mut self, ui: &Moondash) {
@@ -3044,7 +3191,10 @@ impl State {
         ui.set_shortcut_active(field("macro_active"));
         let kind = item["active_type"].as_str().unwrap_or_default();
         let config = item["active_config"].as_str().unwrap_or_default();
-        ui.set_shortcut_sensor(format!("{kind} {config}").trim().into());
+        let sensor = format!("{kind} {config}");
+        let sensor = sensor.trim();
+        ui.set_shortcut_sensor_hidden(!sensor.is_empty() && !tools::public_device(sensor));
+        ui.set_shortcut_sensor(sensor.into());
         ui.set_shortcut_error("".into());
         let (macros, sensors) = shortcuts::suggestions(&self.status);
         let model = |options: Vec<ShortcutOption>| ModelRc::new(VecModel::from(options));
@@ -3265,6 +3415,7 @@ impl State {
                     .and_then(|index| self.heater_rows(ui).nth(index))
                     .map(|heater| heater.argument.to_string());
                 if let Some(heater) = selected {
+                    log::info!(target: "moondash::ui", "Selected PID heater {heater}");
                     self.select_pid_heater(heater);
                     self.render_rows(ui);
                 }
@@ -3535,7 +3686,12 @@ impl State {
             "shortcut-name" => ui.set_shortcut_name(argument.into()),
             "shortcut-inactive" => ui.set_shortcut_inactive(argument.into()),
             "shortcut-active" => ui.set_shortcut_active(argument.into()),
-            "shortcut-sensor" => ui.set_shortcut_sensor(argument.into()),
+            "shortcut-sensor" => {
+                ui.set_shortcut_sensor_hidden(
+                    !argument.is_empty() && !tools::public_device(argument),
+                );
+                ui.set_shortcut_sensor(argument.into());
+            }
             "shortcut-icon" => {
                 ui.set_shortcut_icon(argument.into());
                 ui.set_shortcut_icon_glyph(icons::glyph(argument));
@@ -3598,7 +3754,7 @@ impl State {
             "home" => self.motion(ui, format!("G28 {argument}")),
             "set-step" => {
                 if let Ok(distance) = argument.parse() {
-                    self.jog_step = distance;
+                    self.change_jog_step(distance);
                     ui.set_jog_step(distance as f32);
                 }
             }
@@ -3608,13 +3764,20 @@ impl State {
                 if let Some(name) = filament_sensor_name(argument)
                     && let Some(data) = self.status.get(argument)
                 {
-                    let enable = u8::from(!filament_sensor_enabled(data));
+                    let before = filament_sensor_enabled(data);
+                    let enable = u8::from(!before);
+                    let state = |enabled| if enabled { "enabled" } else { "disabled" };
                     self.submit_control(
                         ui,
                         format!(
                             "SET_FILAMENT_SENSOR SENSOR={} ENABLE={enable}",
                             gcode_arg(name)
                         ),
+                        vec![Change::new(
+                            format!("Filament sensor {name}"),
+                            Some(state(before).into()),
+                            state(!before),
+                        )],
                     );
                 }
             }
@@ -3631,17 +3794,7 @@ impl State {
                 if let Ok(value) = argument.trim().replace(',', ".").parse::<f64>()
                     && value.is_finite()
                 {
-                    let command = match action {
-                        "set-flow" => format!("M221 S{:.0}", value.clamp(1., 300.)),
-                        "set-advance" => {
-                            format!("SET_PRESSURE_ADVANCE ADVANCE={:.3}", value.clamp(0., 1.))
-                        }
-                        _ => format!(
-                            "SET_PRESSURE_ADVANCE SMOOTH_TIME={:.3}",
-                            value.clamp(0., 0.2)
-                        ),
-                    };
-                    self.script(ui, command);
+                    self.set_print_option(ui, action, value);
                 }
             }
             "disable-motors" => self.dialog(
@@ -3671,7 +3824,7 @@ impl State {
                     }
                 ),
             ),
-            "heater" | "temperature-fan" => {
+            "heater" | "temperature-fan" if tools::public_device(argument) => {
                 let (title, icon) = if action == "temperature-fan" {
                     (
                         argument
@@ -3703,7 +3856,7 @@ impl State {
                         .into(),
                 );
             }
-            "fan" => {
+            "fan" if tools::public_device(argument) => {
                 let name = argument.strip_prefix("fan_generic ").unwrap_or(argument);
                 let title = name.trim_matches('_').replace('_', " ");
                 let target = number(&self.object(argument)["speed"]).unwrap_or_default() * 100.;
@@ -4005,9 +4158,19 @@ impl State {
         } else if action == "afc-color"
             && self.status.contains_key(&format!("AFC_stepper {argument}"))
         {
+            let lane = format!("AFC_stepper {argument}");
+            let before = self.object(&lane)["color"]
+                .as_str()
+                .and_then(theme::parse_rgb)
+                .map(|color| format!("#{color:06X}"));
             self.submit_printer_setting(
                 ui,
                 format!("SET_COLOR LANE={} COLOR={color:06X}", gcode_arg(argument)),
+                vec![Change::new(
+                    format!("AFC lane color for {argument}"),
+                    before,
+                    format!("#{color:06X}"),
+                )],
             );
         }
     }
@@ -4134,7 +4297,7 @@ impl State {
         let name = argument.split_once(' ').map_or(argument, |(_, name)| name);
         let script = match action {
             "step" => {
-                self.jog_step = value;
+                self.change_jog_step(value);
                 self.render_rows(ui);
                 return;
             }
@@ -4144,7 +4307,14 @@ impl State {
                     "SAVE_GCODE_STATE NAME=moondash_extrude\nM83\nG1 E{movement} F240\nRESTORE_GCODE_STATE NAME=moondash_extrude"
                 )
             }
-            "flow" => format!("M221 S{value}"),
+            "flow" => {
+                self.script_with_changes(
+                    ui,
+                    format!("M221 S{value}"),
+                    vec![self.flow_change(value, 3)],
+                );
+                return;
+            }
             "pid" => format!(
                 "PID_CALIBRATE HEATER={} TARGET={}",
                 gcode_arg(name),
@@ -4159,6 +4329,7 @@ impl State {
         config::parse(text)?;
         save_config(&self.config_path, text).map_err(|error| error.to_string())?;
         self.load_config(ui, true);
+        log::info!(target: "moondash::config", "configuration saved");
         Ok(())
     }
 
@@ -4169,8 +4340,19 @@ impl State {
             Err(error) if error.kind() == io::ErrorKind::NotFound => ui.get_config_text(),
             Err(error) => return Err(error.to_string()),
         };
+        let previous_config = config::parse(&existing).unwrap_or_else(|_| self.config.clone());
+        let previous = activity::setting_value(path, &previous_config);
         let text = config::with_value(existing.as_str(), section, key, value);
-        self.persist_config(ui, &text)
+        self.persist_config(ui, &text)?;
+        if self.config[section][key] != previous_config[section][key] {
+            let label = activity::setting_name(path);
+            if let Some(current) = activity::setting_value(path, &self.config) {
+                Change::new(format!("{label} ({path})"), previous, current).record();
+            } else {
+                log::info!(target: "moondash::settings", "Changed {label} ({path})");
+            }
+        }
+        Ok(())
     }
 
     fn change_setting(&mut self, ui: &Moondash, path: &str, value: &str) {
@@ -4591,7 +4773,10 @@ impl State {
     fn background_event(&mut self, ui: &Moondash, event: Background) {
         match event {
             Background::Reply(tag, result) => self.reply(ui, &tag, result),
-            Background::Sleeping(sleeping) => ui.set_sleeping(sleeping),
+            Background::Sleeping(sleeping) => {
+                log::info!(target: "moondash::display", "sleeping={sleeping}");
+                ui.set_sleeping(sleeping);
+            }
             Background::Image(tag, result) => {
                 match result.and_then(|bytes| {
                     Image::load_from_data(&bytes, None).map_err(|error| format!("{error:?}"))
@@ -4744,6 +4929,13 @@ impl State {
         }
         ui.set_network_job("".into());
         ui.set_network_job_target("".into());
+        if action != "network" {
+            if reply.is_ok() {
+                log::info!(target: "moondash::network", "action={action} completed");
+            } else {
+                log::warn!(target: "moondash::network", "action={action} failed");
+            }
+        }
         let result = match reply {
             Ok(result) => result,
             Err(error) => {
@@ -5029,8 +5221,38 @@ fn start_display_watcher(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_speed_percent, klipper_message, warning_messages};
+    use super::{
+        filament_sensor_name, format_speed_percent, klipper_message, listed_heater,
+        warning_messages,
+    };
+    use crate::tools::public_device;
     use serde_json::json;
+
+    #[test]
+    fn underscore_prefix_hides_printer_devices() {
+        assert!(listed_heater("heater_bed"));
+        assert!(listed_heater("heater_generic chamber_heater"));
+        assert!(!listed_heater("heater_generic _chamber"));
+        assert!(!listed_heater("extruder _private"));
+        assert!(public_device("fan"));
+        for class in [
+            "fan_generic",
+            "heater_fan",
+            "controller_fan",
+            "temperature_fan",
+            "temperature_sensor",
+        ] {
+            assert!(!public_device(&format!("{class} _private")));
+            assert!(public_device(&format!("{class} chamber_sensor")));
+        }
+        for class in ["filament_switch_sensor", "filament_motion_sensor"] {
+            assert_eq!(filament_sensor_name(&format!("{class} _private")), None);
+            assert_eq!(
+                filament_sensor_name(&format!("{class} runout_sensor")),
+                Some("runout_sensor")
+            );
+        }
+    }
 
     #[test]
     fn extracts_klipper_runtime_and_moonraker_warnings() {

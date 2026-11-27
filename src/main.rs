@@ -3,6 +3,7 @@ mod config;
 mod icons;
 mod input_idle;
 mod locale;
+mod logging;
 mod mesh_view;
 mod moonraker;
 mod network;
@@ -97,17 +98,33 @@ fn main() -> ExitCode {
         }
     };
 
+    let _logging = logging::init();
+    let default_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        if let Some(location) = panic.location() {
+            log::error!("application panic at {location}");
+        } else {
+            log::error!("application panic");
+        }
+        log::logger().flush();
+        default_panic_hook(panic);
+    }));
+    log::info!("starting Moondash {}", version::current_version());
+
     let renderer = options
         .renderer
         .or_else(|| Renderer::parse(&std::env::var(RETRY_RENDERER).ok()?))
         .unwrap_or(Renderer::Vulkan);
     let started = Rc::new(Cell::new(false));
-    eprintln!("[renderer] trying {}", renderer.name());
+    log::info!(target: "moondash::renderer", "trying {}", renderer.name());
 
     match run(&options, renderer, started.clone()) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => {
+            log::info!("application exited");
+            ExitCode::SUCCESS
+        }
         Err(error) => {
-            eprintln!("[renderer] {} failed: {error}", renderer.name());
+            log::error!(target: "moondash::renderer", "{} failed: {error}", renderer.name());
             if options.renderer.is_none()
                 && !started.get()
                 && let Some(next) = renderer.next()
@@ -115,15 +132,19 @@ fn main() -> ExitCode {
                 // Slint installs its platform once and Winit cannot recreate its event loop.
                 // exec starts the next attempt with a clean graphics stack under the same PID.
                 use std::os::unix::process::CommandExt;
+                log::info!(target: "moondash::renderer", "falling back to {}", next.name());
+                log::logger().flush();
                 match std::env::current_exe() {
                     Ok(executable) => {
                         let error = std::process::Command::new(executable)
                             .args(std::env::args_os().skip(1))
                             .env(RETRY_RENDERER, next.name())
                             .exec();
-                        eprintln!("[renderer] could not start {}: {error}", next.name());
+                        log::error!(target: "moondash::renderer", "could not start {}: {error}", next.name());
                     }
-                    Err(error) => eprintln!("[renderer] could not resolve executable: {error}"),
+                    Err(error) => {
+                        log::error!(target: "moondash::renderer", "could not resolve executable: {error}")
+                    }
                 }
             }
             ExitCode::FAILURE

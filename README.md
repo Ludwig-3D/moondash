@@ -31,6 +31,16 @@ Startup logs report the renderer used. To force a particular renderer while
 diagnosing a device, pass `--renderer vulkan`, `--renderer opengl`, or
 `--renderer software`.
 
+## Logs
+
+Moondash writes to `~/printer_data/logs/moondash.log` under the account running
+the app. It rolls the file at local midnight and keeps older logs as
+`moondash-YYYY-MM-DD.tar.gz` archives. Moondash sends the same log entries to
+the run console. The log includes renderer startup,
+Moonraker connections, printer state changes, button and dialog actions, and
+before-and-after values for printer controls and app settings. It omits
+free-form input, credentials, and raw G-code.
+
 ## Webcam hardware decoding
 
 Moondash tries the available hardware decoders for MJPEG previews and uses its

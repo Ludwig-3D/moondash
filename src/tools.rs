@@ -6,6 +6,12 @@ pub struct MeshProfile {
     pub variance: Option<f64>,
 }
 
+pub fn public_device(key: &str) -> bool {
+    let key = key.trim();
+    let name = key.split_once(' ').map_or(key, |(_, name)| name.trim());
+    !name.is_empty() && !key.starts_with('_') && !name.starts_with('_')
+}
+
 pub fn bed_mesh_matrix(mesh: &Value) -> Vec<Vec<f64>> {
     let matrix = [
         "mesh_matrix",

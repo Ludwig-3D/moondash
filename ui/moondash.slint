@@ -182,6 +182,7 @@ export component Moondash inherits Window {
     in property <string> shortcut-inactive;
     in property <string> shortcut-active;
     in property <string> shortcut-sensor;
+    in property <bool> shortcut-sensor-hidden;
     in property <string> shortcut-error;
     in property <[ShortcutOption]> shortcut-icons;
     in property <[ShortcutOption]> shortcut-macros;
@@ -580,6 +581,7 @@ export component Moondash inherits Window {
         inactive: root.shortcut-inactive;
         active: root.shortcut-active;
         sensor: root.shortcut-sensor;
+        sensor-hidden: root.shortcut-sensor-hidden;
         error: root.shortcut-error;
         icons: root.shortcut-icons;
         macros: root.shortcut-macros;
@@ -970,7 +972,7 @@ export component Moondash inherits Window {
         value <=> root.filter;
         edited(value) => { root.filter-edited(value); }
         erase => { root.keyboard-erase("filter"); }
-        accepted => { root.close-keyboard(); }
+        accepted => { root.action("file-filter-done", ""); root.close-keyboard(); }
         dismissed => { root.close-keyboard(); }
     }
 

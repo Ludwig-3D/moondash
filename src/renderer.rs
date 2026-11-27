@@ -66,7 +66,7 @@ impl Renderer {
         mesh_scene: crate::mesh_view::SceneHandle,
     ) -> Result<(), String> {
         if self == Self::Software {
-            eprintln!("[renderer] using {}", self.name());
+            log::info!("using {}", self.name());
             ui.set_tool_mesh_3d_available(false);
             return Ok(());
         }
@@ -86,7 +86,7 @@ impl Renderer {
                     // startup on the next event-loop turn, after presentation succeeds.
                     slint::Timer::single_shot(std::time::Duration::ZERO, move || {
                         started.set(true);
-                        eprintln!("[renderer] using {}", self.name());
+                        log::info!("using {}", self.name());
                     });
                 }
             })

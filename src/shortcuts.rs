@@ -1,4 +1,4 @@
-use crate::config;
+use crate::{config, tools};
 use serde_json::{Map, Value};
 
 pub const ICONS: [&str; 6] = [
@@ -71,7 +71,7 @@ pub fn suggestions(status: &Map<String, Value>) -> (Vec<String>, Vec<String>) {
             continue;
         };
         let name = name.trim();
-        if name.is_empty() || name.starts_with('_') {
+        if !tools::public_device(key) {
             continue;
         }
         match kind.to_ascii_lowercase().as_str() {

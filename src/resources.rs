@@ -1,3 +1,4 @@
+use crate::tools;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
@@ -203,7 +204,9 @@ pub fn mcu_metrics(status: &Map<String, Value>) -> Vec<McuMetrics> {
     let mut temperatures = HashMap::new();
     let config = &status.get("configfile").unwrap_or(&Value::Null)["config"];
     for (key, raw) in status {
-        if !key.starts_with("temperature_sensor ") && !key.starts_with("temperature_fan ") {
+        if !(key.starts_with("temperature_sensor ") || key.starts_with("temperature_fan "))
+            || !tools::public_device(key)
+        {
             continue;
         }
         let sensor_config = &config[key];

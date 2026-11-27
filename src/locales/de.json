@@ -267,6 +267,7 @@
   "shortcut_macro_inactive": "Makro inaktiv",
   "shortcut_move_down": "Nach unten",
   "shortcut_move_up": "Nach oben",
+  "shortcut_sensor_hidden": "Ausgeblendeter Sensor",
   "shortcut_sensor": "Sensor",
   "shortcut_threshold_auto": "Schwellwert wird automatisch gesetzt:",
   "shortcut_threshold_none": "Kein Schwellwert erforderlich",

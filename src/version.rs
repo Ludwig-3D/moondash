@@ -27,8 +27,8 @@ pub fn restart_after_package_update() -> Result<(), String> {
                 .status()
             {
                 Ok(status) if status.success() => {}
-                Ok(status) => eprintln!("[version] restart failed: {status}"),
-                Err(error) => eprintln!("[version] restart failed: {error}"),
+                Ok(status) => log::error!("restart failed: {status}"),
+                Err(error) => log::error!("restart failed: {error}"),
             }
         });
         Ok(())

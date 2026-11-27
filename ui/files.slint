@@ -208,7 +208,7 @@ export component FileBrowser inherits Rectangle {
         width: 48px;
         height: self.preferred-height;
         spacing: 8px;
-        if root.page > 0: Tile { icon: Icons.chevron-up; height: 48px; border-radius: 24px; clicked => { root.page -= 1; } }
-        if (root.page + 1) * root.capacity < root.entries.length: Tile { icon: Icons.chevron-down; height: 48px; border-radius: 24px; clicked => { root.page += 1; } }
+        if root.page > 0: Tile { icon: Icons.chevron-up; height: 48px; border-radius: 24px; clicked => { root.page -= 1; root.action("file-page-previous", ""); } }
+        if (root.page + 1) * root.capacity < root.entries.length: Tile { icon: Icons.chevron-down; height: 48px; border-radius: 24px; clicked => { root.page += 1; root.action("file-page-next", ""); } }
     }
 }

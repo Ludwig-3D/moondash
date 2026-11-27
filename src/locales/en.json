@@ -267,6 +267,7 @@
   "shortcut_macro_inactive": "Macro inactive",
   "shortcut_move_down": "Move down",
   "shortcut_move_up": "Move up",
+  "shortcut_sensor_hidden": "Hidden sensor",
   "shortcut_sensor": "Sensor",
   "shortcut_threshold_auto": "Threshold is automatic:",
   "shortcut_threshold_none": "No threshold needed",

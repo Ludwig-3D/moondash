@@ -1,3 +1,4 @@
+use crate::logging::Change;
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Url;
 use serde_json::{Map, Value, json};
@@ -15,6 +16,7 @@ pub struct Call {
     pub method: &'static str,
     pub params: Value,
     pub tag: String,
+    changes: Vec<Change>,
 }
 
 impl Call {
@@ -23,8 +25,68 @@ impl Call {
             method,
             params,
             tag: tag.into(),
+            changes: Vec::new(),
         }
     }
+
+    pub fn with_changes(mut self, changes: Vec<Change>) -> Self {
+        self.changes = changes;
+        self
+    }
+}
+
+struct Pending {
+    tag: String,
+    method: &'static str,
+    sent: Instant,
+    deadline: Instant,
+    changes: Vec<Change>,
+}
+
+fn log_address(url: &Url) -> String {
+    let host = url.host_str().unwrap_or("unknown");
+    match url.port_or_known_default() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    }
+}
+
+fn connection_error(error: &tokio_tungstenite::tungstenite::Error) -> String {
+    use tokio_tungstenite::tungstenite::Error;
+    match error {
+        Error::Io(error) => format!("I/O: {}", error.kind()),
+        Error::Http(response) => format!("HTTP {}", response.status().as_u16()),
+        Error::Tls(_) => "TLS handshake failed".into(),
+        Error::Protocol(_) => "WebSocket protocol error".into(),
+        _ => "WebSocket connection failed".into(),
+    }
+}
+
+fn session_error(error: &str) -> &str {
+    match error {
+        "Moonraker stopped responding" => "server stopped responding",
+        "Moonraker closed the connection" => "server closed the connection",
+        _ => "WebSocket session lost",
+    }
+}
+
+fn record_success(method: &str) -> bool {
+    method.starts_with("printer.")
+        && !matches!(method, "printer.objects.list" | "printer.objects.subscribe")
+        || method.starts_with("machine.update.") && method != "machine.update.status"
+        || matches!(
+            method,
+            "server.files.delete_file"
+                | "server.files.delete_directory"
+                | "server.files.move"
+                | "server.files.post_directory"
+                | "server.job_queue.post_job"
+                | "server.job_queue.delete_job"
+                | "server.job_queue.start"
+                | "server.job_queue.pause"
+                | "machine.reboot"
+                | "machine.shutdown"
+        )
 }
 
 pub enum Event {
@@ -81,26 +143,62 @@ pub async fn run(
     mut calls: async_mpsc::Receiver<Call>,
     output: mpsc::Sender<Event>,
 ) {
+    let mut last_failure = None::<(String, Instant)>;
     loop {
         let host = endpoint_rx.borrow_and_update().clone();
+        let mut failure = String::new();
+        let mut address = None;
         let connection = async {
-            let url = endpoint(&host)?;
+            let url = endpoint(&host).inspect_err(|_| failure = "invalid endpoint".into())?;
+            let label = log_address(&url);
+            if last_failure.is_none() {
+                log::info!("connecting to {label}");
+            }
+            address = Some(label);
             let (socket, _) = time::timeout(
                 Duration::from_secs(8),
                 tokio_tungstenite::connect_async(url.as_str()),
             )
             .await
-            .map_err(|_| "Moonraker connection timed out".to_owned())?
-            .map_err(|e| e.to_string())?;
-            session(socket, &mut calls, &output).await
+            .map_err(|_| {
+                failure = "connection timed out".into();
+                "Moonraker connection timed out".to_owned()
+            })?
+            .map_err(|error| {
+                failure = connection_error(&error);
+                error.to_string()
+            })?;
+            last_failure = None;
+            session(
+                socket,
+                &mut calls,
+                &output,
+                address.as_deref().unwrap_or("unknown"),
+            )
+            .await
+            .inspect_err(|error| failure = session_error(error).into())
         };
         let reason = tokio::select! {
             reason = connection => reason,
             changed = endpoint_rx.changed() => {
                 if changed.is_err() { return; }
+                failure.clear();
+                log::info!("connection interrupted by reconnect request or endpoint change");
+                last_failure = None;
                 Err("Moonraker address changed".to_owned())
             }
         };
+        if !failure.is_empty()
+            && last_failure.as_ref().is_none_or(|(previous, since)| {
+                previous != &failure || since.elapsed() >= Duration::from_secs(60)
+            })
+        {
+            log::warn!(
+                "disconnected from {}: {failure}; retrying",
+                address.as_deref().unwrap_or("unconfigured endpoint")
+            );
+            last_failure = Some((failure, Instant::now()));
+        }
         while calls.try_recv().is_ok() {}
         if output
             .send(Event::Disconnected(reason.err().unwrap_or_default()))
@@ -116,6 +214,7 @@ pub async fn run(
                 _ = &mut retry => break,
                 changed = endpoint_rx.changed() => {
                     if changed.is_err() { return; }
+                    last_failure = None;
                     break;
                 }
                 call = calls.recv() => {
@@ -131,6 +230,7 @@ async fn session(
     mut socket: Socket,
     calls: &mut async_mpsc::Receiver<Call>,
     output: &mpsc::Sender<Event>,
+    address: &str,
 ) -> Result<(), String> {
     let mut id = 0u64;
     let mut pending = HashMap::new();
@@ -162,10 +262,11 @@ async fn session(
                     return Err("Moonraker stopped responding".into());
                 }
                 let mut retry_subscription = false;
-                pending.retain(|_, (tag, deadline)| {
-                    if now < *deadline { return true; }
-                    if tag.starts_with('@') { retry_subscription = true; }
-                    else { let _ = output.send(Event::Reply(tag.clone(), Err("Moonraker request timed out".into()))); }
+                pending.retain(|_, request| {
+                    if now < request.deadline { return true; }
+                    log::warn!("request method={} timed out", request.method);
+                    if request.tag.starts_with('@') { retry_subscription = true; }
+                    else { let _ = output.send(Event::Reply(request.tag.clone(), Err("Moonraker request timed out".into()))); }
                     false
                 });
                 let awaiting_klippy = connected && matches!(
@@ -173,7 +274,7 @@ async fn session(
                     Some("startup" | "disconnected")
                 );
                 if (retry_subscription || awaiting_klippy)
-                    && !pending.values().any(|(tag, _)| tag == "@server")
+                    && !pending.values().any(|request| request.tag == "@server")
                 {
                     send(&mut socket, &mut id, &mut pending, Call::new("server.info", json!({}), "@server")).await?;
                 }
@@ -187,17 +288,34 @@ async fn session(
                     continue;
                 };
                 let Ok(value) = serde_json::from_str::<Value>(&text) else { continue; };
-                if let Some((tag, _)) = value["id"].as_u64().and_then(|id| pending.remove(&id)) {
+                if let Some(request) = value["id"].as_u64().and_then(|id| pending.remove(&id)) {
+                    let Pending { tag, method, sent, changes, .. } = request;
+                    let elapsed = sent.elapsed().as_millis();
                     let result = if let Some(error) = value["error"]["message"].as_str() {
                         Err(error.to_owned())
                     } else {
                         Ok(value["result"].clone())
                     };
+                    if result.is_err() {
+                        let code = value["error"]["code"].as_i64();
+                        log::warn!("request method={method} failed code={code:?} elapsed_ms={elapsed}");
+                        for change in changes {
+                            log::warn!(target: "moondash::settings", "Could not confirm {} change", change.label);
+                        }
+                    } else {
+                        if record_success(method) {
+                            log::info!("request method={method} completed elapsed_ms={elapsed}");
+                        }
+                        for change in changes {
+                            change.record();
+                        }
+                    }
                     match tag.as_str() {
                         "@server" => {
                             let result = result?;
                             if !connected {
                                 connected = true;
+                                log::info!("connected to {address}");
                                 let _ = output.send(Event::Connected);
                             }
                             let klippy_state = result["klippy_state"].as_str().unwrap_or("disconnected");
@@ -253,7 +371,7 @@ async fn session(
 async fn send(
     socket: &mut Socket,
     id: &mut u64,
-    pending: &mut HashMap<u64, (String, Instant)>,
+    pending: &mut HashMap<u64, Pending>,
     call: Call,
 ) -> Result<(), String> {
     *id += 1;
@@ -267,9 +385,16 @@ async fn send(
         "machine.update.upgrade" | "machine.update.full" | "printer.gcode.script" => 900,
         _ => 20,
     };
+    let sent = Instant::now();
     pending.insert(
         *id,
-        (call.tag, Instant::now() + Duration::from_secs(timeout)),
+        Pending {
+            tag: call.tag,
+            method: call.method,
+            sent,
+            deadline: sent + Duration::from_secs(timeout),
+            changes: call.changes,
+        },
     );
     Ok(())
 }
@@ -305,6 +430,12 @@ mod tests {
                 .as_str(),
             "https://printer.local/moonraker/server/files/gcodes/part%20%231.png"
         );
+    }
+
+    #[test]
+    fn diagnostic_address_omits_url_credentials_path_and_query() {
+        let url = endpoint("https://operator:secret@printer.local/proxy?token=secret").unwrap();
+        assert_eq!(log_address(&url), "wss://printer.local:443");
     }
 
     #[tokio::test]

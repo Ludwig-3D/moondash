@@ -22,7 +22,7 @@ pub fn turn_on_displays() -> Result<(), String> {
 }
 
 fn set_outputs_power(mode: Mode) -> Result<(), String> {
-    eprintln!("[wayland power] request: {mode:?}");
+    log::info!("request: {mode:?}");
 
     let conn = Connection::connect_to_env()
         .map_err(|e| format!("[wayland power] failed to connect to Wayland: {e}"))?;
@@ -55,7 +55,7 @@ fn set_outputs_power(mode: Mode) -> Result<(), String> {
         .roundtrip(&mut state)
         .map_err(|e| format!("Wayland power roundtrip failed: {e}"))?;
 
-    eprintln!("[wayland power] request finished: {mode:?}");
+    log::info!("request finished: {mode:?}");
 
     Ok(())
 }
@@ -105,6 +105,6 @@ impl Dispatch<ZwlrOutputPowerV1, ()> for WaylandPowerState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
-        eprintln!("[wayland power] output power event: {event:?}");
+        log::debug!("output power event: {event:?}");
     }
 }

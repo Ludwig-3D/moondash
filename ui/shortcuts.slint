@@ -136,6 +136,7 @@ export component ShortcutEditor inherits Rectangle {
     in property <string> inactive;
     in property <string> active;
     in property <string> sensor;
+    in property <bool> sensor-hidden;
     in property <string> error;
     in property <[ShortcutOption]> icons;
     in property <[ShortcutOption]> macros;
@@ -218,7 +219,7 @@ export component ShortcutEditor inherits Rectangle {
                     }
                     ShortcutField {
                         caption: I18n.text("shortcut_sensor");
-                        value: root.sensor;
+                        value: root.sensor-hidden ? I18n.text("shortcut_sensor_hidden") : root.sensor;
                         dropdown: true;
                         activate => { root.open-picker("sensor", self.caption); }
                     }

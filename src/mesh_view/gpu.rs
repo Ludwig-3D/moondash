@@ -84,10 +84,10 @@ impl GpuRenderer {
                     ui.set_tool_mesh_3d(image);
                     ui.set_tool_mesh_3d_available(true);
                 }
-                eprintln!("[mesh] GPU mesh rendering is available on {device_label}");
+                log::info!("GPU mesh rendering is available on {device_label}");
             }
             Err(error) => {
-                eprintln!("[mesh] GPU mesh rendering unavailable: {error}");
+                log::warn!("GPU mesh rendering unavailable: {error}");
                 if let Some(ui) = ui.upgrade() {
                     ui.set_tool_mesh_3d_available(false);
                     ui.set_tool_mesh_3d_open(false);
@@ -123,8 +123,8 @@ impl GpuRenderer {
                     match backend {
                         Backend::OpenGl(renderer) => {
                             renderer.finish();
-                            eprintln!(
-                                "[mesh] first GPU mesh draw completed ({} surface vertices, {} grid/axis vertices) on {}",
+                            log::info!(
+                                "first GPU mesh draw completed ({} surface vertices, {} grid/axis vertices) on {}",
                                 vertex_counts.0,
                                 vertex_counts.1,
                                 renderer.device_label()
@@ -134,8 +134,7 @@ impl GpuRenderer {
                             let device_label = renderer.device_label.clone();
                             let vertex_counts = vertex_counts;
                             renderer.queue.on_submitted_work_done(move || {
-                                eprintln!(
-                                    "[mesh] first GPU mesh draw completed ({} surface vertices, {} grid/axis vertices) on {device_label}",
+                                log::info!("first GPU mesh draw completed ({} surface vertices, {} grid/axis vertices) on {device_label}",
                                     vertex_counts.0,
                                     vertex_counts.1
                                 );
@@ -146,7 +145,7 @@ impl GpuRenderer {
                 }
             }
             Err(error) => {
-                eprintln!("[mesh] GPU mesh rendering failed: {error}");
+                log::warn!("GPU mesh rendering failed: {error}");
                 self.teardown(ui);
             }
         }

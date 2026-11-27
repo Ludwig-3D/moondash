@@ -7,10 +7,13 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
+chrono = "0.4"
 evdev = "0.13"
+flate2 = "1"
 futures-util = { version = "0.3", features = ["sink"] }
 get_if_addrs = "0.5"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+log = "0.4"
 nmrs = "2.2"
 qrcode = { version = "0.14", default-features = false }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
@@ -22,6 +25,7 @@ slint = { version = "=1.19.0", default-features = false, features = [
     "renderer-femtovg", "renderer-femtovg-wgpu", "renderer-software", "unstable-wgpu-30",
     "software-renderer-path",
 ] }
+tar = "0.4"
 tempfile = "3"
 glow = "0.18"
 pollster = "0.4"

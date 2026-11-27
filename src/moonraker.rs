@@ -262,12 +262,11 @@ async fn send(
         .send(Message::Text(text.to_string().into()))
         .await
         .map_err(|e| e.to_string())?;
-    let timeout =
-        if call.method.starts_with("machine.update.") || call.method == "printer.gcode.script" {
-            900
-        } else {
-            20
-        };
+    let timeout = match call.method {
+        "machine.update.refresh" => 60,
+        "machine.update.upgrade" | "machine.update.full" | "printer.gcode.script" => 900,
+        _ => 20,
+    };
     pending.insert(
         *id,
         (call.tag, Instant::now() + Duration::from_secs(timeout)),

@@ -2,13 +2,13 @@ use crate::icons;
 use crate::print_files::{self, array};
 use crate::{
     ColorSwatch, FilamentSensor, HistoryStatus, I18n, Lane, McuResource, Moondash, Notification,
-    Palette, PrintTool, ResourceMetric, Row, ShortcutOption, WifiEntry, config, input_idle, locale,
-    mesh_view,
+    Palette, PrintTool, ResourceMetric, Row, ShortcutOption, UpdateDetails, UpdateService,
+    WifiEntry, config, input_idle, locale, mesh_view,
     moonraker::{self, Call, Event},
-    network, resources, shortcuts, theme, tools, version, wayland_power, webcam,
+    network, resources, shortcuts, theme, tools, updates, version, wayland_power, webcam,
 };
 use serde_json::{Map, Value, json};
-use slint::{ComponentHandle, Image, ModelRc, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, Image, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -47,6 +47,13 @@ enum Background {
     Reply(String, Result<Value, String>),
     Image(String, Result<Vec<u8>, String>),
     Sleeping(bool),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UpdateRequest {
+    Status,
+    Refresh,
+    Install,
 }
 
 struct State {
@@ -89,6 +96,10 @@ struct State {
     queue: Value,
     network: Value,
     updates: Value,
+    update_request: Option<UpdateRequest>,
+    update_log: Rc<VecModel<SharedString>>,
+    update_failed: bool,
+    update_restart_available: bool,
     host: Value,
     resource_history_totals: Value,
     resource_history_jobs: Vec<Value>,
@@ -177,6 +188,10 @@ pub fn start(
         queue: Value::Null,
         network: Value::Null,
         updates: Value::Null,
+        update_request: None,
+        update_log: Rc::new(VecModel::default()),
+        update_failed: false,
+        update_restart_available: false,
         host: Value::Null,
         resource_history_totals: Value::Null,
         resource_history_jobs: Vec::new(),
@@ -592,12 +607,9 @@ impl State {
                 self.call(ui, "server.job_queue.status", json!({}), "queue")
             }
             ("settings", "network") => self.network_action(ui, "network", "", ""),
-            ("settings", "updates") if self.online => self.call(
-                ui,
-                "machine.update.status",
-                json!({"refresh": false}),
-                "updates",
-            ),
+            ("settings", "updates") if self.online => {
+                self.request_updates(ui, UpdateRequest::Status)
+            }
             ("settings", "host") if self.online => {
                 self.call(ui, "machine.system_info", json!({}), "host-info");
                 self.call(ui, "machine.proc_stats", json!({}), "host-stats");
@@ -890,6 +902,14 @@ impl State {
                     self.status.clear();
                     self.moonraker_warnings = Value::Null;
                     self.updates = Value::Null;
+                    if self.update_request == Some(UpdateRequest::Install) {
+                        ui.set_update_progress_error(tr(ui, "moonraker_disconnected").into());
+                    }
+                    self.update_request = None;
+                    self.update_restart_available = false;
+                    ui.set_update_restart(false);
+                    ui.set_update_error("".into());
+                    self.render_updates(ui);
                     self.host = Value::Null;
                     self.resource_history_totals = Value::Null;
                     self.resource_history_jobs.clear();
@@ -946,15 +966,13 @@ impl State {
                         self.call(ui, "server.job_queue.status", json!({}), "queue");
                     }
                 }
-                "notify_update_response" => {
-                    if let Some(message) = value["message"].as_str() {
-                        ui.set_message(message.into());
-                    }
-                    if value["complete"].as_bool() == Some(true) {
-                        self.request_update_notifications();
-                    }
+                "notify_update_response" => self.update_event(ui, &value),
+                "notify_update_refreshed"
+                    if value["version_info"].is_object()
+                        && self.update_request != Some(UpdateRequest::Install) =>
+                {
+                    self.set_updates(ui, value);
                 }
-                "notify_update_refreshed" => self.set_updates(ui, value),
                 "notify_gcode_response"
                     if value.as_str().is_some_and(|text| text.starts_with("!!")) =>
                 {
@@ -1003,6 +1021,10 @@ impl State {
         );
         ui.set_printing(matches!(state, "printing" | "resuming" | "pausing"));
         ui.set_paused(state == "paused");
+        ui.set_update_print_blocked(matches!(
+            state,
+            "printing" | "paused" | "pausing" | "resuming" | "cancelling"
+        ));
         ui.set_finished(matches!(state, "complete" | "cancelled"));
         ui.set_can_skip(!array(&self.object("exclude_object")["objects"]).is_empty());
         ui.set_has_afc(self.status.contains_key("AFC"));
@@ -1103,8 +1125,231 @@ impl State {
     fn set_updates(&mut self, ui: &Moondash, updates: Value) {
         self.updates = updates;
         self.update_notifications(ui);
-        if self.page == "settings" && self.tab == "updates" {
-            self.render_rows(ui);
+        self.render_updates(ui);
+    }
+
+    fn update_services(&self) -> impl Iterator<Item = (&str, &Value)> {
+        self.updates["version_info"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(key, service)| (key.as_str(), service))
+    }
+
+    fn render_updates(&self, ui: &Moondash) {
+        let mut services: Vec<_> = self
+            .update_services()
+            .map(|(key, service)| {
+                let available = updates::available(service);
+                let system = updates::is_system(service);
+                UpdateService {
+                    key: key.into(),
+                    name: updates::name(key, service).into(),
+                    current: if system {
+                        tr(ui, "update_package_count")
+                            .replace(
+                                "{count}",
+                                &service["package_count"]
+                                    .as_u64()
+                                    .unwrap_or_default()
+                                    .to_string(),
+                            )
+                            .into()
+                    } else {
+                        updates::current_version(service).into()
+                    },
+                    remote: if available && !system {
+                        updates::remote_version(service).into()
+                    } else {
+                        "".into()
+                    },
+                    available,
+                    dirty: updates::dirty(service),
+                    valid: service["is_valid"].as_bool() != Some(false),
+                    has_info: updates::packages(service).next().is_some()
+                        || updates::warnings(service).next().is_some()
+                        || updates::text(service, "last_error").is_some(),
+                }
+            })
+            .collect();
+        services.sort_by_cached_key(|service| service.name.as_str().to_lowercase());
+        let count = services.iter().filter(|service| service.available).count();
+        let title = match count {
+            0 => tr(ui, "update_no_available").to_owned(),
+            1 => tr(ui, "1_update_available").to_owned(),
+            count => tr(ui, "count_updates_available").replace("{count}", &count.to_string()),
+        };
+        set_model(&ui.get_update_services(), &services, |model| {
+            ui.set_update_services(model)
+        });
+        ui.set_update_title(title.into());
+        ui.set_update_count(count as i32);
+        ui.set_update_can_all(
+            self.update_services()
+                .any(|(_, service)| updates::installable(service)),
+        );
+        ui.set_update_loading(self.update_request == Some(UpdateRequest::Status));
+        ui.set_update_refreshing(self.update_request == Some(UpdateRequest::Refresh));
+        ui.set_update_busy(
+            self.update_request.is_some() || self.updates["busy"].as_bool() == Some(true),
+        );
+        if self.update_request != Some(UpdateRequest::Install) {
+            ui.set_update_installing("".into());
+        }
+    }
+
+    fn request_updates(&mut self, ui: &Moondash, request: UpdateRequest) {
+        if !self.online || self.update_request.is_some() {
+            return;
+        }
+        let (method, tag) = match request {
+            UpdateRequest::Status => ("machine.update.status", "updates"),
+            UpdateRequest::Refresh if !ui.get_update_busy() => {
+                ("machine.update.refresh", "updates-refreshed")
+            }
+            _ => return,
+        };
+        if self.try_call(ui, method, json!({}), tag) {
+            ui.set_update_error("".into());
+            self.update_request = Some(request);
+            self.render_updates(ui);
+        }
+    }
+
+    fn show_update_info(&self, ui: &Moondash, key: &str) {
+        let Some(service) = self.updates["version_info"].get(key) else {
+            return;
+        };
+        let mut seen_warnings = HashSet::new();
+        let error = updates::text(service, "last_error").unwrap_or_default();
+        let warnings = updates::warnings(service)
+            .filter(|warning| *warning != error && seen_warnings.insert(*warning))
+            .map(Into::into)
+            .collect::<Vec<SharedString>>();
+        let packages = updates::packages(service)
+            .map(Into::into)
+            .collect::<Vec<SharedString>>();
+        let system = updates::is_system(service);
+        let available = updates::available(service);
+        ui.set_update_details(UpdateDetails {
+            name: updates::name(key, service).into(),
+            system,
+            available,
+            dirty: updates::dirty(service),
+            valid: service["is_valid"].as_bool() != Some(false),
+            current: updates::current_version(service).into(),
+            remote: if available {
+                updates::remote_version(service).into()
+            } else {
+                "".into()
+            },
+            warnings: ModelRc::new(VecModel::from(warnings)),
+            packages: ModelRc::new(VecModel::from(packages)),
+            error: error.into(),
+        });
+        ui.set_update_dialog("info".into());
+    }
+
+    fn can_install_update(&self, ui: &Moondash, all: bool, key: &str) -> bool {
+        self.online
+            && !ui.get_update_busy()
+            && !ui.get_update_print_blocked()
+            && if all {
+                self.update_services()
+                    .any(|(_, service)| updates::installable(service))
+            } else {
+                self.updates["version_info"]
+                    .get(key)
+                    .is_some_and(updates::installable)
+            }
+    }
+
+    fn install_update(&mut self, ui: &Moondash, all: bool, key: &str) {
+        if !self.can_install_update(ui, all, key) {
+            return;
+        }
+        let service = &self.updates["version_info"][key];
+        let (method, params) = if all {
+            ("machine.update.full", json!({}))
+        } else {
+            (
+                "machine.update.upgrade",
+                json!({"name": updates::name(key, service)}),
+            )
+        };
+        if !self.try_call(ui, method, params, "update-finished") {
+            return;
+        }
+        self.update_request = Some(UpdateRequest::Install);
+        self.update_failed = false;
+        self.update_restart_available = if all {
+            self.update_services()
+                .any(|(_, service)| updates::includes_moondash(service))
+        } else {
+            updates::includes_moondash(service)
+        };
+        self.update_log = Rc::new(VecModel::default());
+        ui.set_update_installing(if all { "*".into() } else { key.into() });
+        ui.set_update_error("".into());
+        ui.set_update_progress_error("".into());
+        ui.set_update_restart(false);
+        ui.set_update_application("".into());
+        ui.set_update_dialog_messages(self.update_log.clone().into());
+        ui.set_update_dialog("progress".into());
+        self.render_updates(ui);
+    }
+
+    fn update_event(&mut self, ui: &Moondash, event: &Value) {
+        if self.update_request == Some(UpdateRequest::Install) {
+            if let Some(application) = updates::text(event, "application") {
+                ui.set_update_application(application.into());
+            }
+            if let Some(message) = updates::text(event, "message") {
+                let normalized = message.trim_start().to_ascii_lowercase();
+                self.update_failed |=
+                    normalized.starts_with("error ") || normalized.starts_with("error:");
+                if self.update_log.row_count() == 250 {
+                    self.update_log.remove(0);
+                }
+                self.update_log.push(message.into());
+            }
+        } else if event["complete"].as_bool() == Some(true) {
+            self.request_update_notifications();
+        }
+    }
+
+    fn update_reply(
+        &mut self,
+        ui: &Moondash,
+        request: UpdateRequest,
+        result: Result<Value, String>,
+    ) {
+        if self.update_request != Some(request) {
+            return;
+        }
+        self.update_request = None;
+        if request == UpdateRequest::Install {
+            let error = result.err().or_else(|| {
+                self.update_failed
+                    .then(|| tr(ui, "update_failed").to_owned())
+            });
+            if let Some(error) = error {
+                ui.set_update_progress_error(error.into());
+            } else {
+                self.update_log.push(tr(ui, "update_completed").into());
+                ui.set_update_restart(self.update_restart_available);
+            }
+            self.update_restart_available = false;
+            self.render_updates(ui);
+            self.request_updates(ui, UpdateRequest::Status);
+        } else {
+            match result {
+                Ok(updates) => self.set_updates(ui, updates),
+                Err(error) => {
+                    ui.set_update_error(error.into());
+                    self.render_updates(ui);
+                }
+            }
         }
     }
 
@@ -1216,7 +1461,7 @@ impl State {
                 .as_object()
                 .into_iter()
                 .flat_map(|components| components.values())
-                .filter(|component| update_available(component))
+                .filter(|component| updates::available(component) && !updates::dirty(component))
                 .count();
             if count > 0 {
                 push(
@@ -1619,7 +1864,6 @@ fn set_model<T: Clone + PartialEq + 'static>(
     next: &[T],
     replace: impl FnOnce(ModelRc<T>),
 ) {
-    use slint::Model;
     if let Some(model) = previous.as_any().downcast_ref::<VecModel<T>>()
         && model.row_count() == next.len()
     {
@@ -1687,32 +1931,6 @@ fn afc_notification(value: &Value) -> Option<&str> {
     .filter_map(|key| object.get(key)?.as_str().map(str::trim))
     .find(|message| !message.is_empty())
     .or_else(|| object.values().find_map(afc_notification))
-}
-
-fn update_available(component: &Value) -> bool {
-    let version = |field| component[field].as_str().filter(|value| !value.is_empty());
-    let dirty = component["is_dirty"].as_bool() == Some(true)
-        || component["dirty"].as_bool() == Some(true)
-        || ["version", "remote_version", "full_version_string"]
-            .into_iter()
-            .filter_map(version)
-            .any(|value| value.to_ascii_lowercase().contains("dirty"));
-    if dirty {
-        return false;
-    }
-    if component["configured_type"].as_str() == Some("system") {
-        return component["package_count"].as_u64().unwrap_or_default() > 0;
-    }
-    component["commits_behind_count"]
-        .as_u64()
-        .unwrap_or_default()
-        > 0
-        || version("current_hash")
-            .zip(version("remote_hash"))
-            .is_some_and(|(current, remote)| current != remote)
-        || version("version")
-            .zip(version("remote_version"))
-            .is_some_and(|(current, remote)| current != remote)
 }
 
 fn format_speed_percent(percent: i32) -> String {
@@ -2474,44 +2692,7 @@ impl State {
             ("settings", "host") => {
                 self.update_resources(ui);
             }
-            ("settings", "updates") => {
-                rows.push(alternate(
-                    row(
-                        tr(ui, "software_updates"),
-                        "",
-                        "update-refresh",
-                        "",
-                        tr(ui, "check"),
-                    ),
-                    "update-all",
-                    tr(ui, "update_all"),
-                ));
-                if let Some(components) = self.updates["version_info"].as_object() {
-                    for (name, data) in components {
-                        let installed = data["version"].as_str().unwrap_or("—");
-                        let available = data["remote_version"].as_str().unwrap_or(installed);
-                        let detail = if installed == available {
-                            installed.to_owned()
-                        } else {
-                            format!("{installed} → {available}")
-                        };
-                        let updatable = installed != available
-                            || data["package_count"].as_u64().unwrap_or_default() > 0;
-                        rows.push(if updatable {
-                            row(name.as_str(), detail, "update", name, tr(ui, "update"))
-                        } else {
-                            info(name.as_str(), detail)
-                        });
-                    }
-                }
-                rows.push(row(
-                    tr(ui, "moondash_service"),
-                    tr(ui, "after_a_moondash_package_update"),
-                    "restart-service",
-                    "",
-                    tr(ui, "restart"),
-                ));
-            }
+            ("settings", "updates") => self.render_updates(ui),
             ("debug", _) => ui.set_diagnostics(
                 serde_json::to_string_pretty(&self.status)
                     .unwrap_or_default()
@@ -3706,23 +3887,28 @@ impl State {
                 };
                 self.dialog(ui, title, argument, "confirm", action, argument);
             }
-            "update-refresh" => self.call(
-                ui,
-                "machine.update.status",
-                json!({"refresh": true}),
-                "updates",
-            ),
-            "update-all" | "update" if ui.get_printing() || ui.get_paused() => {
-                ui.set_message(tr(ui, "finish_the_print_before_installing_updates").into());
+            "update-refresh" => self.request_updates(ui, UpdateRequest::Refresh),
+            "update-info" => self.show_update_info(ui, argument),
+            "update-dismiss-error" => ui.set_update_error("".into()),
+            "update-close" if self.update_request != Some(UpdateRequest::Install) => {
+                ui.set_update_dialog("".into());
             }
-            "update-all" | "update" => self.dialog(
-                ui,
-                tr(ui, "install_updates_question"),
-                argument,
-                "confirm",
-                action,
-                argument,
-            ),
+            "update-all" | "update"
+                if self.can_install_update(ui, action == "update-all", argument) =>
+            {
+                let detail = self.updates["version_info"]
+                    .get(argument)
+                    .map(|service| updates::name(argument, service).to_owned())
+                    .unwrap_or_default();
+                self.dialog(
+                    ui,
+                    tr(ui, "install_updates_question"),
+                    &detail,
+                    "confirm",
+                    action,
+                    argument,
+                );
+            }
             "wifi-on" | "wifi-off" | "wifi-scan" | "wifi-forget" | "wired-on" | "wired-off" => {
                 self.network_action(ui, action, argument, "");
             }
@@ -3938,13 +4124,7 @@ impl State {
                     ui.set_message(error.into());
                 }
             }
-            "update" => self.call(
-                ui,
-                "machine.update.upgrade",
-                json!({"name": argument}),
-                "update-finished",
-            ),
-            "update-all" => self.call(ui, "machine.update.full", json!({}), "update-finished"),
+            "update" | "update-all" => self.install_update(ui, action == "update-all", &argument),
             _ => {}
         }
         ui.set_dialog_mode("".into());
@@ -4036,6 +4216,16 @@ impl State {
                 return;
             }
             _ => {}
+        }
+        let update_request = match tag {
+            "updates" => Some(UpdateRequest::Status),
+            "updates-refreshed" => Some(UpdateRequest::Refresh),
+            "update-finished" => Some(UpdateRequest::Install),
+            _ => None,
+        };
+        if let Some(request) = update_request {
+            self.update_reply(ui, request, reply);
+            return;
         }
         if tag == "printer-setting" {
             ui.set_printer_setting_busy(false);
@@ -4293,7 +4483,6 @@ impl State {
                 self.queue = result;
                 self.update_jobs(ui);
             }
-            "updates" => self.set_updates(ui, result),
             "host-info" => {
                 if self.host.is_null() {
                     self.host = json!({});
@@ -4331,7 +4520,6 @@ impl State {
                     Err(()) => self.fail_resource_history(ui),
                 }
             }
-            "update-finished" => self.refresh(ui),
             "webcams" => {
                 self.webcams_pending = false;
                 if self.page == "settings" && self.tab == "tools" {

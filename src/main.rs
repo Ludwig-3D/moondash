@@ -12,6 +12,7 @@ mod resources;
 mod shortcuts;
 mod theme;
 mod tools;
+mod updates;
 mod version;
 mod wayland_power;
 mod webcam;

@@ -1,0 +1,480 @@
+import { ScrollView } from "std-widgets.slint";
+import { I18n } from "i18n.slint";
+import { Icons } from "icons.slint";
+import { BusyCircle, Label, Mdi, Palette, Tile } from "widgets.slint";
+
+export struct UpdateService {
+    key: string,
+    name: string,
+    current: string,
+    remote: string,
+    available: bool,
+    dirty: bool,
+    valid: bool,
+    has-info: bool,
+}
+
+export struct UpdateDetails {
+    name: string,
+    system: bool,
+    available: bool,
+    dirty: bool,
+    valid: bool,
+    current: string,
+    remote: string,
+    warnings: [string],
+    packages: [string],
+    error: string,
+}
+
+component UpdateIconButton inherits Tile {
+    in property <string> description;
+    width: 44px;
+    height: 44px;
+    fill: transparent;
+    accessible-role: button;
+    accessible-label: root.description;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+}
+
+export component UpdatesPanel inherits Rectangle {
+    in property <[UpdateService]> services;
+    in property <int> count;
+    in property <bool> can-update-all;
+    in property <string> title;
+    in property <bool> loading;
+    in property <bool> refreshing;
+    in property <bool> busy;
+    in property <bool> print-blocked;
+    in property <string> installing;
+    in property <string> error;
+    in property <bool> online;
+    callback action(string, string);
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 10px;
+
+        Rectangle {
+            height: 48px;
+            border-radius: 6px;
+            background: Palette.surface;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 4px;
+                spacing: 8px;
+                Label {
+                    horizontal-stretch: 1;
+                    font-size: 18px;
+                    text: (root.loading && root.services.length == 0) || !root.online
+                        ? I18n.text("software_updates") : root.title;
+                }
+                if root.count > 0: Tile {
+                    width: I18n.german ? 192px : 138px;
+                    height: 36px;
+                    cross-axis-self-alignment: center;
+                    icon: root.installing == "*" ? "" : Icons.update;
+                    label: root.installing == "*" ? "" : I18n.text("update_all").to-uppercase();
+                    fill: Palette.accent.transparentize(85%);
+                    ink: Palette.accent;
+                    enabled: root.can-update-all && root.online && !root.busy && !root.print-blocked;
+                    clicked => { root.action("update-all", ""); }
+                    if root.installing == "*": BusyCircle { width: 23px; height: 23px; }
+                }
+                UpdateIconButton {
+                    cross-axis-self-alignment: center;
+                    icon: root.refreshing ? "" : Icons.refresh;
+                    description: I18n.text("update_check");
+                    enabled: root.online && !root.busy;
+                    clicked => { root.action("update-refresh", ""); }
+                    if root.refreshing: BusyCircle { width: 23px; height: 23px; }
+                }
+            }
+        }
+
+        if root.error != "" || !root.online: Rectangle {
+            min-height: 42px;
+            border-radius: 6px;
+            background: Palette.error.transparentize(87%);
+            HorizontalLayout {
+                padding-left: 12px;
+                spacing: 6px;
+                Mdi { width: 24px; text: Icons.alert-circle-outline; color: Palette.error; }
+                Label {
+                    horizontal-stretch: 1;
+                    text: root.error != "" ? root.error : I18n.text("moonraker_is_disconnected");
+                    wrap: word-wrap;
+                }
+                if root.error != "": UpdateIconButton {
+                    icon: Icons.close;
+                    description: I18n.text("close");
+                    clicked => { root.action("update-dismiss-error", ""); }
+                }
+            }
+        }
+
+        if root.loading && root.services.length == 0: Rectangle {
+            vertical-stretch: 1;
+            BusyCircle { width: 40px; height: 40px; }
+        }
+
+        if !root.loading || root.services.length > 0: ScrollView {
+            vertical-stretch: 1;
+            horizontal-scrollbar-policy: always-off;
+            mouse-drag-pan-enabled: true;
+            VerticalLayout {
+                spacing: 10px;
+                alignment: start;
+                for service in root.services: Rectangle {
+                    height: 62px;
+                    background: Palette.surface;
+                    border-radius: 8px;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 3px;
+                            Label { text: service.name; font-weight: 600; font-size: 16px; }
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 5px;
+                                Label { text: service.current; color: Palette.muted; font-size: 13px; }
+                                if service.remote != "": Mdi {
+                                    text: Icons.arrow-right; color: Palette.muted; width: 15px; font-size: 14px;
+                                }
+                                if service.remote != "": Label {
+                                    text: service.remote; color: Palette.muted; font-size: 13px;
+                                }
+                            }
+                        }
+                        Rectangle {
+                            cross-axis-self-alignment: center;
+                            width: service.has-info ? 177px : 132px;
+                            height: 44px;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: Palette.divider;
+                            clip: true;
+                            HorizontalLayout {
+                                padding: 1px;
+                                if service.has-info: UpdateIconButton {
+                                    width: 44px;
+                                    height: 42px;
+                                    icon: Icons.information-outline;
+                                    description: I18n.text("update_info");
+                                    clicked => { root.action("update-info", service.key); }
+                                }
+                                if service.has-info: Rectangle { width: 1px; background: Palette.divider; }
+                                status-button := Rectangle {
+                                    horizontal-stretch: 1;
+                                    background: tone.transparentize(button-touch.pressed ? 73% : 87%);
+                                    private property <color> tone: service.dirty ? Palette.warning
+                                        : service.available ? Palette.accent : Palette.success;
+                                    private property <color> status-ink: service.available && !service.dirty && !button-touch.enabled
+                                        ? tone.transparentize(45%) : tone;
+                                    private property <string> status: service.dirty ? I18n.text("update_dirty")
+                                        : service.available ? I18n.text("update") : I18n.text("update_up_to_date");
+                                    accessible-role: button;
+                                    accessible-label: self.status;
+                                    accessible-action-default => {
+                                        if button-touch.enabled { root.action("update", service.key); }
+                                    }
+                                    if root.installing == service.key: BusyCircle { width: 23px; height: 23px; }
+                                    if root.installing != service.key: HorizontalLayout {
+                                        alignment: center;
+                                        spacing: 6px;
+                                        Mdi {
+                                            width: 19px; font-size: 18px;
+                                            text: service.dirty ? Icons.alert-outline : service.available ? Icons.update : Icons.check-circle-outline;
+                                            color: status-button.status-ink;
+                                        }
+                                        Label { text: status-button.status.to-uppercase(); color: status-button.status-ink; font-size: 12px; }
+                                    }
+                                    button-touch := TouchArea {
+                                        enabled: service.available && !service.dirty && service.valid
+                                            && root.online && !root.busy && !root.print-blocked;
+                                        mouse-cursor: pointer;
+                                        clicked => { root.action("update", service.key); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component UpdateVersion inherits VerticalLayout {
+    in property <string> caption;
+    in property <string> version;
+    in property <bool> highlighted;
+    horizontal-stretch: 1;
+    alignment: center;
+    spacing: 4px;
+    Label { text: root.caption; color: Palette.muted; font-size: 12px; }
+    Label {
+        text: root.version;
+        color: root.highlighted ? Palette.accent : Palette.ink;
+        font-size: 17px;
+        font-weight: 600;
+        wrap: char-wrap;
+    }
+}
+
+component UpdateDetailHeading inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> icon;
+    in property <color> tone: Palette.ink;
+    height: 28px;
+    spacing: 7px;
+    Mdi { text: root.icon; width: 22px; font-size: 18px; color: root.tone; }
+    Label { text: root.title; font-weight: 600; color: root.tone; horizontal-stretch: 1; }
+}
+
+component UpdateDetailRow inherits VerticalLayout {
+    in property <string> value;
+    in property <bool> divider;
+    padding-left: 12px;
+    padding-right: 12px;
+    if root.divider: Rectangle { height: 1px; background: Palette.divider; }
+    VerticalLayout {
+        padding-top: 9px;
+        padding-bottom: 9px;
+        Label { text: root.value; wrap: word-wrap; font-size: 14px; }
+    }
+}
+
+export component UpdateDetailsDialog inherits Rectangle {
+    in property <UpdateDetails> details;
+    callback close();
+    private property <color> status-tone: !root.details.valid ? Palette.error
+        : root.details.dirty ? Palette.warning : root.details.available ? Palette.accent : Palette.success;
+    private property <string> status-text: !root.details.valid ? I18n.text("update_unavailable")
+        : root.details.dirty ? I18n.text("update_dirty")
+        : root.details.available ? I18n.text("update_available_badge") : I18n.text("update_up_to_date");
+    private property <string> status-icon: !root.details.valid ? Icons.alert-circle-outline
+        : root.details.dirty ? Icons.alert-outline
+        : root.details.available ? Icons.update : Icons.check-circle-outline;
+
+    background: #0000007a;
+    TouchArea { clicked => { root.close(); } }
+
+    card := Rectangle {
+        width: min(root.width - 32px, 640px);
+        height: min(root.height - 32px, 135px + body.preferred-height);
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Palette.divider;
+        background: Palette.surface;
+        clip: true;
+        TouchArea {}
+
+        HorizontalLayout {
+            x: 18px; y: 14px; width: card.width - 36px; height: 46px;
+            spacing: 11px;
+            Label {
+                text: root.details.name;
+                font-size: 23px;
+                font-weight: 600;
+                horizontal-stretch: 1;
+                accessible-role: text;
+            }
+            if card.width >= 370px: Rectangle {
+                height: 30px;
+                width: status-content.preferred-width;
+                cross-axis-self-alignment: center;
+                border-radius: 15px;
+                background: root.status-tone.transparentize(86%);
+                status-content := HorizontalLayout {
+                    padding-left: 9px;
+                    padding-right: 11px;
+                    spacing: 5px;
+                    Mdi { text: root.status-icon; color: root.status-tone; width: 18px; font-size: 16px; }
+                    Label { text: root.status-text; color: root.status-tone; font-size: 13px; overflow: clip; }
+                }
+            }
+        }
+
+        ScrollView {
+            x: 18px; y: 72px;
+            width: card.width - 36px;
+            height: card.height - 135px;
+            content-height: body.preferred-height;
+            horizontal-scrollbar-policy: always-off;
+            mouse-drag-pan-enabled: true;
+            body := VerticalLayout {
+                width: card.width - 44px;
+                height: self.preferred-height;
+                spacing: 13px;
+                if card.width < 370px: UpdateDetailHeading {
+                    title: root.status-text;
+                    icon: root.status-icon;
+                    tone: root.status-tone;
+                }
+                if !root.details.system: Rectangle {
+                    border-radius: 7px;
+                    background: Palette.raised;
+                    HorizontalLayout {
+                        padding: 12px;
+                        spacing: 10px;
+                        UpdateVersion { caption: I18n.text("update_installed"); version: root.details.current; }
+                        if root.details.remote != "": Mdi {
+                            text: Icons.arrow-right;
+                            color: Palette.muted;
+                            width: 24px;
+                            font-size: 18px;
+                        }
+                        if root.details.remote != "": UpdateVersion {
+                            caption: I18n.text("update_available_version");
+                            version: root.details.remote;
+                            highlighted: true;
+                        }
+                    }
+                }
+                if root.details.error != "": VerticalLayout {
+                    spacing: 5px;
+                    UpdateDetailHeading { title: I18n.text("update_last_error"); icon: Icons.alert-circle-outline; tone: Palette.error; }
+                    Rectangle {
+                        background: Palette.error.transparentize(88%);
+                        border-radius: 7px;
+                        UpdateDetailRow { value: root.details.error; }
+                    }
+                }
+                if root.details.warnings.length > 0: VerticalLayout {
+                    spacing: 5px;
+                    UpdateDetailHeading { title: I18n.text("update_warnings"); icon: Icons.alert-outline; tone: Palette.warning; }
+                    Rectangle {
+                        border-radius: 7px;
+                        background: Palette.raised;
+                        VerticalLayout {
+                            for warning[index] in root.details.warnings: UpdateDetailRow {
+                                value: warning;
+                                divider: index > 0;
+                            }
+                        }
+                    }
+                }
+                if root.details.packages.length > 0: Rectangle {
+                    border-radius: 7px;
+                    background: Palette.raised;
+                    VerticalLayout {
+                        for package[index] in root.details.packages: UpdateDetailRow {
+                            value: package;
+                            divider: index > 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            x: 18px; y: card.height - 52px;
+            width: card.width - 36px; height: 1px;
+            background: Palette.divider;
+        }
+        Tile {
+            x: card.width - self.width - 18px;
+            y: card.height - self.height - 9px;
+            width: 114px; height: 36px;
+            label: I18n.text("close");
+            fill: Palette.accent.transparentize(86%);
+            ink: Palette.accent;
+            clicked => { root.close(); }
+        }
+    }
+}
+
+export component UpdateProgressDialog inherits Rectangle {
+    in property <[string]> messages;
+    in property <string> application;
+    in property <bool> running;
+    in property <string> error;
+    in property <bool> restart;
+    callback action(string, string);
+
+    background: #0000007a;
+    TouchArea {}
+
+    Rectangle {
+        width: min(root.width - 32px, 680px);
+        height: min(root.height - 40px, 465px);
+        border-radius: 10px;
+        background: Palette.surface;
+        clip: true;
+
+        VerticalLayout {
+            spacing: 10px;
+            padding: 16px;
+            HorizontalLayout {
+                height: 32px;
+                spacing: 8px;
+                Mdi { text: Icons.update; width: 24px; }
+                Label {
+                    text: I18n.text("update_progress_title");
+                    font-size: 22px;
+                    horizontal-stretch: 1;
+                }
+                Rectangle {
+                    width: 26px;
+                    if root.running: BusyCircle { width: 22px; height: 22px; }
+                    if !root.running: Mdi {
+                        text: root.error == "" ? Icons.check-circle-outline : Icons.alert-circle-outline;
+                        color: root.error == "" ? Palette.success : Palette.error;
+                    }
+                }
+            }
+
+            if root.application != "": Label {
+                text: root.application;
+                font-size: 14px;
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: 6px;
+                background: Palette.raised;
+                ScrollView {
+                    horizontal-scrollbar-policy: always-off;
+                    mouse-drag-pan-enabled: true;
+                    changed content-height => {
+                        self.content-y = min(0px, self.height - self.content-height);
+                    }
+                    VerticalLayout {
+                        alignment: start;
+                        padding: 10px;
+                        spacing: 3px;
+                        if root.messages.length == 0: Label {
+                            text: I18n.text("update_preparing");
+                            color: Palette.muted;
+                        }
+                        for message in root.messages: Label { text: message; wrap: word-wrap; font-size: 12px; }
+                    }
+                }
+            }
+            if root.error != "": Label { text: root.error; color: Palette.error; wrap: word-wrap; }
+            HorizontalLayout {
+                height: 36px;
+                alignment: end;
+                spacing: 8px;
+                if root.restart: Tile {
+                    width: 110px;
+                    fill: Palette.accent.transparentize(85%);
+                    ink: Palette.accent;
+                    label: I18n.text("restart").to-uppercase();
+                    clicked => { root.action("restart-service", ""); }
+                }
+                Tile {
+                    width: 100px;
+                    label: I18n.text("close").to-uppercase();
+                    fill: transparent;
+                    enabled: !root.running;
+                    clicked => { root.action("update-close", ""); }
+                }
+            }
+        }
+    }
+}

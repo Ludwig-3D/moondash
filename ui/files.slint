@@ -108,65 +108,147 @@ export component FileBrowser inherits Rectangle {
 
     VerticalLayout {
         x: 0px; y: 0px; width: root.width; height: root.height;
-        padding: 8px;
         spacing: 12px;
 
         Rectangle {
-            height: 48px;
-            background: Palette.ink.transparentize(94%); border-radius: 4px;
-            HorizontalLayout {
-                padding-left: 8px;
-                padding-right: 8px;
-                spacing: 10px;
+            height: root.crumbs.length > 0 ? 100px : 48px;
+            background: Palette.surface; border-radius: 8px;
+            VerticalLayout {
+                spacing: 0px;
                 Rectangle {
-                    width: 200px; height: 44px;
-                    border-radius: 4px;
-                    border-width: 1px;
-                    border-color: Palette.ink.transparentize(88%);
-                    clip: true;
-
+                    height: 48px;
                     HorizontalLayout {
-                        for button[index] in [Icons.sort-clock-descending-outline, Icons.sort-clock-ascending-outline, Icons.sort-alphabetical-ascending, Icons.sort-alphabetical-descending]: HorizontalLayout {
-                            Tile {
-                                icon: button; active: root.sort == index;
-                                ink: self.active ? Palette.accent : Palette.ink;
-                                fill: self.active ? Palette.accent.transparentize(88%) : transparent;
-                                border-radius: 0px; width: 49px; icon-size: 24px;
-                                clicked => { root.action("file-sort", "\{index}"); }
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 10px;
+                        Rectangle {
+                            width: 200px; height: 40px;
+                            cross-axis-self-alignment: center;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: Palette.ink.transparentize(88%);
+                            clip: true;
+
+                            HorizontalLayout {
+                                for button[index] in [Icons.sort-clock-descending-outline, Icons.sort-clock-ascending-outline, Icons.sort-alphabetical-ascending, Icons.sort-alphabetical-descending]: HorizontalLayout {
+                                    Tile {
+                                        icon: button; active: root.sort == index;
+                                        ink: self.active ? Palette.accent : Palette.ink;
+                                        fill: self.active ? Palette.accent.transparentize(88%) : transparent;
+                                        border-radius: 0px; width: 49px; height: 40px; icon-size: 24px;
+                                        clicked => { root.action("file-sort", "\{index}"); }
+                                    }
+                                    if index < 3: Rectangle { width: 1px; height: 40px; background: Palette.ink.transparentize(88%); }
+                                }
                             }
-                            if index < 3: Rectangle { width: 1px; background: Palette.ink.transparentize(88%); }
                         }
-                    }
-                }
-                Rectangle { horizontal-stretch: 1; }
-                Rectangle {
-                    width: min(320px, root.width * 0.42);
-                    height: 36px;
-
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Mdi { text: Icons.filter-outline; width: 24px; color: Palette.muted; }
-                        Label {
+                        Rectangle {
                             horizontal-stretch: 1;
-                            text: root.filter == "" ? I18n.text("filter") : root.filter;
-                            color: root.filter == "" ? Palette.muted : Palette.ink;
+                            height: 40px;
+                            cross-axis-self-alignment: center;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: filter-touch.has-hover ? Palette.muted : Palette.divider;
+                            background: Palette.background;
+
+                            HorizontalLayout {
+                                height: 40px;
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 8px;
+                                Mdi {
+                                    text: Icons.filter-outline;
+                                    width: 24px;
+                                    height: 24px;
+                                    cross-axis-self-alignment: center;
+                                    color: Palette.muted;
+                                }
+                                Label {
+                                    horizontal-stretch: 1;
+                                    height: 40px;
+                                    text: root.filter == "" ? I18n.text("filter") : root.filter;
+                                    color: root.filter == "" ? Palette.muted : Palette.ink;
+                                }
+                            }
+                            filter-touch := TouchArea { mouse-cursor: pointer; clicked => { root.action("file-filter", ""); } }
                         }
                     }
-                    TouchArea { mouse-cursor: pointer; clicked => { root.action("file-filter", ""); } }
                 }
-            }
-        }
 
-        if root.crumbs.length > 0: ScrollView {
-            height: 36px;
-            HorizontalLayout {
-                alignment: start;
-                spacing: 2px;
-                Tile { icon: Icons.arrow-left; fill: transparent; clicked => { root.action("up", ""); } }
-                Tile { icon: Icons.home-outline; fill: transparent; clicked => { root.action("folder", ""); } }
-                for crumb in root.crumbs: HorizontalLayout {
-                    Mdi { text: Icons.chevron-right; font-size: 16px; width: 16px; }
-                    Tile { label: crumb.title; min-width: 80px; fill: transparent; clicked => { root.action("folder", crumb.argument); } }
+                if root.crumbs.length > 0: Rectangle {
+                    height: 52px;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        spacing: 8px;
+
+                        Rectangle {
+                            width: 38px;
+                            height: 38px;
+                            cross-axis-self-alignment: center;
+                            border-radius: 6px;
+                            background: back-touch.pressed ? Palette.divider
+                                : back-touch.has-hover ? Palette.raised.brighter(10%) : Palette.raised;
+                            Mdi { text: Icons.arrow-left; font-size: 21px; }
+                            back-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.action("up", ""); }
+                            }
+                        }
+
+                        ScrollView {
+                            horizontal-stretch: 1;
+                            height: 52px;
+                            horizontal-scrollbar-policy: always-off;
+
+                            HorizontalLayout {
+                                alignment: start;
+                                spacing: 4px;
+                                Tile {
+                                    icon: Icons.home-outline;
+                                    icon-size: 21px;
+                                    width: 38px;
+                                    height: 38px;
+                                    cross-axis-self-alignment: center;
+                                    border-radius: 6px;
+                                    clicked => { root.action("folder", ""); }
+                                }
+                                for crumb[index] in root.crumbs: HorizontalLayout {
+                                    height: 52px;
+                                    spacing: 4px;
+                                    Mdi {
+                                        text: Icons.chevron-right;
+                                        font-size: 16px;
+                                        width: 16px;
+                                        height: 38px;
+                                        cross-axis-self-alignment: center;
+                                    }
+                                    Rectangle {
+                                        private property <bool> is-current: index + 1 == root.crumbs.length;
+                                        width: crumb-label.preferred-width + 16px;
+                                        height: 38px;
+                                        cross-axis-self-alignment: center;
+                                        border-radius: 5px;
+                                        background: crumb-touch.has-hover && !self.is-current ? Palette.ink.transparentize(88%) : transparent;
+                                        crumb-label := Label {
+                                            x: 8px;
+                                            y: 0px;
+                                            width: parent.width - 16px;
+                                            height: parent.height;
+                                            text: crumb.title;
+                                            font-size: 14px;
+                                            font-weight: parent.is-current ? 600 : 400;
+                                        }
+                                        crumb-touch := TouchArea {
+                                            enabled: !parent.is-current;
+                                            mouse-cursor: pointer;
+                                            clicked => { root.action("folder", crumb.argument); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -203,8 +285,8 @@ export component FileBrowser inherits Rectangle {
     }
 
     if !root.loading && (root.page > 0 || (root.page + 1) * root.capacity < root.entries.length): VerticalLayout {
-        x: parent.width - 56px;
-        y: parent.height - self.height - 8px;
+        x: parent.width - self.width;
+        y: parent.height - self.height;
         width: 48px;
         height: self.preferred-height;
         spacing: 8px;

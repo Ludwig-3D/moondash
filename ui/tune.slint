@@ -62,9 +62,6 @@ export component MotionPanel inherits Rectangle {
 
     HorizontalLayout {
         x: 0px; y: 0px; width: root.width; height: root.height;
-        padding-top: 8px;
-        padding-right: 10px;
-        padding-bottom: 8px;
         spacing: 14px;
 
         Rectangle {
@@ -245,8 +242,6 @@ export component PrintOptions inherits ScrollView {
     callback action(string, string);
 
     VerticalLayout {
-        padding-top: 8px;
-        padding-right: 10px;
         spacing: 8px;
         Adjustment {
             label: I18n.text("flow");

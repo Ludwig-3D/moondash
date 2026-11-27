@@ -95,11 +95,10 @@ export component NetworkPanel inherits Rectangle {
     scroll := ScrollView {
         horizontal-scrollbar-policy: always-off;
         HorizontalLayout {
-            padding: 8px;
             spacing: 16px;
 
             VerticalLayout {
-                width: (scroll.visible-width - 32px) / 2;
+                width: (scroll.visible-width - 16px) / 2;
                 alignment: start;
                 spacing: 16px;
 
@@ -164,7 +163,7 @@ export component NetworkPanel inherits Rectangle {
             }
 
             VerticalLayout {
-                width: (scroll.visible-width - 32px) / 2;
+                width: (scroll.visible-width - 16px) / 2;
                 alignment: start;
                 spacing: 16px;
 

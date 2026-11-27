@@ -361,11 +361,14 @@ export component Moondash inherits Window {
 
         if root.page != "home": VerticalLayout {
             horizontal-stretch: 1;
+            padding-right: 8px;
+            padding-top: root.page == "tune" || root.page == "settings" ? 0px : 8px;
+            padding-bottom: 8px;
+            spacing: 8px;
 
             if root.page == "tune": Rectangle {
                 height: 40px;
                 HorizontalLayout {
-                    padding-right: 8px;
                     spacing: 2px;
                     alignment: start;
                     Tab { width: 105px; label: I18n.text("controls"); active: root.tab == "motion"; clicked => { root.navigate("tune", "motion"); } }
@@ -379,7 +382,6 @@ export component Moondash inherits Window {
             if root.page == "settings": Rectangle {
                 height: 40px;
                 HorizontalLayout {
-                    padding-right: 8px;
                     Tab { label: I18n.text("network"); active: root.tab == "network"; clicked => { root.navigate("settings", "network"); } }
                     Tab { label: I18n.text("settings"); active: root.tab == "config"; clicked => { root.navigate("settings", "config"); } }
                     Tab { label: I18n.text("tools"); active: root.tab == "tools"; clicked => { root.navigate("settings", "tools"); } }
@@ -450,13 +452,10 @@ export component Moondash inherits Window {
                 action(name, argument) => { root.action(name, argument); }
             }
 
-            if root.page == "settings" && root.tab == "config": VerticalLayout {
+            if root.page == "settings" && root.tab == "config": ConfigForm {
                 vertical-stretch: 1;
-                padding: 8px;
-                ConfigForm {
-                    entries: root.rows;
-                    action(name, argument) => { root.action(name, argument); }
-                }
+                entries: root.rows;
+                action(name, argument) => { root.action(name, argument); }
             }
 
             if root.page == "settings" && root.tab == "network": NetworkPanel {
@@ -476,7 +475,7 @@ export component Moondash inherits Window {
             }
 
             if root.page == "debug": VerticalLayout {
-                padding: 8px;
+                vertical-stretch: 1;
                 spacing: 6px;
                 TextEdit { text: root.diagnostics; read-only: true; vertical-stretch: 1; }
                 Tile { icon: Icons.power; label: I18n.text("sleep_display"); clicked => { root.action("sleep", ""); } }
@@ -550,20 +549,17 @@ export component Moondash inherits Window {
                 action(name, argument) => { root.action(name, argument); }
             }
 
-            if root.page == "settings" && root.tab == "shortcuts": VerticalLayout {
+            if root.page == "settings" && root.tab == "shortcuts": ShortcutsPanel {
                 vertical-stretch: 1;
-                padding: 8px;
-                ShortcutsPanel {
-                    entries: root.rows;
-                    action(name, argument) => { root.action(name, argument); }
-                }
+                entries: root.rows;
+                action(name, argument) => { root.action(name, argument); }
             }
 
             if (root.page == "tune" && root.tab != "motion" && root.tab != "print" && root.tab != "afc") ||
-               (root.page == "settings" && root.tab != "network" && root.tab != "config" && root.tab != "host" && root.tab != "tools" && root.tab != "shortcuts" && root.tab != "updates"): VerticalLayout {
+               (root.page == "settings" && root.tab != "network" && root.tab != "config" && root.tab != "host" && root.tab != "tools" && root.tab != "shortcuts" && root.tab != "updates"): RowList {
                 vertical-stretch: 1;
-                padding: 8px;
-                RowList { rows: root.rows; action(name, argument) => { root.action(name, argument); } }
+                rows: root.rows;
+                action(name, argument) => { root.action(name, argument); }
             }
         }
     }

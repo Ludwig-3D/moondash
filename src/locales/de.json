@@ -204,6 +204,8 @@
   "pid_tuning": "PID-Kalibrierung",
   "pid_calibration_running": "PID-Kalibrierung läuft…",
   "power": "Energie",
+  "power_print_in_progress": "Beende den Druck, bevor du die Energieoptionen verwendest.",
+  "power_connection_closed": "Moonraker hat die Verbindung getrennt, bevor der Befehl bestätigt wurde.",
   "power_options": "Energieoptionen",
   "pressure_advance": "Druckvorschub (PA)",
   "primary": "Primär",

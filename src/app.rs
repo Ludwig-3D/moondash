@@ -281,6 +281,7 @@ pub fn start(
     ui.on_dialog_close(move || {
         if let Some(ui) = weak.upgrade()
             && !ui.get_file_busy()
+            && !ui.get_power_busy()
         {
             activity::closed(&ui.get_dialog_mode());
             ui.set_keyboard_target("".into());
@@ -941,6 +942,10 @@ impl State {
             }
             Event::Disconnected(reason) => {
                 ui.set_connection(reason.into());
+                if ui.get_power_busy() {
+                    ui.set_power_busy(false);
+                    ui.set_power_error(tr(ui, "power_connection_closed").into());
+                }
                 if self.online {
                     self.online = false;
                     self.webcams.clear();
@@ -2135,6 +2140,16 @@ fn display_size(bytes: u64) -> String {
         format!("{:.1} MB", bytes as f64 / 1_048_576.)
     } else {
         format!("{:.0} KB", bytes as f64 / 1024.)
+    }
+}
+
+fn power_request(action: &str) -> Option<(&'static str, &'static str)> {
+    match action {
+        "shutdown" => Some(("machine.shutdown", "shutdown")),
+        "reboot" => Some(("machine.reboot", "reboot")),
+        "restart-klipper" => Some(("printer.restart", "restart")),
+        "restart-firmware" => Some(("printer.firmware_restart", "restart")),
+        _ => None,
     }
 }
 
@@ -3354,6 +3369,20 @@ impl State {
         self.persist_config(ui, &shortcuts::order(text, &names))
     }
 
+    fn confirm_power(&self, ui: &Moondash) {
+        if !self.online || ui.get_power_busy() || ui.get_update_print_blocked() {
+            return;
+        }
+        let selection = ui.get_power_selection();
+        let Some((method, _)) = power_request(&selection) else {
+            return;
+        };
+        ui.set_power_error("".into());
+        if self.try_call(ui, method, json!({}), "power-command") {
+            ui.set_power_busy(true);
+        }
+    }
+
     fn action(&mut self, ui: &Moondash, action: &str, argument: &str) {
         match action {
             "dismiss" => ui.set_message("".into()),
@@ -3457,7 +3486,24 @@ impl State {
                 self.render_rows(ui);
             }
             "pid-run" => self.run_pid_calibration(ui),
-            "power" => self.dialog(ui, tr(ui, "power_options"), "", "power", "", ""),
+            "power" => {
+                ui.set_power_selection("".into());
+                ui.set_power_error("".into());
+                self.dialog(ui, tr(ui, "power_options"), "", "power", "", "");
+            }
+            "power-back" if ui.get_dialog_mode() == "power" && !ui.get_power_busy() => {
+                ui.set_power_selection("".into());
+                ui.set_power_error("".into());
+            }
+            "power-confirm" if ui.get_dialog_mode() == "power" => self.confirm_power(ui),
+            "shutdown" | "reboot" | "restart-klipper" | "restart-firmware"
+                if ui.get_dialog_mode() == "power" =>
+            {
+                if self.online && !ui.get_update_print_blocked() && !ui.get_power_busy() {
+                    ui.set_power_error("".into());
+                    ui.set_power_selection(action.into());
+                }
+            }
             "clear-message" => self.script(ui, "M117"),
             "clear-file" => self.script(ui, "SDCARD_RESET_FILE"),
             "reprint" => {
@@ -4299,10 +4345,11 @@ impl State {
                 format!("BED_MESH_PROFILE REMOVE={}", gcode_arg(&argument)),
             ),
             "save-printer" => self.script(ui, "SAVE_CONFIG"),
-            "restart-klipper" => self.call(ui, "printer.restart", json!({}), "restart"),
-            "restart-firmware" => self.call(ui, "printer.firmware_restart", json!({}), "restart"),
-            "reboot" => self.call(ui, "machine.reboot", json!({}), "reboot"),
-            "shutdown" => self.call(ui, "machine.shutdown", json!({}), "shutdown"),
+            "restart-klipper" | "restart-firmware" | "reboot" | "shutdown" => {
+                if let Some((method, tag)) = power_request(&action) {
+                    self.call(ui, method, json!({}), tag);
+                }
+            }
             "restart-service" => {
                 if let Err(error) = version::restart_after_package_update() {
                     ui.set_message(error.into());
@@ -4428,6 +4475,14 @@ impl State {
         };
         if let Some(request) = update_request {
             self.update_reply(ui, request, reply);
+            return;
+        }
+        if tag == "power-command" {
+            ui.set_power_busy(false);
+            match reply {
+                Ok(_) => ui.set_dialog_mode("".into()),
+                Err(error) => ui.set_power_error(error.into()),
+            }
             return;
         }
         if tag == "printer-setting" {

@@ -56,6 +56,8 @@ pub(super) fn pressed(action: &str, argument: &str, page: &str, tab: &str) {
         "resume" => "Requested to resume the print",
         "cancel" => "Opened the print cancellation confirmation",
         "power" => "Opened Power Options",
+        "power-back" => "Returned to Power Options",
+        "power-confirm" => "Confirmed the selected power action",
         "update" => "Requested to install an update",
         "update-all" => "Requested to install all updates",
         "update-refresh" => "Checked for updates",

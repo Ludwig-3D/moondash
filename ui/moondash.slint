@@ -9,6 +9,7 @@ import { FileBrowser } from "files.slint";
 import { AfcPanel, Lane } from "afc.slint";
 import { SpeedDialog } from "speed-dialog.slint";
 import { TemperatureDialog } from "temperature-dialog.slint";
+import { PowerDialog } from "power-dialog.slint";
 import { FanDialog } from "fan-dialog.slint";
 import { StartupScreen } from "startup-screen.slint";
 import { Keyboard } from "keyboard.slint";
@@ -230,6 +231,9 @@ export component Moondash inherits Window {
     in property <string> dialog-title;
     in property <string> dialog-detail;
     in property <string> dialog-mode;
+    in property <string> power-selection;
+    in property <string> power-error;
+    in property <bool> power-busy;
     in property <bool> dialog-secret;
     in-out property <string> dialog-value;
     in property <image> dialog-image;
@@ -608,33 +612,16 @@ export component Moondash inherits Window {
         close => { root.action("mesh-close-3d", ""); }
     }
 
-    if root.dialog-mode == "power": Rectangle {
-        background: #00000099;
-        TouchArea {}
-        Rectangle {
-            width: min(parent.width - 24px, 730px);
-            height: power-layout.preferred-height;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            background: Palette.surface;
-            border-radius: 8px;
-            power-layout := VerticalLayout {
-                padding: 14px;
-                spacing: 12px;
-                Label { text: I18n.text("power_options"); font-size: 20px; font-weight: 600; }
-                HorizontalLayout {
-                    spacing: 12px;
-                    Tile { stacked: true; icon: Icons.power; label: I18n.text("shut_down"); height: 124px; fill: Palette.error.transparentize(77%); clicked => { root.action("shutdown", ""); } }
-                    Tile { stacked: true; icon: Icons.restart; label: I18n.text("reboot"); height: 124px; fill: Palette.warning.transparentize(77%); clicked => { root.action("reboot", ""); } }
-                    Tile { stacked: true; icon: Icons.refresh; label: I18n.text("restart_klipper"); height: 124px; clicked => { root.action("restart-klipper", ""); } }
-                    Tile { stacked: true; icon: Icons.chip; label: I18n.text("restart_firmware"); height: 124px; fill: Palette.info.transparentize(77%); clicked => { root.action("restart-firmware", ""); } }
-                }
-                HorizontalLayout {
-                    alignment: end;
-                    Tile { label: I18n.text("close"); fill: transparent; clicked => { root.dialog-close(); } }
-                }
-            }
-        }
+    if root.dialog-mode == "power": PowerDialog {
+        online: root.online;
+        printing: root.printing || root.paused || root.update-print-blocked;
+        busy: root.power-busy;
+        selection: root.power-selection;
+        error: root.power-error;
+        select(action) => { root.action(action, ""); }
+        confirm => { root.action("power-confirm", ""); }
+        back => { root.action("power-back", ""); }
+        close => { root.dialog-close(); }
     }
 
     if root.file-dialog: PrintDialog {

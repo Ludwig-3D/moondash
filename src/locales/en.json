@@ -204,6 +204,8 @@
   "pid_tuning": "PID Tuning",
   "pid_calibration_running": "PID calibration running…",
   "power": "Power",
+  "power_print_in_progress": "Finish the print before using power options.",
+  "power_connection_closed": "Moonraker disconnected before confirming the power command.",
   "power_options": "Power options",
   "pressure_advance": "Pressure Advance",
   "primary": "Primary",

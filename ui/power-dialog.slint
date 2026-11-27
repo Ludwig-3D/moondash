@@ -1,0 +1,146 @@
+import { I18n } from "i18n.slint";
+import { Icons } from "icons.slint";
+import { BusyCircle, Label, Mdi, Palette, Tile } from "widgets.slint";
+
+struct PowerOption {
+    action: string,
+    label: string,
+    question: string,
+    icon: string,
+    tone: color,
+    tinted: bool,
+}
+
+component PowerTile inherits Rectangle {
+    in property <PowerOption> option;
+    in property <bool> enabled;
+    callback selected();
+
+    border-radius: 8px;
+    background: !root.enabled ? Palette.raised
+        : root.option.tinted
+            ? root.option.tone.transparentize(touch.pressed ? 70% : touch.has-hover ? 77% : 83%)
+            : touch.pressed ? Palette.divider : touch.has-hover ? Palette.raised.brighter(10%) : Palette.raised;
+    accessible-role: button;
+    accessible-label: root.option.label;
+    accessible-action-default => { if root.enabled { root.selected(); } }
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 9px;
+        alignment: center;
+        Mdi {
+            height: 30px;
+            font-size: 28px;
+            text: root.option.icon;
+            color: root.enabled ? root.option.tone : Palette.muted;
+        }
+        Label {
+            height: 31px;
+            text: root.option.label;
+            font-size: 13px;
+            font-weight: 600;
+            color: root.enabled ? root.option.tone : Palette.muted;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.selected(); }
+    }
+}
+
+export component PowerDialog inherits Rectangle {
+    in property <bool> online;
+    in property <bool> printing;
+    in property <bool> busy;
+    in property <string> selection;
+    in property <string> error;
+    callback select(string);
+    callback confirm();
+    callback back();
+    callback close();
+
+    private property <[PowerOption]> options: [
+        { action: "shutdown", label: I18n.text("shut_down"), question: I18n.text("shut_down_host_question"), icon: Icons.power, tone: Palette.error, tinted: true },
+        { action: "reboot", label: I18n.text("reboot"), question: I18n.text("reboot_host_question"), icon: Icons.restart, tone: Palette.warning, tinted: true },
+        { action: "restart-klipper", label: I18n.text("restart_klipper"), question: I18n.text("restart_klipper_question"), icon: Icons.refresh, tone: Palette.ink, tinted: false },
+        { action: "restart-firmware", label: I18n.text("restart_firmware"), question: I18n.text("restart_firmware_question"), icon: Icons.chip, tone: Palette.info, tinted: true },
+    ];
+    private property <bool> confirming: root.selection != "";
+    private property <PowerOption> selected: root.selection == "shutdown" ? root.options[0]
+        : root.selection == "reboot" ? root.options[1]
+        : root.selection == "restart-klipper" ? root.options[2] : root.options[3];
+    private property <bool> available: root.online && !root.printing && !root.busy;
+    private property <string> status: root.error != "" ? root.error
+        : !root.online ? I18n.text("moonraker_is_disconnected")
+        : root.printing ? I18n.text("power_print_in_progress") : "";
+
+    background: #00000099;
+    TouchArea {}
+
+    card := Rectangle {
+        width: min(root.width - 28px, root.confirming ? 520px : 760px);
+        height: min(root.height - 24px, content.preferred-height);
+        background: Palette.surface;
+        border-radius: 9px;
+        clip: true;
+        private property <int> columns: self.width >= 550px ? 4 : 2;
+        private property <int> rows: 4 / self.columns;
+        private property <length> tile-width: (self.width - 32px - (self.columns - 1) * 12px) / self.columns;
+        private property <length> tile-height: max(76px, min(self.tile-width, (root.height - 158px) / self.rows));
+
+        content := VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            Label {
+                text: root.confirming ? root.selected.question : I18n.text("power_options");
+                font-size: 21px;
+                font-weight: 600;
+                height: root.confirming ? 54px : 28px;
+                wrap: word-wrap;
+            }
+            if !root.confirming: Rectangle {
+                height: card.rows * card.tile-height + (card.rows - 1) * 12px;
+                for option[index] in root.options: PowerTile {
+                    x: mod(index, card.columns) * (card.tile-width + 12px);
+                    y: floor(index / card.columns) * (card.tile-height + 12px);
+                    width: card.tile-width;
+                    height: card.tile-height;
+                    option: option;
+                    enabled: root.available;
+                    selected => { root.select(option.action); }
+                }
+            }
+            if root.status != "": Label {
+                text: root.status;
+                height: 38px;
+                color: Palette.error;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                height: 44px;
+                spacing: 8px;
+                alignment: end;
+                Tile {
+                    width: 100px;
+                    label: root.confirming ? I18n.text("back") : I18n.text("close");
+                    fill: transparent;
+                    enabled: !root.busy;
+                    clicked => { if root.confirming { root.back(); } else { root.close(); } }
+                }
+                if root.confirming: Tile {
+                    width: I18n.german ? 180px : 156px;
+                    label: root.busy ? "" : root.selected.label;
+                    fill: root.selected.tinted ? root.selected.tone.transparentize(83%) : Palette.raised;
+                    ink: root.selected.tone;
+                    enabled: root.available;
+                    clicked => { root.confirm(); }
+                    if root.busy: BusyCircle { width: 23px; height: 23px; }
+                }
+            }
+        }
+    }
+}

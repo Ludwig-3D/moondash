@@ -219,7 +219,7 @@ pub fn with_value(text: &str, section: &str, key: &str, value: &str) -> String {
             if insertion.is_some() {
                 break;
             }
-            if name.eq_ignore_ascii_case(section) {
+            if name.trim().eq_ignore_ascii_case(section) {
                 insertion = Some(index + 1);
             }
         } else if insertion.is_some() {

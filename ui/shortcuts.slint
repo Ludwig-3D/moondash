@@ -1,0 +1,337 @@
+import { LineEdit, ScrollView } from "std-widgets.slint";
+import { I18n } from "i18n.slint";
+import { Icons } from "icons.slint";
+import { Label, Mdi, Palette, Row, Tile } from "widgets.slint";
+
+export struct ShortcutOption {
+    label: string,
+    icon: string,
+}
+
+component ShortcutIconButton inherits Tile {
+    in property <string> description;
+    width: 44px;
+    height: 40px;
+    fill: transparent;
+    accessible-role: button;
+    accessible-label: root.description;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+}
+
+export component ShortcutsPanel inherits Rectangle {
+    in property <[Row]> entries;
+    callback action(string, string);
+    border-radius: 8px;
+    background: Palette.surface;
+
+    VerticalLayout {
+        spacing: 6px;
+        ScrollView {
+            horizontal-scrollbar-policy: always-off;
+            VerticalLayout {
+                alignment: start;
+                for shortcut[index] in root.entries: Rectangle {
+                    height: 64px;
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 12px;
+                        spacing: 4px;
+                        Mdi { text: shortcut.icon; width: 28px; font-size: 22px; color: Palette.muted; }
+                        Label { text: shortcut.title; font-weight: 700; horizontal-stretch: 1; }
+                        if index > 0: ShortcutIconButton {
+                            cross-axis-self-alignment: center;
+                            icon: Icons.chevron-up;
+                            description: I18n.text("shortcut_move_up");
+                            clicked => { root.action("shortcut-up", shortcut.argument); }
+                        }
+                        if index < root.entries.length - 1: ShortcutIconButton {
+                            cross-axis-self-alignment: center;
+                            icon: Icons.chevron-down;
+                            description: I18n.text("shortcut_move_down");
+                            clicked => { root.action("shortcut-down", shortcut.argument); }
+                        }
+                        ShortcutIconButton {
+                            cross-axis-self-alignment: center;
+                            icon: Icons.pencil;
+                            description: I18n.text("edit_shortcut");
+                            clicked => { root.action("edit-shortcut", shortcut.argument); }
+                        }
+                        ShortcutIconButton {
+                            cross-axis-self-alignment: center;
+                            icon: Icons.trash-can-outline;
+                            description: I18n.text("delete");
+                            ink: Palette.error;
+                            clicked => { root.action("shortcut-remove", shortcut.argument); }
+                        }
+                    }
+                    if index < root.entries.length - 1: Rectangle {
+                        y: parent.height - self.height;
+                        height: 1px;
+                        background: Palette.divider;
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            height: 52px;
+            padding-right: 8px;
+            padding-bottom: 6px;
+            alignment: end;
+            if root.entries.length < 3: Tile {
+                width: 104px;
+                height: 36px;
+                cross-axis-self-alignment: center;
+                icon: Icons.plus;
+                label: I18n.text("shortcut_add").to-uppercase();
+                fill: transparent;
+                ink: Palette.accent;
+                clicked => { root.action("add-shortcut", ""); }
+            }
+        }
+    }
+}
+
+component ShortcutField inherits Rectangle {
+    in property <string> caption;
+    in property <string> value;
+    in property <string> icon;
+    in property <bool> dropdown;
+    callback activate;
+    height: 44px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: field-touch.has-hover ? Palette.ink.transparentize(30%) : Palette.ink.transparentize(65%);
+    accessible-role: button;
+    accessible-label: root.caption;
+    accessible-value: root.value;
+    accessible-action-default => { root.activate(); }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        spacing: 5px;
+        if root.icon != "": Mdi { text: root.icon; width: 23px; font-size: 20px; }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            if (root.value != "" || root.icon != ""): Label {
+                text: root.caption;
+                color: Palette.muted;
+                font-size: 11px;
+            }
+            if root.icon == "": Label {
+                text: root.value == "" ? root.caption : root.value;
+                color: root.value == "" ? Palette.muted : Palette.ink;
+            }
+        }
+        if root.dropdown: Mdi { width: 16px; font-size: 18px; text: Icons.menu-down; color: Palette.muted; }
+    }
+    field-touch := TouchArea { mouse-cursor: pointer; clicked => { root.activate(); } }
+}
+
+export component ShortcutEditor inherits Rectangle {
+    in property <string> name;
+    in property <string> icon;
+    in property <string> icon-glyph;
+    in property <string> inactive;
+    in property <string> active;
+    in property <string> sensor;
+    in property <string> error;
+    in property <[ShortcutOption]> icons;
+    in property <[ShortcutOption]> macros;
+    in property <[ShortcutOption]> sensors;
+    callback action(string, string);
+    callback edit(string, string, string);
+
+    private property <string> picker;
+    private property <string> picker-title;
+    private property <string> filter;
+    private property <[ShortcutOption]> choices: root.picker == "icon" ? root.icons : root.picker == "sensor" ? root.sensors : root.macros;
+    private property <string> current-value: root.picker == "icon" ? root.icon
+        : root.picker == "inactive" ? root.inactive : root.picker == "active" ? root.active : root.sensor;
+    private property <string> threshold: root.sensor.starts-with("output_pin ") || root.sensor.starts-with("led ") ? "0.5"
+        : root.sensor.starts-with("fan") || root.sensor.starts-with("temperature_fan ") ? "0.2" : "";
+
+    background: #0000007a;
+    TouchArea {}
+
+    function open-picker(field: string, title: string) {
+        root.filter = "";
+        root.picker-title = title;
+        root.picker = field;
+    }
+
+    function choose(value: string) {
+        root.action("shortcut-" + root.picker, value);
+        root.picker = "";
+    }
+
+    dialog := Rectangle {
+        width: min(root.width - 32px, 1100px);
+        height: min(root.height - 32px, root.error == "" ? 332px : 364px);
+        background: Palette.surface;
+        border-radius: 10px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 8px;
+            Label { text: I18n.text("shortcut_editor_title"); font-size: 23px; height: 36px; }
+            ScrollView {
+                vertical-stretch: 1;
+                horizontal-scrollbar-policy: always-off;
+                VerticalLayout {
+                    alignment: start;
+                    spacing: 13px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        ShortcutField {
+                            horizontal-stretch: 1;
+                            caption: I18n.text("shortcut_name");
+                            value: root.name;
+                            activate => { root.edit("name", self.caption, root.name); }
+                        }
+                        ShortcutField {
+                            width: max(94px, (dialog.width - 32px) / 6);
+                            caption: I18n.text("shortcut_icon");
+                            icon: root.icon-glyph;
+                            dropdown: true;
+                            activate => { root.open-picker("icon", self.caption); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        ShortcutField {
+                            horizontal-stretch: 1;
+                            caption: I18n.text("shortcut_macro_inactive");
+                            value: root.inactive;
+                            dropdown: true;
+                            activate => { root.open-picker("inactive", self.caption); }
+                        }
+                        ShortcutField {
+                            horizontal-stretch: 1;
+                            caption: I18n.text("shortcut_macro_active");
+                            value: root.active;
+                            dropdown: true;
+                            activate => { root.open-picker("active", self.caption); }
+                        }
+                    }
+                    ShortcutField {
+                        caption: I18n.text("shortcut_sensor");
+                        value: root.sensor;
+                        dropdown: true;
+                        activate => { root.open-picker("sensor", self.caption); }
+                    }
+                    Rectangle {
+                        height: 38px;
+                        border-radius: 5px;
+                        background: Palette.info.transparentize(88%);
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 8px;
+                            Mdi { text: Icons.information-outline; color: Palette.info; width: 20px; }
+                            Label {
+                                horizontal-stretch: 1;
+                                color: Palette.info;
+                                text: root.threshold == "" ? I18n.text("shortcut_threshold_none")
+                                    : I18n.text("shortcut_threshold_auto") + " " + root.threshold;
+                            }
+                        }
+                    }
+                }
+            }
+            if root.error != "": Label { text: root.error; color: Palette.error; height: 24px; wrap: word-wrap; }
+            HorizontalLayout {
+                height: 36px;
+                alignment: end;
+                spacing: 8px;
+                Tile {
+                    label: I18n.text("cancel").to-uppercase();
+                    width: 104px;
+                    fill: transparent;
+                    clicked => { root.action("shortcut-cancel", ""); }
+                }
+                Tile {
+                    label: I18n.text("save").to-uppercase();
+                    width: 104px;
+                    fill: Palette.accent.transparentize(88%);
+                    ink: Palette.accent;
+                    enabled: root.name != "" && root.inactive != "" && root.icon != "";
+                    clicked => { root.action("shortcut-save", ""); }
+                }
+            }
+        }
+    }
+
+    if root.picker != "": Rectangle {
+        background: #00000065;
+        TouchArea { clicked => { root.picker = ""; } }
+        picker-dialog := Rectangle {
+            width: min(parent.width - 40px, 440px);
+            height: min(parent.height - 44px, 398px);
+            background: Palette.surface;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Palette.divider;
+            TouchArea {}
+            VerticalLayout {
+                padding: 10px;
+                spacing: 6px;
+                Label { text: root.picker-title; font-size: 18px; height: 30px; }
+                if root.picker != "icon": LineEdit {
+                    height: 35px;
+                    text <=> root.filter;
+                    placeholder-text: I18n.text("shortcut_filter");
+                }
+                ScrollView {
+                    vertical-stretch: 1;
+                    horizontal-scrollbar-policy: always-off;
+                    mouse-drag-pan-enabled: true;
+                    VerticalLayout {
+                        alignment: start;
+                        if root.picker == "active" || root.picker == "sensor": Tile {
+                            label: I18n.text("network_none");
+                            fill: transparent;
+                            clicked => { root.choose(""); }
+                        }
+                        for option in root.choices: VerticalLayout {
+                            if root.filter == "" || option.label.to-lowercase().starts-with(root.filter.to-lowercase()): Tile {
+                                height: 36px;
+                                fill: option.label == root.current-value ? Palette.accent.transparentize(86%) : transparent;
+                                clicked => { root.choose(option.label); }
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    spacing: 8px;
+                                    if option.icon != "": Mdi { text: option.icon; width: 24px; font-size: 20px; }
+                                    Label { text: option.label; horizontal-stretch: 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    height: 36px;
+                    alignment: end;
+                    spacing: 8px;
+                    Tile {
+                        width: 90px;
+                        label: I18n.text("back");
+                        fill: transparent;
+                        clicked => { root.picker = ""; }
+                    }
+                    if root.picker == "inactive" || root.picker == "active": Tile {
+                        width: min(190px, picker-dialog.width - 118px);
+                        label: I18n.text("shortcut_enter_command");
+                        fill: Palette.accent.transparentize(88%);
+                        ink: Palette.accent;
+                        clicked => {
+                            root.edit(root.picker, root.picker-title, root.current-value);
+                            root.picker = "";
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

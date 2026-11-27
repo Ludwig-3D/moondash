@@ -2,9 +2,10 @@ use crate::icons;
 use crate::print_files::{self, array};
 use crate::{
     ColorSwatch, FilamentSensor, HistoryStatus, I18n, Lane, McuResource, Moondash, Notification,
-    Palette, PrintTool, ResourceMetric, Row, WifiEntry, config, input_idle, locale, mesh_view,
+    Palette, PrintTool, ResourceMetric, Row, ShortcutOption, WifiEntry, config, input_idle, locale,
+    mesh_view,
     moonraker::{self, Call, Event},
-    network, resources, theme, tools, version, wayland_power, webcam,
+    network, resources, shortcuts, theme, tools, version, wayland_power, webcam,
 };
 use serde_json::{Map, Value, json};
 use slint::{ComponentHandle, Image, ModelRc, Timer, TimerMode, VecModel};
@@ -100,6 +101,7 @@ struct State {
     resource_history_unavailable: bool,
     resource_history_stale: bool,
     dialog: Dialog,
+    shortcut_editing: Option<String>,
     edited_speed_percent: Option<i32>,
     initial_speed_acceleration: Option<f64>,
     filename: String,
@@ -187,6 +189,7 @@ pub fn start(
         resource_history_unavailable: false,
         resource_history_stale: false,
         dialog: Dialog::default(),
+        shortcut_editing: None,
         edited_speed_percent: None,
         initial_speed_acceleration: None,
         filename: String::new(),
@@ -281,6 +284,10 @@ pub fn start(
             return;
         };
         match target.as_str() {
+            "shortcut-input" => {
+                ui.set_shortcut_input(without_last(ui.get_shortcut_input()).into());
+                return;
+            }
             "wifi-ssid" => {
                 ui.set_network_ssid(without_last(ui.get_network_ssid()).into());
                 return;
@@ -535,6 +542,10 @@ impl State {
     }
 
     fn navigate(&mut self, ui: &Moondash, page: &str, tab: &str) {
+        if ui.get_shortcut_editor() && (page, tab) != ("settings", "shortcuts") {
+            ui.set_shortcut_editor(false);
+            ui.set_keyboard_target("".into());
+        }
         self.page = page.into();
         self.tab = tab.into();
         ui.set_page(page.into());
@@ -2415,9 +2426,6 @@ impl State {
                     entry.icon = icons::glyph(shortcut["icon"].as_str().unwrap_or_default());
                     rows.push(entry);
                 }
-                if rows.len() < 3 {
-                    rows.push(row(tr(ui, "add_shortcut"), "", "add-shortcut", "", "+"));
-                }
             }
             ("settings", "network") => self.update_network_models(ui),
             ("settings", "tools") => match self.tool_view.as_str() {
@@ -2523,7 +2531,6 @@ impl State {
                 "restart-klipper" | "restart-service" => "restart",
                 "reboot" | "sleep" => "power",
                 "config-edit" => "pencil",
-                "add-shortcut" => "lightning-bolt",
                 _ => "",
             });
         }
@@ -2831,6 +2838,168 @@ impl State {
         ui.set_picker_extras_title(extra_title.into());
         ui.set_picker_enabled(theme_color);
         self.dialog(ui, title, "", "color", action, argument);
+    }
+
+    fn open_shortcut_editor(&mut self, ui: &Moondash, name: Option<&str>) {
+        let items = array(&self.config["shortcutbuttons"]);
+        let item = if let Some(name) = name {
+            let Some(item) = items
+                .iter()
+                .find(|item| item["name"].as_str() == Some(name))
+            else {
+                return;
+            };
+            item
+        } else if items.len() < 3 {
+            &Value::Null
+        } else {
+            return;
+        };
+        let field = |key| item[key].as_str().unwrap_or_default().into();
+        ui.set_shortcut_name(field("name"));
+        ui.set_shortcut_icon(item["icon"].as_str().unwrap_or(shortcuts::ICONS[0]).into());
+        ui.set_shortcut_icon_glyph(icons::glyph(ui.get_shortcut_icon().as_str()));
+        ui.set_shortcut_inactive(field("macro_inactive"));
+        ui.set_shortcut_active(field("macro_active"));
+        let kind = item["active_type"].as_str().unwrap_or_default();
+        let config = item["active_config"].as_str().unwrap_or_default();
+        ui.set_shortcut_sensor(format!("{kind} {config}").trim().into());
+        ui.set_shortcut_error("".into());
+        let (macros, sensors) = shortcuts::suggestions(&self.status);
+        let model = |options: Vec<ShortcutOption>| ModelRc::new(VecModel::from(options));
+        ui.set_shortcut_icons(model(
+            shortcuts::ICONS
+                .iter()
+                .map(|icon| ShortcutOption {
+                    label: (*icon).into(),
+                    icon: icons::glyph(icon),
+                })
+                .collect(),
+        ));
+        let options = |items: Vec<String>| {
+            model(
+                items
+                    .into_iter()
+                    .map(|item| ShortcutOption {
+                        label: item.into(),
+                        icon: "".into(),
+                    })
+                    .collect(),
+            )
+        };
+        ui.set_shortcut_macros(options(macros));
+        ui.set_shortcut_sensors(options(sensors));
+        self.shortcut_editing = name.map(str::to_owned);
+        ui.set_shortcut_editor(true);
+    }
+
+    fn shortcut_config(&self, ui: &Moondash) -> Result<(String, Value), String> {
+        let text = match fs::read_to_string(&self.config_path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                ui.get_config_text().to_string()
+            }
+            Err(error) => return Err(error.to_string()),
+        };
+        let config = config::parse(&text)?;
+        Ok((text, config))
+    }
+
+    fn save_shortcut(&mut self, ui: &Moondash) -> Result<(), String> {
+        let name = ui.get_shortcut_name();
+        let icon = ui.get_shortcut_icon();
+        let inactive = ui.get_shortcut_inactive();
+        let active = ui.get_shortcut_active();
+        let sensor = ui.get_shortcut_sensor();
+        let name = name.trim();
+        let inactive = inactive.trim();
+        let active = active.trim();
+        if name.is_empty() || name.contains(['[', ']', '\n', '\r']) {
+            return Err(tr(ui, "enter_a_unique_shortcut_name").into());
+        }
+        if inactive.is_empty()
+            || [inactive, active]
+                .iter()
+                .any(|value| value.starts_with('_') || value.contains(['\n', '\r']))
+        {
+            return Err(tr(ui, "enter_a_single_line_g_code_command").into());
+        }
+        if icon.is_empty() || icon.contains(['\n', '\r']) || sensor.contains(['\n', '\r']) {
+            return Err(tr(ui, "enter_a_valid_value").into());
+        }
+        let (mut text, config) = self.shortcut_config(ui)?;
+        let items = array(&config["shortcutbuttons"]);
+        let previous = self.shortcut_editing.as_deref();
+        let existing = previous.and_then(|name| {
+            items
+                .iter()
+                .find(|item| item["name"].as_str() == Some(name))
+        });
+        if (previous.is_some() && existing.is_none()) || (previous.is_none() && items.len() >= 3) {
+            return Err(tr(ui, "shortcut_list_changed").into());
+        }
+        let section = shortcuts::section(name);
+        if config.as_object().is_some_and(|sections| {
+            sections.keys().any(|key| {
+                key.eq_ignore_ascii_case(&section)
+                    && !previous
+                        .is_some_and(|old| key.eq_ignore_ascii_case(&shortcuts::section(old)))
+            })
+        }) {
+            return Err(tr(ui, "enter_a_unique_shortcut_name").into());
+        }
+        if let Some(old) = previous.filter(|old| *old != name) {
+            text = shortcuts::alter_section(&text, old, Some(name));
+        }
+        let (kind, sensor_name) = sensor.trim().split_once(' ').unwrap_or((sensor.trim(), ""));
+        let threshold = existing
+            .filter(|item| {
+                item["active_type"].as_str().unwrap_or_default() == kind
+                    && item["active_config"].as_str().unwrap_or_default() == sensor_name
+            })
+            .and_then(|item| item["active_threshold"].as_f64())
+            .map(|threshold| threshold.to_string())
+            .unwrap_or_else(|| shortcuts::threshold(kind).unwrap_or_default().to_owned());
+        for (key, value) in [
+            ("icon", icon.trim()),
+            ("macro_inactive", inactive),
+            ("macro_active", active),
+            ("active_type", kind),
+            ("active_config", sensor_name),
+            ("active_threshold", threshold.as_str()),
+        ] {
+            text = config::with_value(&text, &section, key, value);
+        }
+        let mut names = items
+            .iter()
+            .filter_map(|item| item["name"].as_str())
+            .map(|item| if Some(item) == previous { name } else { item }.to_owned())
+            .collect::<Vec<_>>();
+        if previous.is_none() {
+            names.push(name.into());
+        }
+        self.persist_config(ui, &shortcuts::order(text, &names))
+    }
+
+    fn modify_shortcuts(&mut self, ui: &Moondash, action: &str, name: &str) -> Result<(), String> {
+        let (mut text, config) = self.shortcut_config(ui)?;
+        let mut names = array(&config["shortcutbuttons"])
+            .iter()
+            .filter_map(|item| item["name"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        let Some(index) = names.iter().position(|candidate| candidate == name) else {
+            return Ok(());
+        };
+        match action {
+            "shortcut-up" if index > 0 => names.swap(index, index - 1),
+            "shortcut-down" if index + 1 < names.len() => names.swap(index, index + 1),
+            "shortcut-remove" => {
+                names.remove(index);
+                text = shortcuts::alter_section(&text, name, None);
+            }
+            _ => return Ok(()),
+        }
+        self.persist_config(ui, &shortcuts::order(text, &names))
     }
 
     fn action(&mut self, ui: &Moondash, action: &str, argument: &str) {
@@ -3172,34 +3341,29 @@ impl State {
                 );
                 ui.set_dialog_value(initial.into());
             }
-            "edit-shortcut" => {
-                self.dialog(
-                    ui,
-                    argument,
-                    tr(
-                        ui,
-                        "macro_to_run_edit_the_configuration_file_to_set_advanced_options",
-                    ),
-                    "text",
-                    action,
-                    argument,
-                );
-                if let Some(value) = array(&self.config["shortcutbuttons"])
-                    .iter()
-                    .find(|item| item["name"].as_str() == Some(argument))
-                    .and_then(|item| item["macro_inactive"].as_str())
-                {
-                    ui.set_dialog_value(value.into());
+            "edit-shortcut" => self.open_shortcut_editor(ui, Some(argument)),
+            "add-shortcut" => self.open_shortcut_editor(ui, None),
+            "shortcut-cancel" => {
+                ui.set_shortcut_editor(false);
+                ui.set_keyboard_target("".into());
+            }
+            "shortcut-save" => match self.save_shortcut(ui) {
+                Ok(()) => ui.set_shortcut_editor(false),
+                Err(error) => ui.set_shortcut_error(error.into()),
+            },
+            "shortcut-name" => ui.set_shortcut_name(argument.into()),
+            "shortcut-inactive" => ui.set_shortcut_inactive(argument.into()),
+            "shortcut-active" => ui.set_shortcut_active(argument.into()),
+            "shortcut-sensor" => ui.set_shortcut_sensor(argument.into()),
+            "shortcut-icon" => {
+                ui.set_shortcut_icon(argument.into());
+                ui.set_shortcut_icon_glyph(icons::glyph(argument));
+            }
+            "shortcut-up" | "shortcut-down" | "shortcut-remove" => {
+                if let Err(error) = self.modify_shortcuts(ui, action, argument) {
+                    ui.set_message(error.into());
                 }
             }
-            "add-shortcut" => self.dialog(
-                ui,
-                tr(ui, "add_shortcut"),
-                tr(ui, "shortcut_name"),
-                "text",
-                action,
-                "",
-            ),
             "emergency" => self.call(ui, "printer.emergency_stop", json!({}), "emergency"),
             "pause" => self.call(ui, "printer.print.pause", json!({}), "pause"),
             "resume" => self.call(ui, "printer.print.resume", json!({}), "resume"),
@@ -3725,43 +3889,6 @@ impl State {
                 }
                 self.change_setting(ui, &argument, value);
             }
-            "add-shortcut" => {
-                if value.is_empty()
-                    || value.contains(['[', ']', '\n', '\r'])
-                    || self.config.get(format!("shortcutbutton {value}")).is_some()
-                {
-                    ui.set_dialog_detail(tr(ui, "enter_a_unique_shortcut_name").into());
-                    return;
-                }
-                self.dialog(
-                    ui,
-                    value,
-                    tr(ui, "macro_to_run"),
-                    "text",
-                    "new-shortcut",
-                    value,
-                );
-                return;
-            }
-            "edit-shortcut" | "new-shortcut" => {
-                if value.is_empty() || value.contains(['\n', '\r']) {
-                    ui.set_dialog_detail(tr(ui, "enter_a_single_line_g_code_command").into());
-                    return;
-                }
-                let section = format!("shortcutbutton {argument}");
-                let text = config::with_value(
-                    ui.get_config_text().as_str(),
-                    &section,
-                    "macro_inactive",
-                    value,
-                );
-                let text = if action == "new-shortcut" {
-                    config::with_value(&text, &section, "icon", "mdi-lightning-bolt")
-                } else {
-                    text
-                };
-                self.store_config(ui, &text);
-            }
             "cancel" => self.call(ui, "printer.print.cancel", json!({}), "cancel"),
             "queue-start" => self.call(ui, "server.job_queue.start", json!({}), "queue"),
             "queue-remove" => self.call(
@@ -3853,12 +3980,6 @@ impl State {
         save_config(&self.config_path, text).map_err(|error| error.to_string())?;
         self.load_config(ui, true);
         Ok(())
-    }
-
-    fn store_config(&mut self, ui: &Moondash, text: &str) {
-        if let Err(error) = self.persist_config(ui, text) {
-            ui.set_message(error.into());
-        }
     }
 
     fn save_setting(&mut self, ui: &Moondash, path: &str, value: &str) -> Result<(), String> {

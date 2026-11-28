@@ -1,4 +1,10 @@
 import { I18n } from "i18n.slint";
+// Bundled UI fonts so text looks the same on every system, whatever fonts it has.
+import "fonts/NotoSans-Regular.ttf";
+import "fonts/NotoSans-Medium.ttf";
+import "fonts/NotoSans-SemiBold.ttf";
+import "fonts/NotoSans-Bold.ttf";
+import "fonts/NotoSansMono-Regular.ttf";
 import { LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
 import { Icons } from "icons.slint";
 import { Palette, Row, Label, Mdi, Tile, Tab, RailButton } from "widgets.slint";
@@ -22,7 +28,8 @@ import { UpdatesPanel, UpdateDetailsDialog, UpdateDetails, UpdateProgressDialog,
 import { ShortcutsPanel, ShortcutEditor, ShortcutOption } from "shortcuts.slint";
 import { MeshMarker, MeshViewDialog } from "mesh-view.slint";
 import { ResourceMetric, McuResource, HistoryStatus, ResourcesPanel } from "resources.slint";
-export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshMarker, ResourceMetric, McuResource, HistoryStatus, ShortcutOption, UpdateDetails, UpdateService, DashboardStats, StatsAxis, StatsUsage }
+import { DevPanel, InfoCard, InfoRow, JsonRow } from "dev.slint";
+export { I18n, Palette, Row, Lane, PrintTool, ColorSwatch, Notification, FilamentSensor, WifiEntry, MeshMarker, ResourceMetric, McuResource, HistoryStatus, ShortcutOption, UpdateDetails, UpdateService, DashboardStats, StatsAxis, StatsUsage, InfoCard, InfoRow, JsonRow }
 
 component RowList inherits ScrollView {
     in property <[Row]> rows;
@@ -74,6 +81,7 @@ export component Moondash inherits Window {
     min-height: 300px;
     background: Palette.background;
     default-font-size: 15px;
+    default-font-family: "Noto Sans";
 
     in property <bool> dark: true;
 
@@ -223,6 +231,11 @@ export component Moondash inherits Window {
     in-out property <string> filter;
     in property <string> config-text;
     in property <string> diagnostics;
+    in property <string> dev-tab: "other";
+    in property <bool> dev-paused;
+    in property <[JsonRow]> dev-rows;
+    in property <[InfoCard]> dev-cards-left;
+    in property <[InfoCard]> dev-cards-right;
     in property <color> picker-selected;
     in property <string> picker-extras-title;
     in property <[ColorSwatch]> picker-swatches;
@@ -474,11 +487,16 @@ export component Moondash inherits Window {
                 action(name, argument) => { root.action(name, argument); }
             }
 
-            if root.page == "debug": VerticalLayout {
+            if root.page == "debug": DevPanel {
                 vertical-stretch: 1;
-                spacing: 6px;
-                TextEdit { text: root.diagnostics; read-only: true; vertical-stretch: 1; }
-                Tile { icon: Icons.power; label: I18n.text("sleep_display"); clicked => { root.action("sleep", ""); } }
+                text: root.diagnostics;
+                rows: root.dev-rows;
+                cards-left: root.dev-cards-left;
+                cards-right: root.dev-cards-right;
+                tab: root.dev-tab;
+                paused: root.dev-paused;
+                afc-available: root.has-afc;
+                action(name, argument) => { root.action(name, argument); }
             }
 
             if root.page == "settings" && root.tab == "tools": ToolsPanel {
@@ -893,8 +911,8 @@ export component Moondash inherits Window {
         }
     }
 
-    if root.page == "files" && root.file-feedback != "" && !root.folder-picker: Rectangle {
-        width: min(root.width - 100px, 356px);
+    if ((root.page == "files" && !root.folder-picker) || root.page == "debug") && root.file-feedback != "": Rectangle {
+        width: min(root.width - 100px, root.page == "debug" ? 520px : 356px);
         height: 46px;
         x: (root.width - self.width) / 2;
         y: root.height - self.height - 8px;

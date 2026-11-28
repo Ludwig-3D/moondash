@@ -111,10 +111,15 @@ fn main() -> ExitCode {
     }));
     log::info!("starting Moondash {}", version::current_version());
 
-    let renderer = options
-        .renderer
-        .or_else(|| Renderer::parse(&std::env::var(RETRY_RENDERER).ok()?))
-        .unwrap_or(Renderer::Vulkan);
+    let fallback = std::env::var(RETRY_RENDERER)
+        .ok()
+        .and_then(|name| Renderer::parse(&name));
+    let (renderer, source) = match (options.renderer, fallback) {
+        (Some(renderer), _) => (renderer, "argument"),
+        (None, Some(renderer)) => (renderer, "fallback"),
+        (None, None) => (Renderer::Vulkan, "default"),
+    };
+    renderer::record_selection(renderer, source);
     let started = Rc::new(Cell::new(false));
     log::info!(target: "moondash::renderer", "trying {}", renderer.name());
 

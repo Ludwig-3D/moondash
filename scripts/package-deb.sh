@@ -12,6 +12,7 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 install -D -m 0755 "$binary" "$stage/usr/bin/moondash"
 install -D -m 0644 ui/fonts/LICENSE-MDI "$stage/usr/share/doc/moondash/LICENSE-MDI"
+install -D -m 0644 ui/fonts/LICENSE-NOTO "$stage/usr/share/doc/moondash/LICENSE-NOTO"
 install -D -m 0644 LICENSE "$stage/usr/share/doc/moondash/LICENSE-MIT"
 install -D -m 0644 /usr/share/common-licenses/GPL-3 "$stage/usr/share/doc/moondash/LICENSE-GPL-3"
 cat > "$stage/usr/share/doc/moondash/copyright" <<'COPYRIGHT'

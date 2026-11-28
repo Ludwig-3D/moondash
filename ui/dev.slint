@@ -1,0 +1,263 @@
+import { ListView, ScrollView } from "std-widgets.slint";
+import { I18n } from "i18n.slint";
+import { Icons } from "icons.slint";
+import { Palette, Label, Mdi, Tile, Tab } from "widgets.slint";
+
+export struct InfoRow {
+    label: string,
+    value: string,
+}
+
+export struct InfoCard {
+    title: string,
+    icon: string,
+    rows: [InfoRow],
+}
+
+// One visible node of the JSON tree, already flattened by Rust.
+export struct JsonRow {
+    depth: int,
+    key: string,
+    value: string,
+    kind: string,
+    expandable: bool,
+    expanded: bool,
+    path: string,
+}
+
+component JsonRowView inherits Rectangle {
+    in property <JsonRow> node;
+    callback toggle(string);
+    // Whole-pixel height keeps glyph baselines aligned; tall enough to tap.
+    height: 30px;
+    background: touch.pressed && root.node.expandable ? Palette.raised : transparent;
+    border-radius: 4px;
+
+    HorizontalLayout {
+        padding-left: 4px + root.node.depth * 18px;
+        padding-right: 6px;
+        spacing: 4px;
+
+        Mdi {
+            width: 18px;
+            font-size: 18px;
+            text: !root.node.expandable ? "" : root.node.expanded ? Icons.chevron-down : Icons.chevron-right;
+            color: Palette.muted;
+        }
+        Text {
+            text: root.node.key;
+            font-family: "Noto Sans Mono";
+            font-size: 13px;
+            color: Palette.accent;
+            vertical-alignment: center;
+            overflow: elide;
+            max-width: 260px;
+        }
+        Text {
+            text: ":";
+            font-family: "Noto Sans Mono";
+            font-size: 13px;
+            color: Palette.muted;
+            vertical-alignment: center;
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.node.value;
+            font-family: "Noto Sans Mono";
+            font-size: 13px;
+            vertical-alignment: center;
+            overflow: elide;
+            color: root.node.kind == "string" ? Palette.success
+                : root.node.kind == "number" ? Palette.warning
+                : root.node.kind == "bool" ? Palette.secondary
+                : Palette.muted;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.node.expandable;
+        mouse-cursor: root.node.expandable ? pointer : default;
+        clicked => { root.toggle(root.node.path); }
+    }
+}
+
+component InfoCardView inherits Rectangle {
+    in property <InfoCard> card;
+    border-radius: 8px;
+    background: Palette.raised;
+
+    VerticalLayout {
+        padding: 12px;
+        padding-top: 10px;
+        spacing: 6px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Mdi { text: root.card.icon; font-size: 20px; width: 22px; color: Palette.accent; }
+            Label { text: root.card.title; font-size: 16px; font-weight: 600; horizontal-stretch: 1; }
+        }
+        Rectangle { height: 1px; background: Palette.divider; }
+        for row in root.card.rows: HorizontalLayout {
+            spacing: 12px;
+            Label {
+                width: 118px;
+                text: row.label;
+                color: Palette.muted;
+                font-size: 13px;
+                vertical-alignment: top;
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: row.value;
+                color: Palette.ink;
+                font-size: 13px;
+                horizontal-alignment: right;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+// Developer page: live JSON dumps of the app and Moonraker state.
+export component DevPanel inherits Rectangle {
+    // Pretty-printed JSON, filled in by Rust on the "dev-copy" action.
+    in property <string> text;
+    // Visible rows of the JSON tree.
+    in property <[JsonRow]> rows;
+    // System tab cards, already balanced into two columns by Rust.
+    in property <[InfoCard]> cards-left;
+    in property <[InfoCard]> cards-right;
+    in property <string> tab: "other";
+    in property <bool> paused;
+    in property <bool> afc-available;
+    callback action(string, string);
+    changed tab => { list.content-y = 0; cards.content-y = 0; }
+
+    border-radius: 8px;
+    background: Palette.surface;
+    clip: true;
+
+    VerticalLayout {
+        padding: 12px;
+        padding-bottom: 14px;
+        spacing: 6px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Label { text: I18n.text("app_store"); font-size: 19px; font-weight: 600; }
+            if root.afc-available: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    height: 24px;
+                    border-radius: 12px;
+                    background: Palette.success;
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        Label { text: I18n.text("afc_available"); color: #ffffff; font-size: 12px; }
+                    }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Tile {
+                icon: Icons.power; label: I18n.text("sleep");
+                ink: Palette.accent; fill: Palette.accent.transparentize(84%);
+                clicked => { root.action("sleep", ""); }
+            }
+            Tile {
+                icon: root.paused ? Icons.play : Icons.pause;
+                label: root.paused ? I18n.text("resume") : I18n.text("pause");
+                fill: root.paused ? Palette.warning : Palette.raised;
+                ink: root.paused ? #ffffff : Palette.ink;
+                clicked => { root.action("dev-pause", ""); }
+            }
+            Tile {
+                icon: Icons.content-copy; label: I18n.text("copy");
+                clicked => {
+                    root.action("dev-copy", "");
+                    clipboard.text = root.text;
+                    clipboard.select-all();
+                    clipboard.copy();
+                    clipboard.text = "";
+                    root.action("dev-copied", "");
+                }
+            }
+            Tile {
+                icon: Icons.content-save; label: I18n.text("save");
+                clicked => { root.action("dev-save", ""); }
+            }
+        }
+
+        HorizontalLayout {
+            height: 40px;
+            Tab { width: 100px; label: I18n.text("dev_tab_other"); active: root.tab == "other"; clicked => { root.action("dev-tab", "other"); } }
+            Tab { width: 100px; label: "Moonraker"; active: root.tab == "moonraker"; clicked => { root.action("dev-tab", "moonraker"); } }
+            Tab { width: 100px; label: "AFC"; active: root.tab == "afc"; clicked => { root.action("dev-tab", "afc"); } }
+            Tab { width: 100px; label: I18n.text("dev_tab_full"); active: root.tab == "full"; clicked => { root.action("dev-tab", "full"); } }
+            Tab { width: 100px; label: I18n.text("dev_tab_system"); active: root.tab == "system"; clicked => { root.action("dev-tab", "system"); } }
+            Rectangle { horizontal-stretch: 1; }
+            if root.tab != "system": HorizontalLayout {
+                spacing: 6px;
+                padding-top: 2px;
+                padding-bottom: 2px;
+                Tile { icon: Icons.unfold-more-horizontal; accessible-role: button; accessible-label: "Expand all"; clicked => { root.action("dev-expand-all", ""); } }
+                Tile { icon: Icons.unfold-less-horizontal; accessible-role: button; accessible-label: "Collapse all"; clicked => { root.action("dev-collapse-all", ""); } }
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+
+            // Virtualized: only visible rows are laid out.
+            list := ListView {
+                visible: root.tab != "system";
+                for row in root.rows: JsonRowView {
+                    node: row;
+                    toggle(path) => { root.action("dev-node", path); }
+                }
+            }
+
+            cards := ScrollView {
+                visible: root.tab == "system";
+                private property <bool> wide: self.visible-width >= 620px;
+                content-width: self.visible-width;
+                content-height: max(self.visible-height, card-layout.preferred-height);
+
+                card-layout := HorizontalLayout {
+                    width: parent.width;
+                    alignment: start;
+                    spacing: 10px;
+
+                    if cards.wide: VerticalLayout {
+                        width: (parent.width - 10px) / 2;
+                        alignment: start;
+                        spacing: 10px;
+                        for card in root.cards-left: InfoCardView { card: card; }
+                    }
+                    if cards.wide: VerticalLayout {
+                        width: (parent.width - 10px) / 2;
+                        alignment: start;
+                        spacing: 10px;
+                        for card in root.cards-right: InfoCardView { card: card; }
+                    }
+                    if !cards.wide: VerticalLayout {
+                        width: parent.width;
+                        alignment: start;
+                        spacing: 10px;
+                        for card in root.cards-left: InfoCardView { card: card; }
+                        for card in root.cards-right: InfoCardView { card: card; }
+                    }
+                }
+            }
+        }
+    }
+
+    // Off-screen helper that gives access to the system clipboard.
+    clipboard := TextInput {
+        visible: false;
+        width: 0px;
+        height: 0px;
+        read-only: true;
+        single-line: false;
+    }
+}

@@ -1,5 +1,7 @@
 mod activity;
+mod dev;
 mod stats;
+mod system;
 
 use crate::icons;
 use crate::print_files::{self, array};
@@ -133,6 +135,13 @@ struct State {
     pid_target: String,
     pid_running: bool,
     pid_complete: bool,
+    dev_tab: String,
+    dev_frozen: Option<[Value; dev::TABS.len()]>,
+    dev_dirty: bool,
+    dev_rendered_at: Instant,
+    dev_shown: Value,
+    dev_expanded: HashSet<String>,
+    dev_tree_changed: bool,
 }
 
 pub fn start(
@@ -140,6 +149,7 @@ pub fn start(
     path: PathBuf,
     runtime: Handle,
 ) -> Result<App, Box<dyn std::error::Error>> {
+    system::mark_start();
     let (events_tx, events_rx) = mpsc::channel();
     let (background, background_rx) = mpsc::channel();
     let (calls, calls_rx) = async_mpsc::channel(32);
@@ -225,6 +235,13 @@ pub fn start(
         pid_target: String::new(),
         pid_running: false,
         pid_complete: false,
+        dev_tab: "other".into(),
+        dev_frozen: None,
+        dev_dirty: false,
+        dev_rendered_at: Instant::now(),
+        dev_shown: Value::Null,
+        dev_expanded: HashSet::new(),
+        dev_tree_changed: false,
     }));
 
     ui.global::<I18n>()
@@ -503,6 +520,13 @@ impl State {
     }
 
     fn tick(&mut self, ui: &Moondash) {
+        // The system tab shows live process stats, so it refreshes even without printer updates.
+        if self.page == "debug"
+            && (self.dev_dirty || self.dev_tab == "system")
+            && self.dev_rendered_at.elapsed() >= Duration::from_secs(1)
+        {
+            self.render_dev(ui);
+        }
         if self.config_checked.elapsed() >= Duration::from_secs(1) {
             self.config_checked = Instant::now();
             self.load_config(ui, false);
@@ -593,6 +617,9 @@ impl State {
             ui.set_tool_image(Image::default());
         }
         self.refresh(ui);
+        if page == "debug" {
+            self.render_dev(ui);
+        }
     }
 
     fn refresh(&mut self, ui: &Moondash) {
@@ -634,6 +661,9 @@ impl State {
                 self.request_resource_history(ui);
             }
             ("settings", "tools") => self.request_webcams(ui),
+            ("debug", _) if self.online => {
+                self.call(ui, "machine.proc_stats", json!({}), "host-stats")
+            }
             _ => {}
         }
         self.update_dashboard_stats(ui);
@@ -1025,7 +1055,8 @@ impl State {
                     }
                 }
                 "notify_proc_stat_update"
-                    if self.page == "home" && self.dashboard_stats_enabled() =>
+                    if self.page == "debug"
+                        || self.page == "home" && self.dashboard_stats_enabled() =>
                 {
                     if let Value::Object(stats) = value {
                         if let Some(cached) = self.host["stats"].as_object_mut() {
@@ -1034,6 +1065,7 @@ impl State {
                             self.host["stats"] = Value::Object(stats);
                         }
                         self.update_dashboard_stats(ui);
+                        self.dev_dirty = true;
                     }
                 }
                 "notify_update_response" => self.update_event(ui, &value),
@@ -1190,13 +1222,7 @@ impl State {
         if self.page == "tune" && self.tab == "afc" {
             self.update_afc(ui);
         }
-        if self.page == "debug" {
-            ui.set_diagnostics(
-                serde_json::to_string_pretty(&self.status)
-                    .unwrap_or_default()
-                    .into(),
-            );
-        }
+        self.dev_dirty = true;
         if (self.page == "tune" && self.tab == "objects")
             || (self.page == "settings" && self.tab == "tools")
         {
@@ -2876,11 +2902,10 @@ impl State {
                 self.update_resources(ui);
             }
             ("settings", "updates") => self.render_updates(ui),
-            ("debug", _) => ui.set_diagnostics(
-                serde_json::to_string_pretty(&self.status)
-                    .unwrap_or_default()
-                    .into(),
-            ),
+            ("debug", _) => {
+                ui.set_dev_tab(self.dev_tab.as_str().into());
+                ui.set_dev_paused(self.dev_frozen.is_some());
+            }
             _ => {}
         }
         for entry in &mut rows {
@@ -3097,8 +3122,9 @@ impl State {
         );
     }
 
-    fn file_feedback(&self, ui: &Moondash, message: &'static str) {
-        ui.set_file_feedback(message.into());
+    fn file_feedback(&self, ui: &Moondash, message: impl Into<SharedString>) {
+        let message: SharedString = message.into();
+        ui.set_file_feedback(message.clone());
         let weak = ui.as_weak();
         Timer::single_shot(Duration::from_secs(4), move || {
             if let Some(ui) = weak.upgrade()
@@ -3391,6 +3417,43 @@ impl State {
             "show-updates" => self.navigate(ui, "settings", "updates"),
             "refresh" => self.refresh(ui),
             "history-refresh" => self.request_resource_history(ui),
+            "dev-tab" => {
+                self.dev_tab = dev::TABS[dev::tab_index(argument)].into();
+                self.dev_tree_changed = true;
+                self.render_rows(ui);
+                self.render_dev(ui);
+            }
+            "dev-pause" => {
+                self.toggle_dev_pause(ui);
+                self.render_rows(ui);
+                self.render_dev(ui);
+            }
+            "dev-node" => {
+                self.toggle_dev_node(argument);
+                self.render_dev(ui);
+            }
+            "dev-expand-all" | "dev-collapse-all" => {
+                self.expand_dev_tree(ui, action == "dev-expand-all");
+                self.render_dev(ui);
+            }
+            // Copy reads this property right after the action returns.
+            "dev-copy" => ui.set_diagnostics(self.dev_text(ui).into()),
+            "dev-copied" => self.file_feedback(ui, tr(ui, "copied")),
+            "dev-save" => match dev::save_dump(&self.dev_text(ui), &self.config_path) {
+                Ok(path) => {
+                    let shown = std::env::var("HOME")
+                        .ok()
+                        .and_then(|home| {
+                            path.strip_prefix(home)
+                                .ok()
+                                .map(|rest| format!("~/{}", rest.display()))
+                        })
+                        .unwrap_or_else(|| path.display().to_string());
+                    log::info!(target: "moondash::ui", "Saved developer dump to {}", path.display());
+                    self.file_feedback(ui, format!("{}: {shown}", tr(ui, "saved")));
+                }
+                Err(error) => ui.set_message(format!("{}: {error}", tr(ui, "save")).into()),
+            },
             "tool-mesh" if self.has_bed_mesh() => {
                 self.tool_view = "mesh".into();
                 self.render_rows(ui);
@@ -4752,6 +4815,7 @@ impl State {
                     self.host = json!({});
                 }
                 self.host["stats"] = result;
+                self.dev_dirty = true;
             }
             "host-storage" => {
                 if self.host.is_null() {

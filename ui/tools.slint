@@ -534,13 +534,15 @@ export component ToolsPanel inherits Rectangle {
             }
         }
 
-        if root.view == "pid": ScrollView {
+        if root.view == "pid": pid-scroll := ScrollView {
             vertical-stretch: 1;
             horizontal-scrollbar-policy: always-off;
             mouse-drag-pan-enabled: true;
+            // Fill the page; only scroll when the card's minimum no longer fits.
+            content-height: max(self.visible-height, pid-card.min-height);
             VerticalLayout {
               Rectangle {
-                height: pid-card.preferred-height;
+                height: max(pid-scroll.visible-height, pid-card.min-height);
                 background: Palette.surface;
                 border-radius: 10px;
                 pid-card := VerticalLayout {
@@ -629,6 +631,7 @@ export component ToolsPanel inherits Rectangle {
                                 }
                             }
                             if root.pid-running: Label {
+                                vertical-stretch: 0;
                                 text: I18n.text("pid_calibration_running");
                                 color: Palette.info;
                                 horizontal-alignment: center;
@@ -636,6 +639,7 @@ export component ToolsPanel inherits Rectangle {
                         }
                     }
                     HorizontalLayout {
+                        vertical-stretch: 0;
                         alignment: end;
                         spacing: 8px;
                         if root.pid-complete: Tile {

@@ -34,15 +34,19 @@ component MetricRow inherits Rectangle {
     background: transparent;
 
     HorizontalLayout {
-        spacing: 4px;
-        Rectangle { width: 8px; height: 8px; border-radius: 4px; background: root.metric.color; }
+        spacing: 8px;
+        VerticalLayout {
+            padding-top: 6px;
+            alignment: start;
+            Rectangle { width: 8px; height: 8px; border-radius: 4px; background: root.metric.color; }
+        }
         VerticalLayout {
             horizontal-stretch: 1;
             spacing: 2px;
-            Label { text: root.metric.label; font-weight: 500; }
+            Label { text: root.metric.label; font-size: 14px; font-weight: 500; }
             Label { text: root.metric.detail; color: Palette.muted; font-size: 12px; }
         }
-        Label { text: root.metric.value; font-weight: 600; vertical-alignment: top; }
+        Label { text: root.metric.value; font-size: 14px; font-weight: 600; vertical-alignment: top; }
     }
 }
 
@@ -136,9 +140,18 @@ component HistoryResourcesCard inherits Rectangle {
     border-radius: 10px;
     background: Palette.surface;
 
+    // Room for the largest possible legend (7 statuses), so the card keeps one
+    // height while loading, when empty, and in both views.
+    private property <int> max-statuses: 7;
+    private property <length> legend-spacing: 6px;
+    private property <length> content-height: max(
+        104px,
+        root.max-statuses * row-sample.preferred-height + (root.max-statuses - 1) * root.legend-spacing);
+    row-sample := Label { text: "Ag"; font-size: 14px; font-weight: 600; visible: false; }
+
     VerticalLayout {
         padding-left: 16px;
-        padding-right: 8px;
+        padding-right: 16px;
         padding-top: 8px;
         padding-bottom: 16px;
         spacing: 8px;
@@ -181,7 +194,7 @@ component HistoryResourcesCard inherits Rectangle {
             }
         }
         VerticalLayout {
-            height: 104px;
+            height: root.content-height;
             alignment: start;
             if root.unavailable && !root.loading: Label {
                 text: I18n.text("history_unavailable");
@@ -193,51 +206,48 @@ component HistoryResourcesCard inherits Rectangle {
                 color: Palette.muted;
                 font-size: 13px;
             }
-            if root.has-data && !root.unavailable && !root.empty: VerticalLayout {
-                height: 104px;
-                alignment: center;
-                if !root.details: HorizontalLayout {
-                    spacing: 14px;
+            // Both views sit centered in the same fixed-height area; only one is visible.
+            if root.has-data && !root.unavailable && !root.empty: Rectangle {
+                height: root.content-height;
+
+                chart-view := HorizontalLayout {
+                    width: parent.width;
+                    y: (parent.height - self.height) / 2;
+                    height: self.preferred-height;
+                    visible: !root.details;
+                    spacing: 16px;
                     Image { source: root.chart; width: 96px; height: 96px; }
                     VerticalLayout {
                         horizontal-stretch: 1;
-                        spacing: 7px;
+                        spacing: root.legend-spacing;
                         alignment: center;
                         for status in root.statuses: HorizontalLayout {
                             spacing: 8px;
-                            Rectangle { width: 9px; height: 9px; border-radius: 5px; background: status.color; }
-                            Label { text: status.label; horizontal-stretch: 1; font-size: 12px; }
-                            Label { text: status.count; color: Palette.muted; font-size: 12px; }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle { width: 8px; height: 8px; border-radius: 4px; background: status.color; }
+                            }
+                            Label { text: status.label; horizontal-stretch: 1; font-size: 14px; font-weight: 500; }
+                            Label { text: status.count; font-size: 14px; font-weight: 600; }
                         }
                     }
                 }
-                if root.details: VerticalLayout {
+
+                list-view := VerticalLayout {
+                    width: parent.width;
+                    y: (parent.height - self.height) / 2;
+                    height: self.preferred-height;
+                    visible: root.details;
                     spacing: 8px;
-                    HorizontalLayout {
+                    for entry in [
+                        { label: I18n.text("history_total_print_time"), value: root.total-time },
+                        { label: I18n.text("history_longest_print"), value: root.longest-time },
+                        { label: I18n.text("history_average_print"), value: root.average-time },
+                        { label: I18n.text("filament"), value: root.filament },
+                    ]: HorizontalLayout {
                         spacing: 12px;
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            Label { text: I18n.text("history_total_print_time"); color: Palette.muted; font-size: 12px; }
-                            Label { text: root.total-time; font-weight: 600; }
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            Label { text: I18n.text("history_longest_print"); color: Palette.muted; font-size: 12px; }
-                            Label { text: root.longest-time; font-weight: 600; }
-                        }
-                    }
-                    HorizontalLayout {
-                        spacing: 12px;
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            Label { text: I18n.text("history_average_print"); color: Palette.muted; font-size: 12px; }
-                            Label { text: root.average-time; font-weight: 600; }
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            Label { text: I18n.text("filament"); color: Palette.muted; font-size: 12px; }
-                            Label { text: root.filament; font-weight: 600; }
-                        }
+                        Label { text: entry.label; color: Palette.muted; font-size: 14px; horizontal-stretch: 1; }
+                        Label { text: entry.value; font-size: 14px; font-weight: 600; }
                     }
                 }
             }
